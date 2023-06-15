@@ -1,0 +1,28 @@
+defaults:
+  - model_checkpoint.yaml
+  - early_stopping.yaml
+  - model_summary.yaml
+  - rich_progress_bar.yaml
+  - lr_monitor.yaml
+  - gradient_accumulator.yaml
+  - _self_
+
+model_checkpoint:
+  dirpath: ${paths.output_dir}/checkpoints
+  filename: "epoch_{epoch:03d}"
+  monitor: "val/miou"
+  mode: "max"
+  save_last: True
+  auto_insert_metric_name: False
+
+early_stopping:
+  monitor: "val/miou"
+  patience: 500
+  mode: "max"
+
+model_summary:
+  max_depth: -1
+
+gradient_accumulator:
+  scheduling:
+    0: 1

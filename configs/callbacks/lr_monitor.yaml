@@ -1,0 +1,7 @@
+# https://pytorch-lightning.readthedocs.io/en/stable/api/pytorch_lightning.callbacks.LearningRateMonitor.html
+
+# Monitor and log the learning rate as the training goes
+lr_monitor:
+  _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  logging_interval: 'epoch' # supports 'epoch', 'step', and null
+  log_momentum: True

@@ -1,0 +1,9 @@
+# https://pytorch-lightning.readthedocs.io/en/stable/advanced/training_tricks.html
+
+# Accumulate gradients across multiple batches, to use smaller batches
+# Scheduling expects a dictionary of {epoch: num_batch} indicating how
+# to accumulate gradients
+gradient_accumulator:
+  _target_: pytorch_lightning.callbacks.GradientAccumulationScheduler
+  scheduling:
+    0: 2

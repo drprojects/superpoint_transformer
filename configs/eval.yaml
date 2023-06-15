@@ -1,0 +1,29 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - datamodule: kitti360.yaml # choose datamodule with `test_dataloader()` for evaluation
+  - model: s1.yaml
+  - logger: null
+  - trainer: default.yaml
+  - paths: default.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
+
+  # optional local config for machine/user specific settings
+  # it's optional since it doesn't need to exist and is excluded from version control
+  - optional local: default.yaml
+
+task_name: "eval"
+
+tags: ["dev"]
+
+# compile model for faster training with pytorch 2.0
+compile: False
+
+# passing checkpoint path is necessary for evaluation
+ckpt_path: ???
+
+# float32 precision operations (torch>=2.0)
+# see https://pytorch.org/docs/2.0/generated/torch.set_float32_matmul_precision.html
+float32_matmul_precision: highest
