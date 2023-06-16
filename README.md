@@ -14,12 +14,17 @@
 
 Official implementation for
 <br>
-_Efficient 3D Semantic Segmentation with Superpoint Transformer_
+[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](http://arxiv.org/abs/2306.08045)
 <br>
 🚀⚡🔥
 <br>
 
+[![arXiv](https://img.shields.io/badge/arxiv-2306.08045-b31b1b.svg)](http://arxiv.org/abs/2306.08045)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
+
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with/semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with/3d-semantic-segmentation-on-kitti-360)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-kitti-360?p=efficient-3d-semantic-segmentation-with)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with/3d-semantic-segmentation-on-dales)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-dales?p=efficient-3d-semantic-segmentation-with)
 
 </div>
 
@@ -29,7 +34,7 @@ _Efficient 3D Semantic Segmentation with Superpoint Transformer_
 
 <br>
 
-## 📌  Description
+## 📌  Description
 
 SPT is a superpoint-based transformer 🤖 architecture that efficiently ⚡ 
 performs semantic segmentation on large-scale 3D scenes. This method includes a 
@@ -52,13 +57,13 @@ between superpoints at multiple scales.
 
 <br>
 
-## 📰  Updates
+## 📰  Updates
 
 - **15.06.2023 Official release** 🌱
 
 <br>
 
-## 🏗  Installation
+## 🏗  Installation
 Simply run [`install.sh`](install.sh) to install all dependencies in a new conda environment 
 named `spt`. 
 ```bash
@@ -71,7 +76,7 @@ named `spt`.
 
 <br>
 
-### 🔩  Project structure
+### 🔩  Project structure
 ```
 └── superpoint_transformer
     │
@@ -139,7 +144,7 @@ named `spt`.
 
 <br>
 
-## 🚀  Usage
+## 🚀  Usage
 ### Training SPT
 Use the following commands to train SPT:
 ```bash
@@ -204,7 +209,7 @@ the [notebooks](notebooks).
 
 <br>
 
-## 📚  Documentation
+## 📚  Documentation
 - [README](README.md) - General introduction to the project
 - [Data](docs/data_structures.md) - Introduction to `NAG` and `Data`, the core data structures of this project
 - [Datasets](docs/datasets.md) - Introduction to `Datasets` and the project's `data/` structure
@@ -216,7 +221,7 @@ the [notebooks](notebooks).
 
 <br>
 
-## 💳  Credits
+## 💳  Credits
 - This project was built using [Lightning-Hydra template](https://github.com/ashleve/lightning-hydra-template).
 - The main data structures of this work rely on [PyToch Geometric](https://github.com/pyg-team/pytorch_geometric)
 - Some point cloud operations were inspired from the [Torch-Points3D framework](https://github.com/nicolas-chaulet/torch-points3d), although not merged with the official project at this point. 
@@ -233,7 +238,9 @@ If your work uses all or part of the present code, please include the following 
 @inproceedings{robert2023spt,
   title={Efficient 3D Semantic Segmentation with Superpoint Transformer},
   author={Robert, Damien and Raguet, Hugo and Landrieu, Loic},
-  booktitle={arxiv},
+  journal={arXiv preprint arXiv:2306.08045},
   year={2023}
 }
 ```
+
+You can find our [paper on arxiv 📄](http://arxiv.org/abs/2306.08045).
