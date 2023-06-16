@@ -63,6 +63,14 @@ between superpoints at multiple scales.
 
 <br>
 
+## 📋  Environment requirements
+This project was tested with:
+- Linux OS
+- CUDA 11.8 ([`torch-geometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) does not support CUDA 12.0 yet)
+- conda 23.3.1
+
+<br>
+
 ## 🏗  Installation
 Simply run [`install.sh`](install.sh) to install all dependencies in a new conda environment 
 named `spt`. 
@@ -145,10 +153,14 @@ named `spt`.
 <br>
 
 ## 🚀  Usage
+### Dataset file structure
+See the [Datasets page](docs/datasets.md) to setup your datasets. 
+
 ### Training SPT
 Use the following commands to train SPT:
 ```bash
 # Train SPT on S3DIS Fold 5
+# ⚠️ S3DIS does not support automatic download, follow prompted instructions
 python src/train.py experiment=s3dis datamodule.fold=5
 
 # Train SPT on KITTI-360 Val

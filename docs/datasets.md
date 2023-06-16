@@ -56,9 +56,9 @@ Datasets are stored under the following structure:
 ```
 </details>
 
-> **Note**: Already have the dataset on your machine? Save memory 💾 by 
+> **Note**: **Already have the dataset on your machine ?** Save memory 💾 by 
 > simply symlinking or copying the files to `data/<dataset_name>/raw/`, following the 
-> above structure.
+> [above-described `data/` structure](#structure-of-the-data-directory).
 
 ## Setting up your own `data/` and `logs/` paths
 The `data/` and `logs/` directories will store all your datasets and training 
@@ -78,14 +78,24 @@ data_dir: /path/to/your/data/
 log_dir: /path/to/your/logs/
 ```
 
-## Automatic download
+## Automatic download and preprocessing
 Following `torch_geometric`'s `Dataset` behaviour:
 - missing files in `data/<dataset_name>/raw` structure ➡ automatic download
 - missing files in `data/<dataset_name>/processed` structure ➡ automatic preprocessing
 
-However, some datasets (_e.g._ KITTI-360) require you to *manually download*
+However, some datasets require you to **_manually download_**
 from their official webpage. For those, you will need to manually setup the 
-[above-described `data/` structure](#structure-of-the-data-directory).
+[above-described `data/` structure](#structure-of-the-data-directory). 
+
+<div align="center">
+
+| Dataset | Automatic download |
+| :--- | :---: |
+| S3DIS | ❌ |
+| KITTI-360 | ❌ |
+| DALES | ✅ |
+
+</div>
 
 ## Pre-transforms, transforms, on-device transforms
 

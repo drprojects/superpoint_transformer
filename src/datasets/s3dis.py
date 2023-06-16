@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import torch
 import gdown
@@ -290,6 +291,16 @@ class S3DIS(BaseDataset):
         # Download the whole dataset as a single zip file
         if not osp.exists(osp.join(self.root, self._zip_name)):
             self.download_zip()
+
+        # In case the automatic download fails
+        if not osp.exists(osp.join(self.root, self._zip_name)):
+            log.error(
+                f"\nS3DIS automatic download failed.\n"
+                f"Please, register yourself by filling up the form at "
+                f"{self._form_url}\n"
+                f"Then, manually download {self._zip_name} into {self.root}/."
+                f"\n")
+            sys.exit(1)
 
         # Unzip the file and rename it into the `root/raw/` directory. This
         # directory contains the raw Area folders from the zip
