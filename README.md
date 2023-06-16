@@ -49,7 +49,7 @@ between superpoints at multiple scales.
 | 📊 **SOTA on S3DIS 6-Fold** (76.0 mIoU) |
 | 📊 **SOTA on KITTI-360 Val** (63.5 mIoU) |
 | 📊 **Near SOTA on DALES** (79.6 mIoU) | 
-| 🦋 **212k parameters** ([PointNeXt-XL](https://github.com/guochengqian/PointNeXt) ÷ 200, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 40) | 
+| 🦋 **212k parameters** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 200, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 40) | 
 | ⚡ S3DIS training in **3h on 1 GPU** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 7, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 70) | 
 | ⚡ **Preprocessing x7 faster than [SPG](https://github.com/loicland/superpoint_graph)** |
 
