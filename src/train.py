@@ -2,7 +2,7 @@ import pyrootutils
 
 root = str(pyrootutils.setup_root(
     search_from=__file__,
-    indicator=[".git", "pyproject.toml"],
+    indicator=[".git", "README.md"],
     pythonpath=True,
     dotenv=True))
 
