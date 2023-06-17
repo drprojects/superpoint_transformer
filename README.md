@@ -155,18 +155,35 @@ named `spt`.
 <br>
 
 ## 🚀  Usage
-### Dataset file structure
-See the [Datasets page](docs/datasets.md) to setup your datasets. 
+### Datasets
+See the [Datasets page](docs/datasets.md) to set up your datasets. 
+
+### Evaluating SPT
+Use the following commands to evaluate SPT from a checkpoint file 
+`checkpoint.ckpt`:
+```bash
+# Evaluate SPT on S3DIS Fold 5
+python src/eval.py experiment=s3dis datamodule.fold=5 ckpt_path=/path/to/your/checkpoint.ckpt
+
+# Evaluate SPT on KITTI-360 Val
+python src/eval.py experiment=kitti360  ckpt_path=/path/to/your/checkpoint.ckpt 
+
+# Evaluate SPT on DALES
+python src/eval.py experiment=dales ckpt_path=/path/to/your/checkpoint.ckpt
+```
+
+> **Note**: The pretrained weights of the **SPT** and **SPT-nano** models for 
+>**S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
+>
+>[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
 
 ### Training SPT
 Use the following commands to train SPT:
 ```bash
 # Train SPT on S3DIS Fold 5
-# ⚠️ S3DIS does not support automatic download, follow prompted instructions
 python src/train.py experiment=s3dis datamodule.fold=5
 
 # Train SPT on KITTI-360 Val
-# ⚠️ KITTI-360 does not support automatic download, follow prompted instructions
 python src/train.py experiment=kitti360 
 
 # Train SPT on DALES
@@ -190,27 +207,6 @@ python src/train.py experiment=dales
 >[`configs/logger/`](configs/logger). See 
 >[Lightning-Hydra](https://github.com/ashleve/lightning-hydra-template) for more
 >information.
-
-### Evaluating SPT
-Use the following commands to evaluate SPT from a checkpoint file 
-`checkpoint.ckpt`:
-```bash
-# Evaluate SPT on S3DIS Fold 5
-python src/eval.py experiment=s3dis datamodule.fold=5 ckpt_path=checkpoint.ckpt
-
-# Evaluate SPT on KITTI-360 Val
-# ⚠️ KITTI-360 does not support automatic download, follow prompted instructions
-python src/eval.py experiment=kitti360  ckpt_path=checkpoint.ckpt 
-
-# Evaluate SPT on DALES
-python src/eval.py experiment=dales ckpt_path=checkpoint.ckpt
-```
-
-> **Note**: The pretrained weights of the **SPT** and **SPT-nano** models for 
->**S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
->
->[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712) 
-
 
 ### Notebooks & visualization
 We provide [notebooks](notebooks) to help you get started with manipulating our 

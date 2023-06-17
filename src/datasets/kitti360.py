@@ -137,10 +137,9 @@ class KITTI360(BaseDataset):
                 zip_file = \
                     f"data_3d_semantics{'_test' * (self.stage == 'test')}.zip"
                 log.error(
-                    f"\n"
-                    f"KITTI-360 does not support automatic download.\n"
+                    f"\nKITTI-360 does not support automatic download.\n"
                     f"Please go to the official webpage {CVLIBS_URL} and "
-                    f"manually download {zip_file} to {self.raw_dir}.\n"
+                    f"manually download {zip_file} to your {self.raw_dir}.\n"
                     f"Then, unzip its content into the following structure:\n"
                     f"{self.raw_file_structure}")
                 sys.exit(1)

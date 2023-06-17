@@ -9,8 +9,6 @@ import os.path as osp
 # Credit: https://github.com/torch-points3d/torch-points3d
 
 FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScDimvNMCGhy_rmBA2gHfDu3naktRm6A8BPwAWWDv-Uhm6Shw/viewform?c=0&w=1"
-DOWNLOAD_URL = "https://drive.google.com/uc?id=0BweDykwS9vIobkVPN0wzRzFwTDg&export=download"
-ALIGNED_DOWNLOAD_URL = "https://drive.google.com/uc?id=0BweDykwS9vIoUG5nNGRjQmFLTGM&export=download"
 ZIP_NAME = "Stanford3dDataset_v1.2.zip"
 ALIGNED_ZIP_NAME = "Stanford3dDataset_v1.2_Aligned_Version.zip"
 UNZIP_NAME = "Stanford3dDataset_v1.2"

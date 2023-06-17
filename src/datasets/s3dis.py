@@ -2,7 +2,6 @@ import os
 import sys
 import glob
 import torch
-import gdown
 import shutil
 import logging
 import pandas as pd
@@ -223,6 +222,10 @@ def read_s3dis_room(
 class S3DIS(BaseDataset):
     """S3DIS dataset, for Area-wise prediction.
 
+    Note: we are using the S3DIS version with non-aligned rooms, which
+    contains `Area_{{i_area:1>6}}_alignmentAngle.txt` files. Make sure
+    you are not using the aligned version.
+
     Dataset website: http://buildingparser.stanford.edu/dataset.html
 
     Parameters
@@ -245,9 +248,9 @@ class S3DIS(BaseDataset):
         want to run in CPU-based DataLoaders
     """
 
-    _download_url = DOWNLOAD_URL
     _form_url = FORM_URL
     _zip_name = ZIP_NAME
+    _aligned_zip_name = ALIGNED_ZIP_NAME
     _unzip_name = UNZIP_NAME
 
     def __init__(self, *args, fold=5, **kwargs):
@@ -288,18 +291,16 @@ class S3DIS(BaseDataset):
     def download_dataset(self):
         """Download the S3DIS dataset.
         """
-        # Download the whole dataset as a single zip file
-        if not osp.exists(osp.join(self.root, self._zip_name)):
-            self.download_zip()
-
-        # In case the automatic download fails
+        # Manually download the dataset
         if not osp.exists(osp.join(self.root, self._zip_name)):
             log.error(
-                f"\nS3DIS automatic download failed.\n"
+                f"\nS3DIS does not support automatic download.\n"
                 f"Please, register yourself by filling up the form at "
                 f"{self._form_url}\n"
-                f"Then, manually download {self._zip_name} into {self.root}/."
-                f"\n")
+                f"From there, manually download the non-aligned rooms"
+                f"{self._zip_name} into your {self.root}/ directory.\n"
+                f"⛔ Make sure you DO NOT download the "
+                f"{self._aligned_zip_name} version.\n")
             sys.exit(1)
 
         # Unzip the file and rename it into the `root/raw/` directory. This
@@ -307,21 +308,6 @@ class S3DIS(BaseDataset):
         extract_zip(osp.join(self.root, self._zip_name), self.root)
         shutil.rmtree(self.raw_dir)
         os.rename(osp.join(self.root, self._unzip_name), self.raw_dir)
-
-    def download_zip(self, interactive=False):
-        """Download the S3DIS dataset as a single zip file.
-        """
-        log.info(
-            f"Please, register yourself by filling up the form at "
-            f"{self._form_url}")
-        log.info("***")
-        if interactive:
-            log.info(
-                "Press any key to continue, or CTRL-C to exit. By continuing, "
-                "you confirm having filled up the form.")
-            input("")
-        gdown.download(
-            self._download_url, osp.join(self.root, self._zip_name), quiet=False)
 
     def read_single_raw_cloud(self, raw_cloud_path):
         """Read a single raw cloud and return a Data object, ready to
@@ -338,8 +324,17 @@ class S3DIS(BaseDataset):
         └── {self._zip_name}
         └── raw/
             └── Area_{{i_area:1>6}}/
+                └── Area_{{i_area:1>6}}_alignmentAngle.txt
                 └── ...
             """
+
+    @property
+    def raw_file_names(self):
+        """The file paths to find in order to skip the download."""
+        area_folders = super().raw_file_names
+        alignment_files = [
+            osp.join(a, f"{a}_alignmentAngle.txt") for a in area_folders]
+        return area_folders + alignment_files
 
     def id_to_relative_raw_path(self, id):
         """Given a cloud id as stored in `self.cloud_ids`, return the
