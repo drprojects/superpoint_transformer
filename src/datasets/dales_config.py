@@ -11,17 +11,14 @@ from src.datasets import IGNORE_LABEL as IGNORE
 FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSefhHMMvN0Uwjnj_vWQgYSvtFOtaoGFWsTIcRuBTnP09NHR7A/viewform?fbzx=5530674395784263977'
 
 # DALES in LAS format
-LAS_GDOWN_ID = '1VKm05i-4fIi7xtws668LSmECbZTbvbEm'
 LAS_TAR_NAME = 'dales_semantic_segmentation_las.tar.gz'
 LAS_UNTAR_NAME = "dales_las"
 
 # DALES in PLY format
-PLY_GDOWN_ID = '1kNQygxgOABrxQXDlxpv5poHTkXkhKrAn'
 PLY_TAR_NAME = 'dales_semantic_segmentation_ply.tar.gz'
 PLY_UNTAR_NAME = "dales_ply"
 
 # DALES in PLY, only version with intensity and instance labels
-OBJECTS_GDOWN_ID = '1IW_3xZFGf_A05Qqmv3b1eOjtYj461KFX'
 OBJECTS_TAR_NAME = 'DALESObjects.tar.gz'
 OBJECTS_UNTAR_NAME = "DALESObjects"
 

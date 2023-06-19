@@ -9,6 +9,9 @@ from src.datasets import IGNORE_LABEL as IGNORE
 ########################################################################
 
 CVLIBS_URL = 'http://www.cvlibs.net/datasets/kitti-360/download.php'
+DATA_3D_SEMANTICS_ZIP_NAME = 'data_3d_semantics.zip'
+DATA_3D_SEMANTICS_TEST_ZIP_NAME = 'data_3d_semantics_test.zip'
+UNZIP_NAME = 'data_3d_semantics'
 
 
 ########################################################################

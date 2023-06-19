@@ -8,11 +8,11 @@ for more details.
 ## Supported datasets
 <div align="center">
 
-| Dataset                                                                                                                 | Automatic download |                                                           Download from ?                                                            | Which files ?                                        |
-|:------------------------------------------------------------------------------------------------------------------------|:------------------:|:------------------------------------------------------------------------------------------------------------------------------------:|:-----------------------------------------------------|
-| [S3DIS](http://buildingparser.stanford.edu/dataset.html)                                                                |         ❌          |         [link](https://docs.google.com/forms/d/e/1FAIpQLScDimvNMCGhy_rmBA2gHfDu3naktRm6A8BPwAWWDv-Uhm6Shw/viewform?c=0&w=1)          | `Stanford3dDataset_v1.2.zip`                         |
-| [KITTI-360](https://www.cvlibs.net/datasets/kitti-360/index.php)                                                        |         ❌          |                                    [link](http://www.cvlibs.net/datasets/kitti-360/download.php)                                     | `data_3d_semantics.zip` `data_3d_semantics_test.zip` |
-| [DALES](https://udayton.edu/engineering/research/centers/vision_lab/research/was_data_analysis_and_processing/dale.php) |         ✅          | [link](https://docs.google.com/forms/d/e/1FAIpQLSefhHMMvN0Uwjnj_vWQgYSvtFOtaoGFWsTIcRuBTnP09NHR7A/viewform?fbzx=5530674395784263977) | `DALESObjects.tar.gz`                                |
+| Dataset                                                                                                                 |                                                           Download from ?                                                            | Which files ?                                        | Where to ? |
+|:------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------:|:-----------------------------------------------------|:----|
+| [S3DIS](http://buildingparser.stanford.edu/dataset.html)                                                                |         [link](https://docs.google.com/forms/d/e/1FAIpQLScDimvNMCGhy_rmBA2gHfDu3naktRm6A8BPwAWWDv-Uhm6Shw/viewform?c=0&w=1)          | `Stanford3dDataset_v1.2.zip`                         | `data/s3dis/` |
+| [KITTI-360](https://www.cvlibs.net/datasets/kitti-360/index.php)                                                        |                                    [link](http://www.cvlibs.net/datasets/kitti-360/download.php)                                     | `data_3d_semantics.zip` `data_3d_semantics_test.zip` | `data/kitti360/` |
+| [DALES](https://udayton.edu/engineering/research/centers/vision_lab/research/was_data_analysis_and_processing/dale.php) | [link](https://docs.google.com/forms/d/e/1FAIpQLSefhHMMvN0Uwjnj_vWQgYSvtFOtaoGFWsTIcRuBTnP09NHR7A/viewform?fbzx=5530674395784263977) | `DALESObjects.tar.gz`                                | `data/dales/` |
 
 </div>
 
@@ -20,8 +20,7 @@ for more details.
 ### Structure of the `data/` directory
 <details>
 <summary><b>S3DIS data directory structure.</b></summary>
-
-The S3DIS dataset is stored under the following structure.
+<br><br>
 
 ```
 └── data
@@ -39,23 +38,24 @@ The S3DIS dataset is stored under the following structure.
 
 ```
 
-> **Warning**: ⛔ **DO NOT** download the aligned version 
-> `Stanford3dDataset_v1.2_Aligned_Version.zip`, which does not contain the 
-> `Area_{{1, 2, 3, 4, 5, 6}}_alignmentAngle.txt` files.
+> **Warning**: Make sure you download `Stanford3dDataset_v1.2.zip` and 
+> **NOT** the aligned version ⛔ `Stanford3dDataset_v1.2_Aligned_Version.zip`,
+> which does not contain the `Area_{{1, 2, 3, 4, 5, 6}}_alignmentAngle.txt` 
+> files.
 
+<br>
 </details>
 
 <details>
 <summary><b>KITTI-360 data directory structure.</b></summary>
-
-The KITTI-360 dataset is stored under the following structure:
+<br><br>
 
 ```
 └── data
-    └─── kitti360                                      # Structure for KITTI-360
+    └─── kitti360                                     # Structure for KITTI-360
+        ├── data_3d_semantics_test.zip                  # (optional) Downloaded zipped test dataset
+        ├── data_3d_semantics.zip                       # (optional) Downloaded zipped train dataset
         ├── raw                                         # Raw dataset files
-        │   ├── data_3d_semantics_test.zip              # (optional) Downloaded zipped test dataset
-        │   ├── data_3d_semantics.zip                   # (optional) Downloaded zipped train dataset
         │   └── data_3d_semantics                       # Contains all raw train and test sequences
         │       └── {{sequence_name}}                     # KITTI-360's sequence/static/window.ply structure
         │           └── static
@@ -67,12 +67,12 @@ The KITTI-360 dataset is stored under the following structure:
                         └── {{window_name}}.h5                # Preprocessed window file
 
 ```
+<br>
 </details>
 
 <details>
 <summary><b>DALES data directory structure.</b></summary>
-
-The DALES dataset is stored under the following structure:
+<br><br>
 
 ```
 └── data
@@ -87,6 +87,13 @@ The DALES dataset is stored under the following structure:
                     └── {{tile_name}}.h5                      # Preprocessed tile file
 
 ```
+
+> **Warning**: Make sure you download the `DALESObjects.tar.gz` and **NOT** 
+> ⛔ `dales_semantic_segmentation_las.tar.gz` nor 
+> ⛔ `dales_semantic_segmentation_ply.tar.gz` versions, which do not contain 
+> all required point attributes.
+
+<br>
 </details>
 
 > **Note**: **Already have the dataset on your machine ?** Save memory 💾 by 
@@ -95,12 +102,20 @@ The DALES dataset is stored under the following structure:
 
 ### Automatic download and preprocessing
 Following `torch_geometric`'s `Dataset` behaviour:
-- missing files in `data/<dataset_name>/raw` structure ➡ automatic download
-- missing files in `data/<dataset_name>/processed` structure ➡ automatic preprocessing
+0. Dataset instantiation <br>
+➡ Load preprocessed data in `data/<dataset_name>/processed`
+1. Missing files in `data/<dataset_name>/processed` structure<br>
+➡ **Automatic** preprocessing using files in `data/<dataset_name>/raw`
+2. Missing files in `data/<dataset_name>/raw` structure<br>
+➡ **Automatic** unzipping of the downloaded dataset in `data/<dataset_name>`
+3. Missing downloaded dataset in `data/<dataset_name>` structure<br>
+➡ ~~**Automatic**~~ **manual** download to `data/<dataset_name>`
 
-However, some datasets require you to **_manually download_** from their 
-official webpage. For those, you will need to manually set up the 
-[above-described `data/` structure](#structure-of-the-data-directory). 
+> **Warning**: We **do not support ❌ automatic download**, for compliance 
+>reasons.
+>Please _**manually download**_ the required dataset files to the required 
+>location as indicated in the above [table](#supported-datasets).
+
 
 ## Setting up your own `data/` and `logs/` paths
 The `data/` and `logs/` directories will store all your datasets and training 

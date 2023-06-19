@@ -1,14 +1,15 @@
 import os
 import sys
-import torch
-import logging
 import glob
+import torch
+import shutil
+import logging
 from zipfile import ZipFile
 from plyfile import PlyData
+from torch_geometric.data.extract import extract_zip
 from src.datasets import BaseDataset
 from src.data import Data
 from src.datasets.kitti360_config import *
-from src.utils.download import run_command
 from src.utils.neighbors import knn_2
 from src.utils.color import to_float_rgb
 
@@ -86,6 +87,11 @@ class KITTI360(BaseDataset):
         want to run in CPU-based DataLoaders
     """
 
+    _form_url = CVLIBS_URL
+    _trainval_zip_name = DATA_3D_SEMANTICS_ZIP_NAME
+    _test_zip_name = DATA_3D_SEMANTICS_TEST_ZIP_NAME
+    _unzip_name = UNZIP_NAME
+
     @property
     def class_names(self):
         """List of string names for dataset classes. This list may be
@@ -117,32 +123,36 @@ class KITTI360(BaseDataset):
     def download_dataset(self):
         """Download the KITTI-360 dataset.
         """
-        # Location of the KITTI-360 download shell scripts
-        here = osp.dirname(osp.abspath(__file__))
-        scripts_dir = osp.join(here, '../../scripts')
+        # Name of the downloaded dataset zip
+        zip_name = self._test_zip_name if self.stage == 'test' \
+            else self._trainval_zip_name
 
         # Accumulated 3D point clouds with annotations
-        if not all(osp.exists(osp.join(self.raw_dir, x))
-                   for x in self.raw_file_names_3d):
+        if not osp.exists(osp.join(self.root, zip_name)):
             if self.stage != 'test':
                 msg = 'Accumulated Point Clouds for Train & Val (12G)'
             else:
                 msg = 'Accumulated Point Clouds for Test (1.2G)'
-            self.download_message(msg)
+            log.error(
+                f"\nKITTI-360 does not support automatic download.\n"
+                f"Please go to the official webpage {self._form_url}, "
+                f"manually download the '{msg}' (ie '{zip_name}') to your "
+                f"'{self.root}/' directory, and re-run.\n"
+                f"The dataset will automatically be unzipped into the "
+                f"following structure:\n"
+                f"{self.raw_file_structure}\n")
+            sys.exit(1)
 
-            script = osp.join(scripts_dir, 'download_kitti360_3d_semantics.sh')
-            if osp.exists(script):
-                run_command([f'{script} {self.raw_dir} {self.stage}'])
-            else:
-                zip_file = \
-                    f"data_3d_semantics{'_test' * (self.stage == 'test')}.zip"
-                log.error(
-                    f"\nKITTI-360 does not support automatic download.\n"
-                    f"Please go to the official webpage {CVLIBS_URL} and "
-                    f"manually download {zip_file} to your {self.raw_dir}.\n"
-                    f"Then, unzip its content into the following structure:\n"
-                    f"{self.raw_file_structure}")
-                sys.exit(1)
+        # Unzip the file and place its content into the expected data
+        # structure inside `root/raw/` directory
+        extract_zip(osp.join(self.root, zip_name), self.raw_dir)
+        stage = 'test' if self.stage == 'test' else 'train'
+        seqs = os.listdir(osp.join(self.raw_dir, 'data_3d_semantics', stage))
+        for seq in seqs:
+            source = osp.join(self.raw_dir, 'data_3d_semantics', stage, seq)
+            target = osp.join(self.raw_dir, 'data_3d_semantics', seq)
+            shutil.move(source, target)
+        shutil.rmtree(osp.join(self.raw_dir, 'data_3d_semantics', stage))
 
     def read_single_raw_cloud(self, raw_cloud_path):
         """Read a single raw cloud and return a Data object, ready to

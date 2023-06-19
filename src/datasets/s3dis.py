@@ -298,9 +298,15 @@ class S3DIS(BaseDataset):
                 f"Please, register yourself by filling up the form at "
                 f"{self._form_url}\n"
                 f"From there, manually download the non-aligned rooms"
-                f"{self._zip_name} into your {self.root}/ directory.\n"
+                f"'{self._zip_name}' into your '{self.root}/' directory and "
+                f"re-run.\n"
+                f"The dataset will automatically be unzipped into the "
+                f"following structure:\n"
+                f"{self.raw_file_structure}\n"
                 f"⛔ Make sure you DO NOT download the "
-                f"{self._aligned_zip_name} version.\n")
+                f"'{self._aligned_zip_name}' version, which does not contain "
+                f"the required `Area_{{i_area:1>6}}_alignmentAngle.txt` files."
+                f"\n")
             sys.exit(1)
 
         # Unzip the file and rename it into the `root/raw/` directory. This

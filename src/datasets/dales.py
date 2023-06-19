@@ -1,5 +1,5 @@
 import os
-import gdown
+import sys
 import torch
 import shutil
 import logging
@@ -83,9 +83,10 @@ class DALES(BaseDataset):
         want to run in CPU-based DataLoaders
     """
 
-    _download_url = OBJECTS_GDOWN_ID
     _form_url = FORM_URL
     _zip_name = OBJECTS_TAR_NAME
+    _las_name = LAS_TAR_NAME
+    _ply_name = PLY_TAR_NAME
     _unzip_name = OBJECTS_UNTAR_NAME
 
     @property
@@ -119,29 +120,26 @@ class DALES(BaseDataset):
     def download_dataset(self):
         """Download the DALES Objects dataset.
         """
-        # Download the whole dataset as a single zip file
+        # Manually download the dataset
         if not osp.exists(osp.join(self.root, self._zip_name)):
-            self.download_zip()
+            log.error(
+                f"\nDALES does not support automatic download.\n"
+                f"Please, register yourself by filling up the form at "
+                f"{self._form_url}\n"
+                f"From there, manually download the '{self._zip_name}' into "
+                f"your '{self.root}/' directory and re-run.\n"
+                f"The dataset will automatically be unzipped into the "
+                f"following structure:\n"
+                f"{self.raw_file_structure}\n"
+                f"⛔ Make sure you DO NOT download the "
+                f"'{self._las_name}' nor '{self._ply_name}' versions, which "
+                f"do not contain all required point attributes.\n")
+            sys.exit(1)
 
         # Unzip the file and rename it into the `root/raw/` directory
         extract_tar(osp.join(self.root, self._zip_name), self.root)
         shutil.rmtree(self.raw_dir)
         os.rename(osp.join(self.root, self._unzip_name), self.raw_dir)
-
-    def download_zip(self, interactive=False):
-        """Download the DALES dataset as a single tar.gz file.
-        """
-        log.info(
-            f"Please, register yourself by filling up the form at "
-            f"{self._form_url}")
-        log.info("***")
-        if interactive:
-            log.info(
-                "Press any key to continue, or CTRL-C to exit. By continuing, "
-                "you confirm having filled up the form.")
-            input("")
-        gdown.download(
-            self._download_url, osp.join(self.root, self._zip_name), quiet=False)
 
     def read_single_raw_cloud(self, raw_cloud_path):
         """Read a single raw cloud and return a Data object, ready to
