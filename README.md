@@ -65,9 +65,10 @@ between superpoints at multiple scales.
 
 <br>
 
-## 📋  Environment requirements
+## 💻  Environment requirements
 This project was tested with:
 - Linux OS
+- NVIDIA GTX 1080 Ti **11G**, NVIDIA V100 **32G**, NVIDIA A40 **48G**
 - CUDA 11.8 ([`torch-geometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) does not support CUDA 12.0 yet)
 - conda 23.3.1
 
@@ -178,7 +179,7 @@ python src/eval.py experiment=dales ckpt_path=/path/to/your/checkpoint.ckpt
 >[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
 
 ### Training SPT
-Use the following commands to train SPT:
+Use the following commands to **train SPT on a 32G-GPU**:
 ```bash
 # Train SPT on S3DIS Fold 5
 python src/train.py experiment=s3dis datamodule.fold=5
@@ -190,6 +191,22 @@ python src/train.py experiment=kitti360
 python src/train.py experiment=dales
 ```
 
+Use the following to **train SPT on a 11G-GPU 💾** (training time and performance may vary):
+
+```bash
+# Train SPT on S3DIS Fold 5
+python src/train.py experiment=s3dis_11g datamodule.fold=5
+
+# Train SPT on KITTI-360 Val
+python src/train.py experiment=kitti360_11g 
+
+# Train SPT on DALES
+python src/train.py experiment=dales_11g
+```
+
+> **Note**: Encountering CUDA Out-Of-Memory errors 💀💾 ? See our dedicated 
+> [troubleshooting section](#cuda-out-of-memory-errors).
+
 > **Note**: Other ready-to-use configs are provided in
 >[`configs/experiment/`](configs/experiment). You can easily design your own 
 >experiments by composing [configs](configs):
@@ -199,14 +216,15 @@ python src/train.py experiment=dales
 >```
 >See 
 >[Lightning-Hydra](https://github.com/ashleve/lightning-hydra-template) for more
->information.
+>information on how the config system works and all the awesome perks of the 
+> Lightning+Hydra combo.
 
 > **Note**: By default, your logs will automatically be uploaded to 
 >[Weights and Biases](https://wandb.ai), from where you can track and compare 
 >your experiments. Other loggers are available in 
 >[`configs/logger/`](configs/logger). See 
 >[Lightning-Hydra](https://github.com/ashleve/lightning-hydra-template) for more
->information.
+>information on the logging options.
 
 ### Notebooks & visualization
 We provide [notebooks](notebooks) to help you get started with manipulating our 
@@ -229,6 +247,62 @@ provided in [media/visualizations.7z](media/visualizations.7z)
 > **Note**: We endeavoured to **comment our code** as much as possible to make 
 > this project usable. Still, if you find some parts are unclear or some more 
 > documentation would be needed, feel free to let us know by creating an issue ! 
+
+<br>
+
+## 👩‍🔧  Troubleshooting
+Here are some common issues and tips for tackling them.
+
+### SPT on an 11G-GPU 
+Our default configurations are designed for a 32G-GPU. Yet, SPT can run 
+on an **11G-GPU 💾**, with minor time and performance variations.
+
+We provide configs in [`configs/experiment/`](configs/experiment) for 
+training SPT on an **11G-GPU 💾**:
+
+```bash
+# Train SPT on S3DIS Fold 5
+python src/train.py experiment=s3dis_11g datamodule.fold=5
+
+# Train SPT on KITTI-360 Val
+python src/train.py experiment=kitti360_11g 
+
+# Train SPT on DALES
+python src/train.py experiment=dales_11g
+```
+
+### CUDA Out-Of-Memory Errors
+Having some CUDA OOM errors 💀💾 ? Here are some parameters you can play 
+with to mitigate GPU memory use, based on when the error occurs.
+
+<details>
+<summary><b>Parameters affecting CUDA memory.</b></summary>
+
+**Legend**: 🟡 Preprocessing | 🔴 Training | 🟣 Inference (including validation and testing during training)
+
+| Parameter                                   | Description                                                                                                                                                                                                                        |  When  |
+|:--------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------:|
+| `datamodule.xy_tiling`                      | Splits dataset tiles into xy_tiling^2 smaller tiles, based on a regular XY grid. Ideal square-shaped tiles à la DALES. Note this will affect the number of training steps.                                                         |  🟡🟣  |
+| `datamodule.pc_tiling`                      | Splits dataset tiles into 2^pc_tiling smaller tiles, based on a their principal component. Ideal for varying tile shapes à la S3DIS and KITTI-360. Note this will affect the number of training steps.                             |  🟡🟣  |
+| `datamodule.max_num_nodes`                  | Limits the number of $P_1$ partition nodes/superpoints in the **training batches**.                                                                                                                                                |   🔴   |
+| `datamodule.max_num_edges`                  | Limits the number of $P_1$ partition edges in the **training batches**.                                                                                                                                                            |   🔴   |
+| `datamodule.voxel`                          | Increasing voxel size will reduce preprocessing, training and inference times but will reduce performance.                                                                                                                         | 🟡🔴🟣 |
+| `datamodule.pcp_regularization`             | Regularization for partition levels. The larger, the fewer the superpoints.                                                                                                                                                        | 🟡🔴🟣 |
+| `datamodule.pcp_spatial_weight`             | Importance of the 3D position in the partition. The smaller, the fewer the superpoints.                                                                                                                                            | 🟡🔴🟣 |
+| `datamodule.pcp_cutoff`                     | Minimum superpoint size. The larger, the fewer the superpoints.                                                                                                                                                                    | 🟡🔴🟣 |
+| `datamodule.graph_k_max`                    | Maximum number of adjacent nodes in the superpoint graphs. The smaller, the fewer the superedges.                                                                                                                                  | 🟡🔴🟣 |
+| `datamodule.graph_gap`                      | Maximum distance between adjacent superpoints int the superpoint graphs. The smaller, the fewer the superedges.                                                                                                                    | 🟡🔴🟣 |
+| `datamodule.graph_chunk`                    | Reduce to avoid OOM when `RadiusHorizontalGraph` preprocesses the superpoint graph.                                                                                                                                                |   🟡   |
+| `datamodule.dataloader.batch_size`          | Controls the number of loaded tiles. Each **train batch** is composed of `batch_size`*`datamodule.sample_graph_k` spherical samplings. Inference is performed on **entire validation and test tiles**, without spherical sampling. |  🔴🟣  |
+| `datamodule.sample_segment_ratio`           | Randomly drops a fraction of the superpoints at each partition level.                                                                                                                                                              |   🔴   |
+| `datamodule.sample_graph_k`                 | Controls the number of spherical samples in the **train batches**.                                                                                                                                                                 |   🔴   |
+| `datamodule.sample_graph_r`                 | Controls the radius of spherical samples in the **train batches**. Set to `sample_graph_r<=0` to use the entire tile without spherical sampling.                                                                                   |   🔴   |
+| `datamodule.sample_point_min`               | Controls the minimum number of $P_0$ points sampled per superpoint in the **train batches**.                                                                                                                                       |   🔴   |
+| `datamodule.sample_point_max`               | Controls the maximum number of $P_0$ points sampled per superpoint in the **train batches**.                                                                                                                                       |   🔴   |
+| `callbacks.gradient_accumulator.scheduling` | Gradient accumulation. Can be used to train with smaller batches, with more training steps.                                                                                                                                        |   🔴   |
+
+<br>
+</details>
 
 <br>
 

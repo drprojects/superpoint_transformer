@@ -202,7 +202,7 @@ class MiniDALES(DALES):
     """A mini version of DALES with only a few windows for
     experimentation.
     """
-    _NUM_MINI = 1
+    _NUM_MINI = 2
 
     @property
     def all_cloud_ids(self):
