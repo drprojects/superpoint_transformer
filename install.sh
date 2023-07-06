@@ -5,6 +5,14 @@ PROJECT_NAME=spt
 PYTHON=3.8
 
 
+# Recover the project's directory from the position of the install.sh
+# script and move there. Not doing so would install some dependencies in
+# the wrong place
+HERE=`dirname $0`
+HERE=`realpath $HERE`
+cd $HERE
+
+
 # Installation of Superpoint Transformer in a conda environment
 echo "_____________________________________________"
 echo
@@ -58,6 +66,7 @@ pip install "jupyterlab>=3" "ipywidgets>=7.6" jupyter-dash
 pip install "notebook>=5.3" "ipywidgets>=7.5"
 pip install ipykernel
 pip3 install torch torchvision
+pip install torchmetrics[detection]
 #pip install torch==1.12.0 torchvision
 pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
 #pip install torch-scatter torch-sparse torch-cluster torch-spline-conv torch-geometric -f https://data.pyg.org/whl/torch-1.12.0+cu102.html
