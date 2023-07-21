@@ -538,14 +538,29 @@ class PointSegmentationModule(LightningModule):
                 "reduce_on_plateau": reduce_on_plateau}}
 
     def load_state_dict(self, state_dict, strict=True):
-        # Little bit of acrobatics due to `criterion.weight`. This
-        # attribute, when present in the `state_dict`, causes
-        # `load_state_dict` to crash.
-        try:
-            super().load_state_dict(state_dict, strict=strict)
-        except:
-            class_weight = state_dict.pop('criterion.weight', None)
-            super().load_state_dict(state_dict, strict=strict)
+        """Basic `load_state_dict` from `torch.nn.Module` with a little
+        bit of acrobatics due to `criterion.weight`.
+
+        This attribute, when present in the `state_dict`, causes
+        `load_state_dict` to crash. More precisely, `criterion.weight`
+        is holding the per-class weights for classification losses.
+        """
+        # Recover the class weights from any 'criterion.weight' or
+        # 'criterion.*.weight' key and remove those keys from the
+        # state_dict
+        keys = []
+        for key in state_dict.keys():
+            if key.startswith('criterion.') and key.endswith('.weight'):
+                keys.append(key)
+        class_weight = state_dict[keys[0]] if len(keys) > 0 else None
+        for key in keys:
+            state_dict.pop(key)
+
+        # Load the state_dict
+        super().load_state_dict(state_dict, strict=strict)
+
+        # If need be, assign the class weights to the criterion
+        if class_weight is not None and hasattr(self.criterion, 'weight'):
             self.criterion.weight = class_weight
 
     @staticmethod
