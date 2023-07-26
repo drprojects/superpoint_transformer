@@ -448,6 +448,7 @@ class PointSegmentationModule(LightningModule):
         # access to the same directory, regardless of their execution
         # time
         self.submission_dir = self.trainer.datamodule.test_dataset.submission_dir
+        self.on_fit_start()
 
     def test_step(self, batch, batch_idx):
         loss, preds, targets = self.model_step(batch)

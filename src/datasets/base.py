@@ -621,8 +621,7 @@ class BaseDataset(InMemoryDataset):
 
         # Make sure the dataset has labels
         if nag[0].y is None:
-            raise ValueError(
-                f'{self} does not have labels to compute class weights on.')
+            return None
         del nag
 
         # To be as fast as possible, we read only the last level of each
