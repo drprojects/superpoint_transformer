@@ -187,3 +187,23 @@ inspiration from our code for S3DIS, KITTI-360 and DALES to get started.
 We suggest that your config inherits from `configs/datamodule/default.yaml`. See
 `configs/datamodule/s3dis.yaml`, `configs/datamodule/kitti360.yaml`, and 
 `configs/datamodule/dales.yaml` for inspiration.
+
+#### Semantic label format
+The semantic labels of your dataset must follow certain rules. 
+
+Indeed, your points are expected to have labels within $[0, C]$, where: $C$ is 
+the `num_classes` you define in your `YourDataset`. 
+
+- **All labels $[0, C - 1]$ are assumed to be present in your dataset**. As 
+such, they will all be used in metrics and losses computation.
+- A point with the **$C$ label will be considered void/ignored/unlabeled** 
+(whichever you call it). As such, it will be excluded from from metrics and 
+losses computation
+
+Hence, make sure the **output of your `YourDataset.read_single_raw_cloud()` 
+reader method never returns labels outside of your $[0, C]$ range**. Besides, 
+if some labels in $[0, C - 1]$ are not useful to you (ie absent from your 
+dataset), we recommend you remap your labels to a new $[0, C' - 1]$ range
+(`torch_geometric.nn.pool.consecutive.consecutive_cluster` can help you with 
+that, if need be), while making sure you only use the label $C'$ for
+void/ignored/unlabeled points. 
