@@ -7,7 +7,7 @@ from torch_geometric.utils import add_self_loops
 from src.transforms import Transform
 import src
 from src.data import NAG
-from src.dependencies.point_geometric_features.python.bin.pgeof import pgeof
+from pgeof import pgeof
 from src.utils import print_tensor_info, isolated_nodes, edge_to_superedge, \
     subedges, to_trimmed, cluster_radius_nn, is_trimmed, base_vectors_3d, \
     scatter_mean_orientation, POINT_FEATURES, SEGMENT_BASE_FEATURES, \
