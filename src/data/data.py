@@ -3,7 +3,6 @@ import h5py
 import torch
 import warnings
 import numpy as np
-import os.path as osp
 from time import time
 from torch_geometric.data import Data as PyGData
 from torch_geometric.data import Batch as PyGBatch
@@ -568,10 +567,10 @@ class Data(PyGData):
             if k == 'pos':
                 save_tensor(val, f, k, fp_dtype=pos_dtype)
             elif k == 'y' and val.dim() > 1 and y_to_csr:
-                sg = f.create_group(osp.join(f.name, '_csr_', k))
+                sg = f.create_group(f"{f.name}/_csr_/{k}")
                 save_dense_to_csr(val, sg, fp_dtype=fp_dtype)
             elif isinstance(val, Cluster):
-                sg = f.create_group(osp.join(f.name, '_cluster_', 'sub'))
+                sg = f.create_group(f"{f.name}/_cluster_/sub")
                 val.save(sg, fp_dtype=fp_dtype)
             elif k in ['rgb', 'mean_rgb']:
                 if val.is_floating_point():
