@@ -68,8 +68,8 @@ pip install ipykernel
 pip3 install torch torchvision
 pip install torchmetrics[detection]
 #pip install torch==1.12.0 torchvision
-pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
-#pip install torch-scatter torch-sparse torch-cluster torch-spline-conv torch-geometric -f https://data.pyg.org/whl/torch-1.12.0+cu102.html
+pip install torch_geometric==2.3 pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+#pip install torch-scatter torch-sparse torch-cluster torch-spline-conv torch-geometric==2.3 -f https://data.pyg.org/whl/torch-1.12.0+cu102.html
 pip install plyfile
 pip install h5py
 pip install colorhash
