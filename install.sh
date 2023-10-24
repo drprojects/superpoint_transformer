@@ -65,7 +65,7 @@ pip install plotly==5.9.0
 pip install "jupyterlab>=3" "ipywidgets>=7.6" jupyter-dash
 pip install "notebook>=5.3" "ipywidgets>=7.5"
 pip install ipykernel
-pip3 install torch torchvision
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 pip install torchmetrics[detection]
 #pip install torch==1.12.0 torchvision
 pip install torch_geometric==2.3 pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
