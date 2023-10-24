@@ -330,3 +330,5 @@ If your work uses all or part of the present code, please include the following 
 ```
 
 You can find our [paper on arxiv 📄](http://arxiv.org/abs/2306.08045).
+
+Also, if you like this project, don't forget to give our project a :star:, it means a lot to us !
