@@ -204,7 +204,7 @@ def save_confusion_matrix(cm, path2save, ordered_names):
         cm = cm.cpu().float().numpy()
 
     template_path = os.path.join(path2save, "{}.svg")
-    # PRECISION
+    # RECALL
     cmn = cm.astype("float") / cm.sum(axis=-1)[:, np.newaxis]
     cmn[np.isnan(cmn) | np.isinf(cmn)] = 0
     fig, ax = plt.subplots(figsize=(31, 31))
@@ -214,10 +214,10 @@ def save_confusion_matrix(cm, path2save, ordered_names):
     # g.set_xticklabels(g.get_xticklabels(), rotation = 35, fontsize = 20)
     plt.ylabel("Actual")
     plt.xlabel("Predicted")
-    path_precision = template_path.format("precision")
+    path_precision = template_path.format("recall")
     plt.savefig(path_precision, format="svg")
 
-    # RECALL
+    # PRECISION
     cmn = cm.astype("float") / cm.sum(axis=0)[np.newaxis, :]
     cmn[np.isnan(cmn) | np.isinf(cmn)] = 0
     fig, ax = plt.subplots(figsize=(31, 31))
@@ -227,5 +227,5 @@ def save_confusion_matrix(cm, path2save, ordered_names):
     # g.set_xticklabels(g.get_xticklabels(), rotation = 35, fontsize = 20)
     plt.ylabel("Actual")
     plt.xlabel("Predicted")
-    path_recall = template_path.format("recall")
+    path_recall = template_path.format("precision")
     plt.savefig(path_recall, format="svg")
