@@ -71,6 +71,7 @@ def is_dense(a: torch.LongTensor):
     """
     assert a.dim() == 1, "Only supports 1D tensors"
     assert not a.is_floating_point(), "Float tensors are not supported"
+    assert a.numel() > 0, "0-dimensional tensors are not supported"
     unique = a.unique()
     return a.min() == 0 and unique.size(0) == a.max().long() + 1
 
@@ -159,6 +160,9 @@ def cast_to_optimal_integer_type(a):
     assert not a.is_floating_point(), \
         f"Expected an integer-like input, but received dtype={a.dtype} instead"
 
+    if a.numel() == 0:
+        return a.byte()
+    
     for dtype in [torch.uint8, torch.int16, torch.int32, torch.int64]:
         low_enough = torch.iinfo(dtype).min <= a.min()
         high_enough = a.max() <= torch.iinfo(dtype).max
