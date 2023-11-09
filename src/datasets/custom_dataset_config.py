@@ -1,9 +1,36 @@
 import numpy as np
+from pathlib import Path
 
 
 ########################################################################
 #                                Labels                                #
 ########################################################################
+
+
+raw_dir = Path("/path/to/raw/directory")
+
+TILES = {
+    "train": [
+        str(_)
+        for _ in (raw_dir / "train").iterdir()
+        if _.suffix == ".las"
+    ],
+    "val": [
+        str(_)
+        for _ in (raw_dir / "val").iterdir()
+        if _.suffix == ".las"
+    ],
+    "test": [
+        str(_)
+        for _ in (raw_dir / "test").iterdir()
+        if _.suffix == ".las"
+    ],
+    "predict": [
+        str(_)
+        for _ in (raw_dir / "predict").iterdir()
+        if _.suffix == ".las"
+    ],
+}
 
 NUM_CLASSES = 6
 

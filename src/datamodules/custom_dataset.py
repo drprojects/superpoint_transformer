@@ -28,4 +28,5 @@ if __name__ == "__main__":
 
     root = str(pyrootutils.setup_root(__file__, pythonpath=True))
     cfg = omegaconf.OmegaConf.load(root + "/configs/datamodule/custom_dataset.yaml")
+    cfg.data_dir = root + "/data"
     _ = hydra.utils.instantiate(cfg)

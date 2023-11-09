@@ -3,6 +3,12 @@ defaults:
 
 _target_: src.datamodules.custom_dataset.CustomDataModule
 
+# path to data directory
+data_dir: /data/Moussa/V3-1-0_wHAG_training_set
+
+# path to logging directory
+log_dir: /data/Moussa/V3-1-0_wHAG_logs
+
 
 # These parameters are not actually used by the DataModule, but are used
 # here to facilitate model parameterization with config interpolation

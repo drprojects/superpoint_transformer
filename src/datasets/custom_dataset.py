@@ -5,7 +5,7 @@ import laspy
 from pathlib import Path
 from src.datasets import BaseDataset
 from src.data import Data
-from src.datasets.custom_dataset_config import CLASS_NAMES, NUM_CLASSES, ID2TRAINID
+from src.datasets.custom_dataset_config import CLASS_NAMES, NUM_CLASSES, ID2TRAINID, TILES
 import torch.multiprocessing
 
 DIR = osp.dirname(osp.realpath(__file__))
@@ -69,6 +69,56 @@ class CustomDataset(BaseDataset):
         want to run in CPU-based DataLoaders
     """
 
+    def __init__(
+        self,
+        root,
+        stage="train",
+        transform=None,
+        pre_transform=None,
+        pre_filter=None,
+        on_device_transform=None,
+        save_y_to_csr=True,
+        save_pos_dtype=torch.float,
+        save_fp_dtype=torch.half,
+        xy_tiling=None,
+        pc_tiling=None,
+        val_mixed_in_train=False,
+        test_mixed_in_val=False,
+        custom_hash=None,
+        in_memory=False,
+        point_save_keys=None,
+        point_no_save_keys=None,
+        point_load_keys=None,
+        segment_save_keys=None,
+        segment_no_save_keys=None,
+        segment_load_keys=None,
+        **kwargs,
+    ):
+        super().__init__(
+            root,
+            stage,
+            transform,
+            pre_transform,
+            pre_filter,
+            on_device_transform,
+            save_y_to_csr,
+            save_pos_dtype,
+            save_fp_dtype,
+            xy_tiling,
+            pc_tiling,
+            val_mixed_in_train,
+            test_mixed_in_val,
+            custom_hash,
+            in_memory,
+            point_save_keys,
+            point_no_save_keys,
+            point_load_keys,
+            segment_save_keys,
+            segment_no_save_keys,
+            segment_load_keys,
+            **kwargs,
+        )
+
     @property
     def class_names(self):
         """List of string names for dataset classes. This list may be
@@ -95,13 +145,6 @@ class CustomDataset(BaseDataset):
         The following structure is expected:
             `{'train': [...], 'val': [...], 'test': [...]}`
         """
-        TILES = {
-            "train": [str(_) for _ in (Path(self.raw_dir) / "train").iterdir() if _.suffix == ".las"],
-            "val": [str(_) for _ in (Path(self.raw_dir) / "val").iterdir() if _.suffix == ".las"],
-            "test": [str(_) for _ in (Path(self.raw_dir) / "test").iterdir() if _.suffix == ".las"],
-            "predict": [str(_) for _ in (Path(self.raw_dir) / "predict").iterdir() if _.suffix == ".las"],
-        }
-
         return TILES
 
     def read_single_raw_cloud(self, raw_cloud_path):
@@ -126,7 +169,17 @@ class CustomDataset(BaseDataset):
         path (relative to `self.raw_dir`) of the corresponding raw
         cloud.
         """
-        return id
+        if id in self.all_cloud_ids["train"]:
+            stage = "train"
+        elif id in self.all_cloud_ids["val"]:
+            stage = "train"
+        elif id in self.all_cloud_ids["test"]:
+            stage = "test"
+        elif id in self.all_cloud_ids["predict"]:
+            stage = "predict"
+        else:
+            raise ValueError(f"Unknown tile id '{id}'")
+        return osp.join(stage, self.id_to_base_id(id) + ".las")
 
     def processed_to_raw_path(self, processed_path):
         """Return the raw cloud path corresponding to the input
