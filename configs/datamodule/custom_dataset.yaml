@@ -1,7 +1,7 @@
 defaults:
   - default.yaml
 
-_target_: src.datamodules.custom_dataset.CustomDatasetModule
+_target_: src.datamodules.custom_dataset.CustomDataModule
 
 
 # These parameters are not actually used by the DataModule, but are used

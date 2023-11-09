@@ -6,7 +6,7 @@ from src.datasets import CustomDataset, MiniCustomDataset
 log = logging.getLogger(__name__)
 
 
-class CustomDatasetModule(BaseDataModule):
+class CustomDataModule(BaseDataModule):
     """
     Child classes should overwrite:
 
