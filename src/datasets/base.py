@@ -140,7 +140,7 @@ class BaseDataset(InMemoryDataset):
             segment_load_keys=None,
             **kwargs):
 
-        assert stage in ['train', 'val', 'trainval', 'test']
+        assert stage in ['train', 'val', 'trainval', 'test', 'predict']
 
         # Set these attributes before calling parent `__init__` because
         # some attributes will be needed in parent `download` and
@@ -508,6 +508,7 @@ class BaseDataset(InMemoryDataset):
         train_dir = osp.join(self.processed_dir, 'train', hash_dir)
         val_dir = osp.join(self.processed_dir, 'val', hash_dir)
         test_dir = osp.join(self.processed_dir, 'test', hash_dir)
+        predict_dir = osp.join(self.processed_dir, 'predict', hash_dir)
         if not osp.exists(train_dir):
             os.makedirs(train_dir, exist_ok=True)
         if not osp.exists(val_dir):
@@ -522,6 +523,8 @@ class BaseDataset(InMemoryDataset):
                 os.symlink(val_dir, test_dir, target_is_directory=True)
             else:
                 os.makedirs(test_dir, exist_ok=True)
+        if not osp.exists(predict_dir):
+            os.makedirs(predict_dir, exist_ok=True)
 
         # Process clouds one by one
         for p in tq(self.processed_paths):

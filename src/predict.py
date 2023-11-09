@@ -58,7 +58,7 @@ log = utils.get_pylogger(__name__)
 
 
 @utils.task_wrapper
-def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
+def predict(cfg: DictConfig) -> None:
     """Evaluates given checkpoint on a datamodule testset.
 
     This method is wrapped in optional @task_wrapper decorator which applies extra utilities
@@ -103,17 +103,20 @@ def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
         log.info("Compiling model!")
         model = torch_geometric.compile(model)  # type: ignore
 
-    # log.info("Starting testing!")
-    trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    log.info("Starting predicting!")
 
-    metric_dict = trainer.callback_metrics
+    predictions = trainer.predict(
+            model=model,
+            datamodule=datamodule,
+            ckpt_path=cfg.ckpt_path,
+        )  # type: ignore
 
-    return metric_dict, object_dict
+    return None
 
 
 @hydra.main(version_base="1.2", config_path=root + "/configs", config_name="eval.yaml")
 def main(cfg: DictConfig) -> None:
-    evaluate(cfg)
+    predict(cfg)
 
 
 if __name__ == "__main__":
