@@ -207,3 +207,75 @@ dataset), we recommend you remap your labels to a new $[0, C' - 1]$ range
 (`torch_geometric.nn.pool.consecutive.consecutive_cluster` can help you with 
 that, if need be), while making sure you only use the label $C'$ for
 void/ignored/unlabeled points. 
+
+#### Setting your `train`, `val`, and `test` sets
+The clouds you use for your respective sets are to be specified in the 
+`all_base_cloud_ids()` method of your `YourDataset`.
+
+```python
+def all_base_cloud_ids(self):
+    return {
+        'train': [...],  # list of UNIQUE clouds ids in your train set
+        'val': [...],  # list of UNIQUE clouds ids in your validation set
+        'test': [...]  # list of UNIQUE clouds ids in your test set
+    }
+```
+
+Importantly, the cloud ids specified in each split must be uniquely identified: 
+we do not want clouds to have the same name in your `train` and `test` set.
+
+#### Using the `test` set for validation
+Generally, if you intend to run multiple experiments and tune some 
+hyperparameters to suit your dataset, you do need a `validation` set to avoid
+contaminating your `test` set, which must be kept aside until final performance
+evaluation. Yet, in some cases you might want to only use a `train` and a `test`
+set. In this case you must set:
+
+```python
+def all_base_cloud_ids(self):
+    return {
+        'train': [...],  # list of UNIQUE clouds ids in your train set
+        'val': [],  # empty list, no validation clouds
+        'test': [...]  # list of UNIQUE clouds ids in your test set
+    }
+```
+
+Still, you can specify that you want to also use the `test` set as a `val` set 
+(which is dangerous ML practice) by setting in your 
+`configs/datamodule/your_dataset.yaml` datamodule config:
+
+```yaml
+val_on_test: True
+```
+
+#### `val` points mixed with `train`/`test` points
+It sometimes happens that your validation points are stored in the same 
+preprocessed files as your training or testing points. In this peculiar situation, it is 
+possible to load the relevant files when needed and slice only the required points 
+as an `on_device_transform` to save time. 
+
+In this case, the `all_base_cloud_ids()` method of your `YourDataset` may contain duplicate
+entries between `val` and the other splits:
+
+```python
+def all_base_cloud_ids(self):
+    return {
+        'train': [...],  # list of clouds ids in your train set, may contain duplicates with val
+        'val': [...],  # list of clouds ids in your vallidation set
+        'test': [...]  # list of clouds ids in your test set, may contain duplicates with val
+    }
+```
+
+You must specify one of the following in your 
+`configs/datamodule/your_dataset.yaml` datamodule config:
+
+```yaml
+val_mixed_in_train: True  # if some preprocessed clouds contain both validation and train points
+test_mixed_in_val: True  # if some preprocessed clouds contain both validation and test points
+```
+
+Finally, your `read_single_raw_cloud()` method must return `Data` objects holding a `is_val` 
+boolean attribute indicating whether a point belongs to the validation set. If `val_mixed_in_train`
+or `test_mixed_in_val` are specified, this attribute will be used for selecting the relevant 
+points at batch creation time. See S3DIS's `read_s3dis_area()` for an example of how `is_val` 
+can be specified.
