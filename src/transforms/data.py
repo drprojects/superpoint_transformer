@@ -167,7 +167,8 @@ class NAGRemoveKeys(Transform):
         else:
             raise ValueError(f'Unsupported level={self.level}')
 
-        transforms = [RemoveKeys(keys=k) for k in level_keys]
+        transforms = [
+            RemoveKeys(keys=k, strict=self.strict) for k in level_keys]
 
         for i_level in range(nag.num_levels):
             nag._list[i_level] = transforms[i_level](nag._list[i_level])
