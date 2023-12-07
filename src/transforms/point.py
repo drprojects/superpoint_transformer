@@ -200,11 +200,6 @@ class GroundElevation(Transform):
         ground or if you have large above-ground planar structures
     :param scale: float
         Scaling by which the computed elevation will be divided
-    :param sample: int (>= 1) or float ([0, 1])
-        Minimum number of points chosen randomly from original data.
-        Treated as an absolute number of samples for `sample >= 1`,
-        treated as a relative number `ceil(sample * X.shape[0])` for
-        `sample < 1.`
     """
 
     def __init__(self, threshold=1.5, scale=3.0):
