@@ -3,6 +3,15 @@ from torch.utils.data import DataLoader as TorchDataLoader
 
 __all__ = ['DataLoader']
 
+def __identity__(batch_list):
+    """
+        fix for windows, where lambda can't be pickled.
+        We have to use a top level function
+        see:
+        https://discuss.pytorch.org/t/cant-pickle-local-object-dataloader-init-locals-lambda/31857/10?page=2
+        https://docs.python.org/3/library/pickle.html#what-can-be-pickled-and-unpickled
+    """
+    return batch_list
 
 class DataLoader(TorchDataLoader):
     """Same as torch DataLoader except that the default behaviour for
@@ -19,5 +28,5 @@ class DataLoader(TorchDataLoader):
     """
     def __init__(self, *args, collate_fn=None, **kwargs):
         if collate_fn is None:
-            collate_fn = lambda batch_list: batch_list
+            collate_fn = __identity__
         super().__init__(*args, collate_fn=collate_fn, **kwargs)
