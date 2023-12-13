@@ -1,6 +1,9 @@
 import torch
 import logging
 import pandas as pd
+import os.path as osp
+import os
+
 from src.utils.geometry import rodrigues_rotation_matrix
 from src.datasets.s3dis_config import *
 from src.datasets.s3dis import read_s3dis_room, S3DIS
@@ -83,7 +86,7 @@ class S3DISRoom(S3DIS):
         """
         # Extract useful information from <path>
         stage, hash_dir, area_id, room_id = \
-            osp.splitext(processed_path)[0].split('/')[-4:]
+            osp.splitext(processed_path)[0].split(os.sep)[-4:]
         cloud_id = osp.join(area_id, room_id)
 
         # Remove the tiling in the cloud_id, if any
