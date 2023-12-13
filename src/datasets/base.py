@@ -406,7 +406,7 @@ class BaseDataset(InMemoryDataset):
         """
         # Extract useful information from <path>
         stage, hash_dir, cloud_id = \
-            osp.splitext(processed_path)[0].split('/')[-3:]
+            osp.splitext(processed_path)[0].split(os.sep)[-3:]
 
         # Remove the tiling in the cloud_id, if any
         base_cloud_id = self.id_to_base_id(cloud_id)

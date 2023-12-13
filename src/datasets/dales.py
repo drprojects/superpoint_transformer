@@ -179,7 +179,7 @@ class DALES(BaseDataset):
         """
         # Extract useful information from <path>
         stage, hash_dir, cloud_id = \
-            osp.splitext(processed_path)[0].split('/')[-3:]
+            osp.splitext(processed_path)[0].split(os.sep)[-3:]
 
         # Raw 'val' and 'trainval' tiles are all located in the
         # 'raw/train/' directory

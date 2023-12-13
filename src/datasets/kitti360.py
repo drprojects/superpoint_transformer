@@ -179,8 +179,8 @@ class KITTI360(BaseDataset):
         """
         id = self.id_to_base_id(id)
         return osp.join(
-            'data_3d_semantics', id.split('/')[0], 'static',
-            id.split('/')[1] + '.ply')
+            'data_3d_semantics', id.split(os.sep)[0], 'static',
+            id.split(os.sep)[1] + '.ply')
 
     def processed_to_raw_path(self, processed_path):
         """Return the raw cloud path corresponding to the input
@@ -188,7 +188,7 @@ class KITTI360(BaseDataset):
         """
         # Extract useful information from <path>
         stage, hash_dir, sequence_name, cloud_id = \
-            osp.splitext(processed_path)[0].split('/')[-4:]
+            osp.splitext(processed_path)[0].split(os.sep)[-4:]
 
         # Remove the tiling in the cloud_id, if any
         base_cloud_id = self.id_to_base_id(cloud_id)
@@ -241,7 +241,7 @@ class KITTI360(BaseDataset):
         # windows and format those to match the expected file name:
         # {seq:0>4}_{start_frame:0>10}_{end_frame:0>10}.npy
         sequence_name, window_name = self.id_to_base_id(
-            self.cloud_ids[idx]).split('/')
+            self.cloud_ids[idx]).split(os.sep)
         seq = sequence_name.split('_')[-2]
         start_frame, end_frame = window_name.split('_')
         filename = f'{seq:0>4}_{start_frame:0>10}_{end_frame:0>10}.npy'
