@@ -92,6 +92,7 @@ class BaseDataModule(LightningDataModule):
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+        self.predict_dataset = None
 
         # Do not set the transforms directly, use self.set_transforms()
         # instead to parse the input configs
@@ -99,9 +100,12 @@ class BaseDataModule(LightningDataModule):
         self.train_transform = None
         self.val_transform = None
         self.test_transform = None
+        self.predict_transform = None
+
         self.on_device_train_transform = None
         self.on_device_val_transform = None
         self.on_device_test_transform = None
+        self.on_device_predict_transform = None
 
         # Instantiate the transforms
         self.set_transforms()
@@ -155,6 +159,10 @@ class BaseDataModule(LightningDataModule):
             self.hparams.data_dir, stage='test',
             transform=self.test_transform, pre_transform=self.pre_transform,
             on_device_transform=self.on_device_test_transform, **self.kwargs)
+        self.dataset_class(
+            self.hparams.data_dir, stage='predict',
+            transform=self.predict_transform, pre_transform=self.pre_transform,
+            on_device_transform=self.on_device_predict_transform, **self.kwargs)
 
     def setup(self, stage=None):
         """Load data. Set variables: `self.train_dataset`,
@@ -179,7 +187,11 @@ class BaseDataModule(LightningDataModule):
             transform=self.test_transform, pre_transform=self.pre_transform,
             on_device_transform=self.on_device_test_transform, **self.kwargs)
 
-        self.predict_dataset = None
+        self.predict_dataset = self.dataset_class(
+            self.hparams.data_dir, stage='predict',
+            transform=self.predict_transform, pre_transform=self.pre_transform,
+            on_device_transform=self.on_device_predict_transform, **self.kwargs)
+
 
     def set_transforms(self):
         """Parse in self.hparams in search for '*transform*' keys and
@@ -273,7 +285,13 @@ class BaseDataModule(LightningDataModule):
             shuffle=False)
 
     def predict_dataloader(self):
-        raise NotImplementedError
+        return DataLoader(
+            dataset=self.predict_dataset,
+            batch_size=self.hparams.dataloader.batch_size,
+            num_workers=self.hparams.dataloader.num_workers,
+            pin_memory=self.hparams.dataloader.pin_memory,
+            persistent_workers=self.hparams.dataloader.persistent_workers,
+            shuffle=False)
 
     def teardown(self, stage=None):
         """Clean up after fit or test."""
@@ -312,7 +330,7 @@ class BaseDataModule(LightningDataModule):
         elif self.trainer.testing:
             on_device_transform = self.on_device_test_transform
         elif self.trainer.predicting:
-            raise NotImplementedError('No on_device_predict_transform yet...')
+            on_device_transform = self.on_device_predict_transform
         elif self.trainer.evaluating:
             on_device_transform = self.on_device_test_transform
         elif self.trainer.sanity_checking:

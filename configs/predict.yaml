@@ -18,7 +18,7 @@ defaults:
   # it's optional since it doesn't need to exist and is excluded from version control
   - optional local: default.yaml
 
-task_name: "eval"
+task_name: "predict"
 
 tags: ["dev"]
 
