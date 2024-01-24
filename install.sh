@@ -36,7 +36,7 @@ fi
 while (test -z $CONDA_DIR) || [ ! -d $CONDA_DIR ]
 do
     echo "Could not find conda at: "$CONDA_DIR
-    read -p "Please provide you conda install directory: " CONDA_DIR
+    read -p "Please provide your conda install directory: " CONDA_DIR
     CONDA_DIR=`realpath $CONDA_DIR`
 done
 
@@ -116,7 +116,7 @@ echo
 echo "⭐ Installing Parallel Cut-Pursuit"
 echo
 # Clone parallel-cut-pursuit and grid-graph repos
-git clone -b improve_merge https://gitlab.com/1a7r0ch3/parallel-cut-pursuit.git src/dependencies/parallel_cut_pursuit
+git clone https://gitlab.com/1a7r0ch3/parallel-cut-pursuit.git src/dependencies/parallel_cut_pursuit
 git clone https://gitlab.com/1a7r0ch3/grid-graph.git src/dependencies/grid_graph
 
 # Compile the projects
