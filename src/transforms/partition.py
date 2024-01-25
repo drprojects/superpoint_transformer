@@ -142,10 +142,10 @@ class CutPursuitPartition(Transform):
 
             # Partition computation
             super_index, x_c, cluster, edges, times = cp_d0_dist(
-                1, x, source_csr, target, edge_weights=edge_weights,
-                vert_weights=node_size, coor_weights=coor_weights,
-                min_comp_weight=cut, cp_dif_tol=1e-2,
-                cp_it_max=self.iterations,
+                n_dim + n_feat, x, source_csr, target,
+                edge_weights=edge_weights, vert_weights=node_size,
+                coor_weights=coor_weights, min_comp_weight=cut,
+                cp_dif_tol=1e-2, cp_it_max=self.iterations,
                 split_damp_ratio=0.7, verbose=self.verbose,
                 max_num_threads=num_threads, balance_parallel_split=True,
                 compute_Time=True, compute_List=True, compute_Graph=True)
