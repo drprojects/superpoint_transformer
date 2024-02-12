@@ -60,7 +60,7 @@ between superpoints at multiple scales.
 
 ## 📰  Updates
 
-- **15.01.2024** Major code release for panoptic segmentation, `predict()` behavior, full-resolution prediction: **early February 2024**
+- **15.01.2024** Major code release for panoptic segmentation, `predict()` behavior, full-resolution prediction, and code for **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](http://arxiv.org/abs/2401.06704)*: **mid-February 2024**
 - **15.10.2023** Our paper **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](http://arxiv.org/abs/2401.06704)** was accepted for an **oral** presentation at **[3DV 2024](https://3dvconf.github.io/2024/)** 🥳
 - **06.10.2023** Come see our poster for **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](http://arxiv.org/abs/2306.08045)** at **[ICCV 2023](https://iccv2023.thecvf.com/)**
 - **14.07.2023** Our paper **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](http://arxiv.org/abs/2306.08045)** was accepted at **[ICCV 2023](https://iccv2023.thecvf.com/)** 🥳
