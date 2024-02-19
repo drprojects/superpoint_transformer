@@ -102,6 +102,7 @@ for more details.
 
 ### Automatic download and preprocessing
 Following `torch_geometric`'s `Dataset` behaviour:
+
 0. Dataset instantiation <br>
 ➡ Load preprocessed data in `data/<dataset_name>/processed`
 1. Missing files in `data/<dataset_name>/processed` structure<br>
