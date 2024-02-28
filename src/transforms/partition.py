@@ -1,11 +1,12 @@
 import sys
 import os.path as osp
+
 import torch
 import numpy as np
 from torch_scatter import scatter_sum, scatter_mean
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
 from src.transforms import Transform
-from src.data import Data, Cluster, NAG
+from src.data import Data, NAG, Cluster, InstanceData
 from src.utils.cpu import available_cpu_count
 
 dependencies_folder = osp.dirname(osp.dirname(osp.abspath(__file__)))
@@ -45,7 +46,7 @@ class CutPursuitPartition(Transform):
 
     _IN_TYPE = Data
     _OUT_TYPE = NAG
-    _MAX_NUM_EGDES = 4294967295
+    _MAX_NUM_EDGES = 4294967295
     _NO_REPR = ['verbose', 'parallel']
 
     def __init__(
@@ -75,6 +76,9 @@ class CutPursuitPartition(Transform):
             "Expected a scalar or a List"
 
         # Trim the graph
+        # TODO: calling this on the level-0 adjacency graph is a bit sluggish
+        #  but still saves partition time overall. May be worth finding a
+        #  quick way of removing self loops and redundant edges...
         data = data.to_trimmed()
 
         # Initialize the hierarchical partition parameters. In particular,
@@ -114,10 +118,10 @@ class CutPursuitPartition(Transform):
                 break
 
             # User warning if the number of edges exceeds uint32 limits
-            if d1.edge_index.shape[1] > self._MAX_NUM_EGDES and self.verbose:
+            if d1.edge_index.shape[1] > self._MAX_NUM_EDGES and self.verbose:
                 print(
                     f"WARNING: number of edges {d1.edge_index.shape[1]} "
-                    f"exceeds the uint32 limit {self._MAX_NUM_EGDES}. Please"
+                    f"exceeds the uint32 limit {self._MAX_NUM_EDGES}. Please"
                     f"update the cut-pursuit source code to accept a larger "
                     f"data type for `index_t`.")
 
@@ -142,13 +146,23 @@ class CutPursuitPartition(Transform):
 
             # Partition computation
             super_index, x_c, cluster, edges, times = cp_d0_dist(
-                n_dim + n_feat, x, source_csr, target,
-                edge_weights=edge_weights, vert_weights=node_size,
-                coor_weights=coor_weights, min_comp_weight=cut,
-                cp_dif_tol=1e-2, cp_it_max=self.iterations,
-                split_damp_ratio=0.7, verbose=self.verbose,
-                max_num_threads=num_threads, balance_parallel_split=True,
-                compute_Time=True, compute_List=True, compute_Graph=True)
+                n_dim + n_feat,
+                x,
+                source_csr,
+                target,
+                edge_weights=edge_weights,
+                vert_weights=node_size,
+                coor_weights=coor_weights,
+                min_comp_weight=cut,
+                cp_dif_tol=1e-2,
+                cp_it_max=self.iterations,
+                split_damp_ratio=0.7,
+                verbose=self.verbose,
+                max_num_threads=num_threads,
+                balance_parallel_split=True,
+                compute_Time=True,
+                compute_List=True,
+                compute_Graph=True)
 
             if self.verbose:
                 delta_t = (times[1:] - times[:-1]).round(2)
@@ -179,6 +193,10 @@ class CutPursuitPartition(Transform):
                 pos=pos, x=x, edge_index=edge_index, edge_attr=edge_attr,
                 sub=Cluster(pointer, value), node_size=node_size_new)
 
+            # Merge the lower level's instance annotations, if any
+            if d1.obj is not None and isinstance(d1.obj, InstanceData):
+                d2.obj = d1.obj.merge(d1.super_index)
+
             # Trim the graph
             d2 = d2.to_trimmed()
 
@@ -190,7 +208,7 @@ class CutPursuitPartition(Transform):
 
             # Aggregate some point attributes into the clusters. This
             # is not performed dynamically since not all attributes can
-            # be aggregated (eg 'neighbor_index', 'neighbor_distance',
+            # be aggregated (e.g. 'neighbor_index', 'neighbor_distance',
             # 'edge_index', 'edge_attr'...)
             if 'y' in d1.keys:
                 assert d1.y.dim() == 2, \
@@ -200,13 +218,17 @@ class CutPursuitPartition(Transform):
                     d1.y.cuda(), d1.super_index.cuda(), dim=0).cpu()
                 torch.cuda.empty_cache()
 
-            if 'pred' in d1.keys:
-                assert d1.pred.dim() == 2, \
-                    "Expected Data.pred to hold `(num_nodes, num_classes)` " \
+            if 'semantic_pred' in d1.keys:
+                assert d1.semantic_pred.dim() == 2, \
+                    "Expected Data.semantic_pred to hold `(num_nodes, num_classes)` " \
                     "histograms, not single labels"
-                d2.pred = scatter_sum(
-                    d1.pred.cuda(), d1.super_index.cuda(), dim=0).cpu()
+                d2.semantic_pred = scatter_sum(
+                    d1.semantic_pred.cuda(), d1.super_index.cuda(), dim=0).cpu()
                 torch.cuda.empty_cache()
+
+            # TODO: aggregate other attributes ?
+
+            # TODO: if scatter operations are bottleneck, use scatter_csr
 
             # Add the l+1-level Data object to data_list and update the
             # l-level after super_index has been changed
@@ -263,6 +285,10 @@ class GridPartition(Transform):
             pos = scatter_mean(d.pos, super_index, dim=0)
             cluster = Cluster(
                 super_index, torch.arange(d.num_nodes), dense=True)
+
+            # TODO: support more Data attributes and more advanced
+            #  grouping, probably by interfacing with
+            #  src.transforms.sampling._group_data()
 
             # Update the super_index of the previous level and create
             # the Data object for the new level

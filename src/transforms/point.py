@@ -58,14 +58,25 @@ class PointFeatures(Transform):
     :param k_min_search: int
         Minimum neighborhood size used when searching the optimal
         neighborhood size. It is advised to use a value of 10 or higher.
+    :param overwrite: bool
+        When False, attributes of the input Data which are in `keys`
+        will not be updated with the here-computed features. An
+        exception to this rule is 'rgb' for which we always enforce
+        [0, 1] float encoding
     """
 
     def __init__(
-            self, keys=None, k_min=5, k_step=-1, k_min_search=25):
+            self,
+            keys=None,
+            k_min=5,
+            k_step=-1,
+            k_min_search=25,
+            overwrite=True):
         self.keys = sanitize_keys(keys, default=POINT_FEATURES)
         self.k_min = k_min
         self.k_step = k_step
         self.k_min_search = k_min_search
+        self.overwrite = overwrite
 
     def _process(self, data):
         assert data.has_neighbors, \
@@ -75,9 +86,17 @@ class PointFeatures(Transform):
         assert data.neighbor_index.max() < np.iinfo(np.uint32).max, \
             "Too high 'neighbor_index' indices for `uint32` indices"
 
+        # Build the set of keys that must be computed/updated. In
+        # particular, if `overwrite=False`, we do not modify
+        # already-existing keys in the input Data. With the exception of
+        # 'rgb', for which we always enforce [0, 1] float encoding
+        keys = set(self.keys) if self.overwrite \
+            else set(self.keys) - set(data.keys)
+
         # Add RGB to the features. If colors are stored in int, we
         # assume they are encoded in  [0, 255] and normalize them.
         # Otherwise, we assume they have already been [0, 1] normalized
+        # NB: we ignore 'overwrite' for this key
         if 'rgb' in self.keys and data.rgb is not None:
             data.rgb = to_float_rgb(data.rgb)
 
@@ -86,7 +105,7 @@ class PointFeatures(Transform):
         # Otherwise, we assume they have already been [0, 1] normalized.
         # Note: for all features to live in a similar range, we
         # normalize H in [0, 1]
-        if 'hsv' in self.keys and data.rgb is not None:
+        if 'hsv' in keys and data.rgb is not None:
             hsv = rgb2hsv(to_float_rgb(data.rgb))
             hsv[:, 0] /= 360.
             data.hsv = hsv
@@ -96,7 +115,7 @@ class PointFeatures(Transform):
         # Otherwise, we assume they have already been [0, 1] normalized.
         # Note: for all features to live in a similar range, we
         # normalize L in [0, 1] and ab in [-1, 1]
-        if 'lab' in self.keys and data.rgb is not None:
+        if 'lab' in keys and data.rgb is not None:
             data.lab = rgb2lab(to_float_rgb(data.rgb)) / 100
 
         # Add local surfacic density to the features. The local density
@@ -105,18 +124,18 @@ class PointFeatures(Transform):
         # normalize by D² since points roughly lie on a 2D manifold.
         # Note that this takes into account partial neighborhoods where
         # -1 indicates absent neighbors
-        if 'density' in self.keys:
+        if 'density' in keys:
             dmax = data.neighbor_distance.max(dim=1).values
             k = data.neighbor_index.ge(0).sum(dim=1)
             data.density = (k / dmax ** 2).view(-1, 1)
 
         # Add local geometric features
         needs_geof = any((
-            'linearity' in self.keys,
-            'planarity' in self.keys,
-            'scattering' in self.keys,
-            'verticality' in self.keys,
-            'normal' in self.keys))
+            'linearity' in keys,
+            'planarity' in keys,
+            'scattering' in keys,
+            'verticality' in keys,
+            'normal' in keys))
         if needs_geof and data.pos is not None:
 
             # Prepare data for numpy boost interface. Note: we add each
@@ -152,36 +171,36 @@ class PointFeatures(Transform):
             f = torch.from_numpy(f.astype('float32'))
 
             # Keep only required features
-            if 'linearity' in self.keys:
+            if 'linearity' in keys:
                 data.linearity = f[:, 0].view(-1, 1).to(device)
 
-            if 'planarity' in self.keys:
+            if 'planarity' in keys:
                 data.planarity = f[:, 1].view(-1, 1).to(device)
 
-            if 'scattering' in self.keys:
+            if 'scattering' in keys:
                 data.scattering = f[:, 2].view(-1, 1).to(device)
 
             # Heuristic to increase importance of verticality in
             # partition
-            if 'verticality' in self.keys:
+            if 'verticality' in keys:
                 data.verticality = f[:, 3].view(-1, 1).to(device)
                 data.verticality *= 2
 
-            if 'curvature' in self.keys:
+            if 'curvature' in keys:
                 data.curvature = f[:, 10].view(-1, 1).to(device)
 
-            if 'length' in self.keys:
+            if 'length' in keys:
                 data.length = f[:, 7].view(-1, 1).to(device)
 
-            if 'surface' in self.keys:
+            if 'surface' in keys:
                 data.surface = f[:, 8].view(-1, 1).to(device)
 
-            if 'volume' in self.keys:
+            if 'volume' in keys:
                 data.volume = f[:, 9].view(-1, 1).to(device)
 
             # As a way to "stabilize" the normals' orientation, we
             # choose to express them as oriented in the z+ half-space
-            if 'normal' in self.keys:
+            if 'normal' in keys:
                 data.normal = f[:, 4:7].view(-1, 3).to(device)
                 data.normal[data.normal[:, 2] < 0] *= -1
 
@@ -266,7 +285,7 @@ class RoomPosition(Transform):
         # Shift XY
         pos[:, :2] -= pos[:, :2].min(dim=0).values.view(1, -1)
 
-        # Scale XYZ based on the maximum values. ie the highest point
+        # Scale XYZ based on the maximum values. i.e. the highest point
         # will be considered as the ceiling
         pos /= pos.max(dim=0).values.view(1, -1)
 

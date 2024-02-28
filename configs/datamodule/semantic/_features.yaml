@@ -1,0 +1,154 @@
+# @package datamodule
+
+# Mandatory list of handcrafted features for points, segments and edges
+# that will be used for partition and training. The rest of the config
+# will use these to interpolate other important values
+partition_hf: ???  # point features used for the partition
+point_hf: ???  # point features used for training
+segment_base_hf: ???   # segment-wise features computed at preprocessing
+segment_mean_hf: ???  # segment features computed as the mean of point feature in each segment, saved with "mean_" prefix
+segment_std_hf: ???  # segment features computed as the std of point feature in each segment, saved with "std_" prefix
+edge_hf: ???  # horizontal edge features used for training
+v_edge_hf: ???  # vertical edge features used for training
+
+# helpers to track if the on-the-fly horizontal and vertical edge
+# features computation requires features (e.g. the normal) that point
+# and segment do not need but will still need to be computed, saved and
+# loaded when relevant. These features are listed in 'extra_point_hf'
+# and 'extra_segment_hf'
+h_edge_hf_need_normal: ${eval:'("normal_angle" in ${datamodule.edge_hf}) or ("angle_source" in ${datamodule.edge_hf}) or ("angle_target" in ${datamodule.edge_hf})'}
+v_edge_hf_need_normal: ${eval:'"normal_angle" in ${datamodule.v_edge_hf}'}
+edge_hf_need_log_length: ${eval:'"log_length" in ${datamodule.edge_hf} + ${datamodule.v_edge_hf}'}
+edge_hf_need_log_surface: ${eval:'"log_surface" in ${datamodule.edge_hf} + ${datamodule.v_edge_hf}'}
+edge_hf_need_log_volume: ${eval:'"log_volume" in ${datamodule.edge_hf} + ${datamodule.v_edge_hf}'}
+edge_hf_need_log_size: ${eval:'"log_size" in ${datamodule.edge_hf} + ${datamodule.v_edge_hf}'}
+extra_point_hf: ${eval:'["normal"] * ${datamodule.v_edge_hf_need_normal}'}
+extra_segment_hf: ${eval:'["normal"] * (${datamodule.h_edge_hf_need_normal} + ${datamodule.v_edge_hf_need_normal}) + ["log_length"] * ${datamodule.edge_hf_need_log_length} + ["log_surface"] * ${datamodule.edge_hf_need_log_surface} + ["log_volume"] * ${datamodule.edge_hf_need_log_volume} + ["log_size"] * ${datamodule.edge_hf_need_log_size}'}
+
+# complete list of segment features used for training, as named in the
+# attributes after preprocessing. Even if more segment features were
+# computed at preprocessing time, only the features required by
+# 'segment_hf' will be loaded at training time
+segment_hf: ${eval:'${datamodule.segment_base_hf} + ["mean_" + x for x in ${datamodule.segment_mean_hf}] + ["std_" + x for x in ${datamodule.segment_std_hf}]'}
+
+# features that will need to be computed at preprocessing time
+# and saved to disk. If set to 'null', all supported features will be
+# computed and saved to disk. This may be useful when you are
+# experimenting with various feature combinations and do not want
+# preprocessing to be restarted for each new combination. Even if
+# more features that needed are preprocessed, only features required by
+# 'point_hf', 'segment_base_hf', 'segment_mean_hf', and 'segment_std_hf'
+# will actually be loaded at train time. Use 'lite_preprocessing' to
+# choose to only preprocess the strictly-required features if you do not
+# intend to experiment with handcrafted feature combinations a lot
+point_hf_preprocess: ${eval:'list(set( ${datamodule.partition_hf} + ${datamodule.point_hf} + ${datamodule.segment_mean_hf} + ${datamodule.segment_std_hf} + ${datamodule.extra_point_hf} )) if ${datamodule.lite_preprocessing} else None'}
+segment_base_hf_preprocess: ${eval:'list(set( ${datamodule.segment_base_hf} + ${datamodule.extra_segment_hf} )) if ${datamodule.lite_preprocessing} else None'}
+segment_mean_hf_preprocess: ${eval:'${datamodule.segment_mean_hf} if ${datamodule.lite_preprocessing} else None'}
+segment_std_hf_preprocess: ${eval:'${datamodule.segment_std_hf} if ${datamodule.lite_preprocessing} else None'}
+
+# The number of input channels for points, segments and horizontal and
+# vertical edges
+num_hf_point: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.point_hf} ])'}
+num_hf_segment: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.segment_hf} ])'}
+num_hf_edge: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.edge_hf} ])'}
+num_hf_v_edge: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.v_edge_hf} ])'}
+
+# List of level-0 (points) and level-1+ Data keys that need to be saved
+# or loaded from disk. This saves training time, loading only necessary
+# data
+obj_key: ['obj']  # key used to store instance labels, for points and segments alike
+point_full_res_key: ['sub']  # key used to store indices of full-resolution points in each for voxel
+point_save_keys: null  # level-0 keys to save on disk after preprocessing, 'null' to save all
+point_no_save_keys: ['edge_index', 'edge_attr', 'neighbor_index', 'neighbor_distance', 'node_size', 'grid_size']  # level-0 keys to NOT save on disk after preprocessing
+segment_save_keys: null  # level-1+ keys to save on disk after preprocessing, 'null' to save all
+point_basic_load_keys: ['pos', 'pos_offset', 'y', 'obj', 'super_index']  # needed point attributes, other than features
+segment_basic_load_keys: ['pos', 'y', 'super_index', 'sub', 'edge_index', 'edge_attr']  # needed segment attributes, other than features
+point_load_keys: ${eval:'list(set( ${datamodule.point_basic_load_keys} + ${datamodule.obj_key} * ${datamodule.instance} + ${datamodule.point_hf} + ${datamodule.extra_point_hf} + ${datamodule.point_full_res_key} * ${datamodule.load_full_res_idx} ))'}  # level-0 keys to load from disk after preprocessing, 'null' to load all
+segment_load_keys: ${eval:'list(set( ${datamodule.segment_basic_load_keys} + ${datamodule.obj_key} * ${datamodule.instance} + ${datamodule.segment_hf} + ${datamodule.extra_segment_hf} ))'}  # level-1+ keys to load from disk after preprocessing, 'null' to load all
+
+# Comprehensive list of feature sizes, to be used to deduce feature size
+# from name
+feat_size:
+    pos: 3
+    pos_room: 3
+    rgb: 3
+    hsv: 3
+    lab: 3
+    density: 1
+    linearity: 1
+    planarity: 1
+    scattering: 1
+    verticality: 1
+    normal: 3
+    length: 1
+    surface: 1
+    volume: 1
+    curvature: 1
+    elevation: 1
+    size: 1
+    intensity: 1
+
+    log_pos: 3
+    log_pos_room: 3
+    log_rgb: 3
+    log_hsv: 3
+    log_lab: 3
+    log_density: 1
+    log_linearity: 1
+    log_planarity: 1
+    log_scattering: 1
+    log_verticality: 1
+    log_normal: 3
+    log_length: 1
+    log_surface: 1
+    log_volume: 1
+    log_curvature: 1
+    log_elevation: 1
+    log_size: 1
+
+    mean_pos: 3
+    mean_pos_room: 3
+    mean_rgb: 3
+    mean_hsv: 3
+    mean_lab: 3
+    mean_density: 1
+    mean_linearity: 1
+    mean_planarity: 1
+    mean_scattering: 1
+    mean_verticality: 1
+    mean_normal: 3
+    mean_length: 1
+    mean_surface: 1
+    mean_volume: 1
+    mean_curvature: 1
+    mean_elevation: 1
+    mean_size: 1
+    mean_intensity: 1
+
+    std_pos: 3
+    std_pos_room: 3
+    std_rgb: 3
+    std_hsv: 3
+    std_lab: 3
+    std_density: 1
+    std_linearity: 1
+    std_planarity: 1
+    std_scattering: 1
+    std_verticality: 1
+    std_normal: 3
+    std_length: 1
+    std_surface: 1
+    std_volume: 1
+    std_curvature: 1
+    std_elevation: 1
+    std_size: 1
+    std_intensity: 1
+
+    mean_off: 3
+    std_off: 3
+    mean_dist: 1
+    angle_source: 1
+    angle_target: 1
+    centroid_dir: 3
+    centroid_dist: 1
+    normal_angle: 1

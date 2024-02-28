@@ -33,7 +33,7 @@ class LovaszLoss(_Loss):
         losses. NB: for the specific case of the Lovasz loss, the
         reduction should be the sum() and not the mean(). The complexity
         of the loss computation is such that it applying point-wise
-        weights before the reduction is likely to break the loss (ie
+        weights before the reduction is likely to break the loss (i.e.
         it is hard to define a segment-wise Lovasz loss on
         histograms...)
     :param ignore_index: int
@@ -90,7 +90,7 @@ def lovasz(
         losses. NB: for the specific case of the Lovasz loss, the
         reduction should be the sum() and not the mean(). The complexity
         of the loss computation is such that it applying point-wise
-        weights before the reduction is likely to break the loss (ie
+        weights before the reduction is likely to break the loss (i.e.
         it is hard to define a segment-wise Lovasz loss on
         histograms...)
     :param ignore_index: int

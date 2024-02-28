@@ -1,0 +1,20 @@
+# @package datamodule
+defaults:
+  - /datamodule/semantic/s3dis_nano.yaml
+
+# Whether the dataset produces instance labels. In any case, the
+# instance labels will be preprocessed, if any. However, `instance: False`
+# will avoid unwanted instance-related I/O operations, to save memory
+instance: True
+
+# Specify whether S3DIS should have only 'thing' classes (default) or if
+# 'ceiling', 'wall', and 'floor' should be treated as 'stuff'
+with_stuff: True
+
+# For now, we also need to specify the stuff labels here, not for the
+# datamodule, but rather for the model config to catch
+stuff_classes: [0, 1, 2]
+
+# Instance graph parameters
+instance_k_max: 30  # maximum number of neighbors for each superpoint in the instance graph
+instance_radius: 0.1  # maximum distance of neighbors for each superpoint in the instance graph

@@ -76,6 +76,17 @@ class BaseAttentivePool(nn.Module):
       - `_get_query()`
     """
 
+    # TODO: this module could be used for pooling from one segment level
+    #  to the next. But requires defining how. With QKV paradigm ? Then
+    #  how to define Q for superpoints ? from max-pooled/mean-pooled
+    #  features ? from handcrafted features ? If not QKV, simply have a
+    #  FFN predict (multi-headed) attention scores to be softmaxed ? How
+    #  to guide pooling from the above level (same pb as for qkv) ?
+
+    # TODO: see torch_geometric SoftmaxAggregation and
+    #  AttentionalAggregation for possibilities. Among which, a
+    #  learnable softmax temperature
+
     def __init__(
             self,
             dim=None,
@@ -169,6 +180,13 @@ class BaseAttentivePool(nn.Module):
         # Apply scaling on the queries
         q = q * self.qk_scale(index)
 
+        # TODO: add the relative positional encodings to the
+        #  compatibilities here
+        #  - k_rpe, q_rpe, v_rpe
+        #  - pos difference, absolute distance, squared distance, centroid distance, edge distance, ...
+        #  - with/out edge attributes
+        #  - mlp (L-LN-A-L), learnable lookup table (see Stratified Transformer)
+        #  - scalar rpe, vector rpe (see Stratified Transformer)
         if self.k_rpe is not None:
             rpe = self.k_rpe(edge_attr)
 
@@ -217,7 +235,7 @@ class BaseAttentivePool(nn.Module):
         :param x_parent: Tensor of shape (Np, Cp)
             Node features for the parent nodes
 
-        :returns Tensor of shape (Np, D * H)
+        :return: Tensor of shape (Np, D * H)
         """
         raise NotImplementedError
 
@@ -260,7 +278,7 @@ class AttentivePool(BaseAttentivePool):
             heads_share_rpe=heads_share_rpe)
 
         # Queries will be built from input parent feature
-        self.q = nn.Linear(q_in_dim, qk_dim * num_heads, bias=qkv_bias)
+        self.q = nn.Linear(q_in_dim, qk_dim * num_heads, bias=qkv_bias)  # TODO: use FFN heare to deal with handcrafted features
 
     def _get_query(self, x_parent):
         """Build queries from input parent features
@@ -268,7 +286,7 @@ class AttentivePool(BaseAttentivePool):
         :param x_parent: Tensor of shape (Np, Cp)
             Node features for the parent nodes
 
-        :returns Tensor of shape (Np, D * H)
+        :return: Tensor of shape (Np, D * H)
         """
         return self.q(x_parent)  # [Np, DH]
 
@@ -323,7 +341,7 @@ class AttentivePoolWithLearntQueries(BaseAttentivePool):
         :param x_parent: Tensor of shape (Np, Cp)
             Node features for the parent nodes
 
-        :returns Tensor of shape (Np, D * H)
+        :return: Tensor of shape (Np, D * H)
         """
         Np = x_parent.shape[0]
         return self.q.repeat(Np, 1)

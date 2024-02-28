@@ -1,0 +1,6 @@
+# @package model
+defaults:
+  - /model/semantic/spt-3.yaml
+
+net:
+  nano: True

@@ -51,7 +51,7 @@ class Cast(Transform):
     def _process(self, data):
         for k in data.keys:
 
-            # Recursively deal with CSRData attributes (eg Cluster for
+            # Recursively deal with CSRData attributes (e.g. Cluster for
             # 'sub' key)
             if isinstance(data[k], CSRData):
                 values = []

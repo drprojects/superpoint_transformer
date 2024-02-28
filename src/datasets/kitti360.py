@@ -8,10 +8,11 @@ from zipfile import ZipFile
 from plyfile import PlyData
 from torch_geometric.data.extract import extract_zip
 from src.datasets import BaseDataset
-from src.data import Data
+from src.data import Data, InstanceData
 from src.datasets.kitti360_config import *
 from src.utils.neighbors import knn_2
 from src.utils.color import to_float_rgb
+from torch_geometric.nn.pool.consecutive import consecutive_cluster
 
 
 DIR = os.path.dirname(os.path.realpath(__file__))
@@ -33,17 +34,37 @@ __all__ = ['KITTI360', 'MiniKITTI360']
 ########################################################################
 
 def read_kitti360_window(
-        filepath, xyz=True, rgb=True, semantic=True, instance=False,
+        filepath, xyz=True, rgb=True, semantic=True, instance=True,
         remap=False):
+    """Read a KITTI-360 window –i.e. a tile– saved as PLY.
+
+    :param filepath: str
+        Absolute path to the PLY file
+    :param xyz: bool
+        Whether XYZ coordinates should be saved in the output Data.pos
+    :param rgb: bool
+        Whether RGB colors should be saved in the output Data.rgb
+    :param semantic: bool
+        Whether semantic labels should be saved in the output Data.y
+    :param instance: bool
+        Whether instance labels should be saved in the output Data.obj
+    :param remap: bool
+        Whether semantic labels should be mapped from their KITTI-360 ID
+        to their train ID. For more details, see:
+        https://github.com/autonomousvision/kitti360Scripts/blob/master/kitti360scripts/evaluation/semantic_3d/evalPointLevelSemanticLabeling.py
+    """
     data = Data()
     with open(filepath, "rb") as f:
         window = PlyData.read(f)
         attributes = [p.name for p in window['vertex'].properties]
 
         if xyz:
-            data.pos = torch.stack([
+            pos = torch.stack([
                 torch.FloatTensor(window["vertex"][axis])
                 for axis in ["x", "y", "z"]], dim=-1)
+            pos_offset = pos[0]
+            data.pos = pos - pos_offset
+            data.pos_offset = pos_offset
 
         if rgb:
             data.rgb = to_float_rgb(torch.stack([
@@ -55,7 +76,15 @@ def read_kitti360_window(
             data.y = torch.from_numpy(ID2TRAINID)[y] if remap else y
 
         if instance and 'instance' in attributes:
-            data.instance = torch.LongTensor(window["vertex"]['instance'])
+            idx = torch.arange(data.num_points)
+            obj = torch.LongTensor(window["vertex"]['instance'])
+            # is_stuff = obj % 1000 == 0
+            # obj[is_stuff] = 0
+            obj = consecutive_cluster(obj)[0]
+            count = torch.ones_like(obj)
+            y = torch.LongTensor(window["vertex"]['semantic'])
+            y = torch.from_numpy(ID2TRAINID)[y] if remap else y
+            data.obj = InstanceData(idx, obj, count, y, dense=True)
 
     return data
 
@@ -94,21 +123,50 @@ class KITTI360(BaseDataset):
 
     @property
     def class_names(self):
-        """List of string names for dataset classes. This list may be
-        one-item larger than `self.num_classes` if the last label
-        corresponds to 'unlabelled' or 'ignored' indices, indicated as
-        `-1` in the dataset labels.
+        """List of string names for dataset classes. This list must be
+        one-item larger than `self.num_classes`, with the last label
+        corresponding to 'void', 'unlabelled', 'ignored' classes,
+        indicated as `y=self.num_classes` in the dataset labels.
         """
         return CLASS_NAMES
 
     @property
     def num_classes(self):
-        """Number of classes in the dataset. May be one-item smaller
+        """Number of classes in the dataset. Must be one-item smaller
         than `self.class_names`, to account for the last class name
-        being optionally used for 'unlabelled' or 'ignored' classes,
-        indicated as `-1` in the dataset labels.
+        being used for 'void', 'unlabelled', 'ignored' classes,
+        indicated as `y=self.num_classes` in the dataset labels.
         """
         return KITTI360_NUM_CLASSES
+
+    @property
+    def stuff_classes(self):
+        """List of 'stuff' labels for INSTANCE and PANOPTIC
+        SEGMENTATION (setting this is NOT REQUIRED FOR SEMANTIC
+        SEGMENTATION alone). By definition, 'stuff' labels are labels in
+        `[0, self.num_classes-1]` which are not 'thing' labels.
+
+        In instance segmentation, 'stuff' classes are not taken into
+        account in performance metrics computation.
+
+        In panoptic segmentation, 'stuff' classes are taken into account
+        in performance metrics computation. Besides, each cloud/scene
+        can only have at most one instance of each 'stuff' class.
+
+        IMPORTANT:
+        By convention, we assume `y ∈ [0, self.num_classes-1]` ARE ALL
+        VALID LABELS (i.e. not 'ignored', 'void', 'unknown', etc), while
+        `y < 0` AND `y >= self.num_classes` ARE VOID LABELS.
+        """
+        return STUFF_CLASSES
+
+    @property
+    def class_colors(self):
+        """Colors for visualization, if not None, must have the same
+        length as `self.num_classes`. If None, the visualizer will use
+        the label values in the data to generate random colors.
+        """
+        return CLASS_COLORS
 
     @property
     def all_base_cloud_ids(self):
@@ -136,7 +194,7 @@ class KITTI360(BaseDataset):
             log.error(
                 f"\nKITTI-360 does not support automatic download.\n"
                 f"Please go to the official webpage {self._form_url}, "
-                f"manually download the '{msg}' (ie '{zip_name}') to your "
+                f"manually download the '{msg}' (i.e. '{zip_name}') to your "
                 f"'{self.root}/' directory, and re-run.\n"
                 f"The dataset will automatically be unzipped into the "
                 f"following structure:\n"
@@ -155,11 +213,24 @@ class KITTI360(BaseDataset):
         shutil.rmtree(osp.join(self.raw_dir, 'data_3d_semantics', stage))
 
     def read_single_raw_cloud(self, raw_cloud_path):
-        """Read a single raw cloud and return a Data object, ready to
+        """Read a single raw cloud and return a `Data` object, ready to
         be passed to `self.pre_transform`.
+
+        This `Data` object should contain the following attributes:
+          - `pos`: point coordinates
+          - `y`: OPTIONAL point semantic label
+          - `obj`: OPTIONAL `InstanceData` object with instance labels
+          - `rgb`: OPTIONAL point color
+          - `intensity`: OPTIONAL point LiDAR intensity
+
+        IMPORTANT:
+        By convention, we assume `y ∈ [0, self.num_classes-1]` ARE ALL
+        VALID LABELS (i.e. not 'ignored', 'void', 'unknown', etc),
+        while `y < 0` AND `y >= self.num_classes` ARE VOID LABELS.
+        This applies to both `Data.y` and `Data.obj.y`.
         """
         return read_kitti360_window(
-            raw_cloud_path, semantic=True, instance=False, remap=True)
+            raw_cloud_path, semantic=True, instance=True, remap=True)
 
     @property
     def raw_file_structure(self):
@@ -218,6 +289,10 @@ class KITTI360(BaseDataset):
                 f'The submission predictions must be 1D tensors, '
                 f'received {type(pred)} of shape {pred.shape} instead.')
 
+        # TODO:
+        #  - handle tiling
+        #  - handle geometric transformations of test data, shuffling of points and of tiles in the dataloader
+        #  - handle multiple tiles in the dataloader...
         # Initialize the submission directory
         submission_dir = submission_dir or self.submission_dir
         if not osp.exists(submission_dir):
@@ -226,7 +301,7 @@ class KITTI360(BaseDataset):
         # Read the raw point cloud
         raw_path = osp.join(
             self.raw_dir, self.id_to_relative_raw_path(self.cloud_ids[idx]))
-        data_raw = self.read_single_raw_cloud(raw_path)
+        data_raw = self.sanitized_read_single_raw_cloud(raw_path)
 
         # Search the nearest neighbor of each point and apply the
         # neighbor's class to the points

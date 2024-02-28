@@ -1,11 +1,12 @@
 import torch
 import numpy as np
 from colorhash import ColorHash
+from plotly.colors import sample_colorscale, get_colorscale
 
 
 __all__ = [
     'to_float_rgb', 'to_byte_rgb', 'rgb_to_plotly_rgb', 'int_to_plotly_rgb',
-    'hex_to_tensor', 'feats_to_rgb', 'identity_PCA']
+    'hex_to_tensor', 'feats_to_plotly_rgb', 'identity_PCA']
 
 
 def to_float_rgb(rgb):
@@ -42,7 +43,7 @@ def rgb_to_plotly_rgb(rgb, alpha=None):
             f'max={rgb.max()}')
 
     if alpha is None:
-        return np.array([f"rgb{tuple(x)}" for x in rgb])
+        return np.array([x for x in rgb])
 
     if isinstance(alpha, (int, float)):
         alpha = np.array([alpha] * rgb.shape[0])
@@ -53,7 +54,7 @@ def rgb_to_plotly_rgb(rgb, alpha=None):
     assert alpha.shape[0] == rgb.shape[0]
 
     return np.array([
-        f"rgba({x[0]}, {x[1]}, {x[1]}, {a})" for x, a in zip(rgb, alpha)])
+        [x[0], x[1], x[1], a] for x, a in zip(rgb, alpha)])
 
 
 def int_to_plotly_rgb(x):
@@ -74,11 +75,12 @@ def hex_to_tensor(h):
     return to_float_rgb(torch.tensor(rgb))
 
 
-def feats_to_rgb(feats, normalize=False):
+def feats_to_plotly_rgb(feats, normalize=False, colorscale='Agsunset'):
     """Convert features of the format M x N with N>=1 to an M x 3
     tensor with values in [0, 1 for RGB visualization].
     """
     is_normalized = False
+    is_plotly_rgb_string_format = False
 
     if feats.dim() == 1:
         feats = feats.unsqueeze(1)
@@ -90,8 +92,14 @@ def feats_to_rgb(feats, normalize=False):
 
     elif feats.shape[1] == 1:
         # If only 1 feature is found convert to a 3-channel
-        # repetition for grayscale visualization.
-        color = feats.repeat_interleave(3, 1)
+        # repetition for grayscale visualization or to plotly RGB string
+        # format if a colorscale was provided
+        if colorscale is None:
+            color = feats.repeat_interleave(3, 1)
+        else:
+            color = np.array(sample_colorscale(
+                get_colorscale(colorscale), feats.squeeze().numpy()))
+            is_plotly_rgb_string_format = True
 
     elif feats.shape[1] == 2:
         # If 2 features are found, add an extra channel.
@@ -107,13 +115,17 @@ def feats_to_rgb(feats, normalize=False):
         color = (torch.clamp(color, -0.5, 0.6) + 0.5) / 1.1
         is_normalized = True
 
-    if normalize and not is_normalized:
+    if normalize and not is_normalized and not is_plotly_rgb_string_format:
         # Unit-normalize the features in a hypercube of shared scale
         # for nicer visualizations
         high = color.max(dim=0).values
         low = color.min(dim=0).values
         color = (color - low) / (high - low)
         color[color.isnan() | color.isinf()] = 0
+
+    # Convert to RGB-255 plotly-friendly numpy format
+    if not is_plotly_rgb_string_format:
+        color = rgb_to_plotly_rgb(color)
 
     return color
 

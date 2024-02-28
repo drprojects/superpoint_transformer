@@ -66,8 +66,7 @@ def has_duplicates(a: torch.LongTensor):
 
 def is_dense(a: torch.LongTensor):
     """Checks whether a 1D tensor of indices contains dense indices.
-    That is to say all values in [a.min(), a.max] appear at least once
-    in a.
+    That is to say all values in [0, a.max] appear at least once in a.
     """
     assert a.dim() == 1, "Only supports 1D tensors"
     assert not a.is_floating_point(), "Float tensors are not supported"
@@ -162,7 +161,7 @@ def cast_to_optimal_integer_type(a):
 
     if a.numel() == 0:
         return a.byte()
-    
+
     for dtype in [torch.uint8, torch.int16, torch.int32, torch.int64]:
         low_enough = torch.iinfo(dtype).min <= a.min()
         high_enough = a.max() <= torch.iinfo(dtype).max
@@ -215,6 +214,7 @@ def torch_to_numpy(func):
     :param func:
     :return:
     """
+    #TODO: handle input and output device
 
     def wrapper_torch_to_numba(*args, **kwargs):
         args_numba = [numpyfy(x) for x in args]

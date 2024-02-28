@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import src
 from src.utils import tensor_idx, is_sorted, indices_to_pointers, \
-    sizes_to_pointers
+    sizes_to_pointers, fast_repeat
 
 
 __all__ = ['CSRData', 'CSRBatch']
@@ -55,7 +55,7 @@ class CSRData:
         #     "pointer indices must cover at least one group."
         assert self.pointers[0] == 0, \
             "The first pointer element must always be 0."
-        assert torch.all(self.pointers[1:] - self.pointers[:-1] >= 0), \
+        assert torch.all(self.sizes >= 0), \
             "pointer indices must be increasing."
 
         if self.values is not None:
@@ -118,18 +118,27 @@ class CSRData:
         return self.pointers[-1]
 
     @property
-    def size(self):
+    def sizes(self):
+        """Returns the size of each group (i.e. the pointer jumps).
+        """
         return self.pointers[1:] - self.pointers[:-1]
+
+    @property
+    def indices(self):
+        """Returns the dense indices corresponding to the pointers.
+        """
+        return fast_repeat(
+            torch.arange(self.num_groups, device=self.device), self.sizes)
 
     @staticmethod
     def get_batch_type():
-        """Required by CSRBatch.from_csr_list."""
+        """Required by CSRBatch.from_list."""
         return CSRBatch
 
     def clone(self):
         """Shallow copy of self. This may cause issues for certain types
-        of downstream operations but it saves time and memory. In
-        practice, it shouldn't in this project.
+        of downstream operations, but it saves time and memory. In
+        practice, it shouldn't be problematic in this project.
         """
         out = copy.copy(self)
         out.pointers = copy.copy(self.pointers)
@@ -292,6 +301,12 @@ class CSRData:
                 return False
         return True
 
+    def __hash__(self):
+        """Hashing for an CSRData.
+        """
+        return hash((
+            self.__class__.__name__, self.pointers, *(v for v in self.values)))
+
 
 class CSRBatch(CSRData):
     """
@@ -307,7 +322,7 @@ class CSRBatch(CSRData):
 
     def __init__(self, pointers, *args, dense=False, is_index_value=None):
         """Basic constructor for a CSRBatch. Batches are rather
-        intended to be built using the from_csr_list() method.
+        intended to be built using the from_list() method.
         """
         super(CSRBatch, self).__init__(
             pointers, *args, dense=dense, is_index_value=is_index_value)
@@ -334,7 +349,7 @@ class CSRBatch(CSRData):
         return out
 
     @staticmethod
-    def from_csr_list(csr_list):
+    def from_list(csr_list):
         assert isinstance(csr_list, list) and len(csr_list) > 0
         assert isinstance(csr_list[0], CSRData), \
             "All provided items must be CSRData objects."
@@ -377,7 +392,7 @@ class CSRBatch(CSRData):
         for i in range(num_values):
             val_list = [csr.values[i] for csr in csr_list]
             if isinstance(csr_list[0].values[i], CSRData):
-                val = CSRBatch.from_csr_list(val_list)
+                val = CSRBatch.from_list(val_list)
             elif is_index_value[i]:
                 # "Index" values are stacked with updated indices.
                 # For Clusters, this implies all point indices are
@@ -405,11 +420,11 @@ class CSRBatch(CSRData):
 
         return batch
 
-    def to_csr_list(self):
+    def to_list(self):
         if self.__sizes__ is None:
             raise RuntimeError(
                 'Cannot reconstruct CSRData data list from batch because the '
-                'CSRBatch was not created using `CSRBatch.from_csr_list()`.')
+                'CSRBatch was not created using `CSRBatch.from_list()`.')
 
         group_pointers = self.batch_pointers
         item_pointers = self.pointers[group_pointers]

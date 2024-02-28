@@ -145,7 +145,7 @@ def sparse_sample(idx, n_max=32, n_min=1, mask=None, return_pointers=False):
         Maximum number of elements to sample in each segment
     :param n_min: int
         Minimum number of elements to sample in each segment, within the
-        limits of its size (ie no oversampling)
+        limits of its size (i.e. no oversampling)
     :param mask: list, np.ndarray, torch.Tensor
         Indicates a subset of elements to consider. This allows ignoring
         some segments
@@ -200,6 +200,10 @@ def sparse_sample(idx, n_max=32, n_min=1, mask=None, return_pointers=False):
     if src.is_debug_enabled():
         assert n_samples.le(size).all(), \
             "Cannot sample more than the segment sizes."
+
+    # TODO: IMPORTANT the randperm-sort approach here is a huge
+    #  BOTTLENECK for the sampling operation on CPU. Can we do any
+    #  better ?
 
     # Shuffle the order of elements to introduce randomness
     perm = fast_randperm(sample_idx.shape[0], device=device)

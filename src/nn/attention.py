@@ -63,7 +63,15 @@ class SelfAttentionBlock(nn.Module):
         self.qk_dim = qk_dim
         self.qk_scale = build_qk_scale_func(dim, num_heads, qk_scale)
         self.heads_share_rpe = heads_share_rpe
-        self.qkv = nn.Linear(dim, qk_dim * 2 * num_heads + dim, bias=qkv_bias)
+
+        self.qkv = nn.Linear(dim, qk_dim * 2 * num_heads + dim, bias=qkv_bias)  # TODO: only 1 value for all heads ?
+
+        # TODO: define relative positional encoding parameters and
+        #  truncated-normal initialize them, see Swin-T implementation:
+        #  https://github.com/microsoft/Swin-Transformer/blob/e43ac64ce8abfe133ae582741ccaf6761eea05f7/models/swin_transformer.py#L122
+
+        # TODO: k/q/v RPE, pos/edge attr/both RPE, MLP/vector attention,
+        #  mlp on pos/learnable lookup table/FFN/learnable FFN...
 
         # Build the RPE encoders, with the option of sharing weights
         # across all heads
@@ -159,6 +167,13 @@ class SelfAttentionBlock(nn.Module):
         # Apply scaling on the queries.
         q = q * self.qk_scale(s)
 
+        # TODO: add the relative positional encodings to the
+        #  compatibilities here
+        #  - k_rpe, q_rpe, v_rpe
+        #  - pos difference, absolute distance, squared distance, centroid distance, edge distance, ...
+        #  - with/out edge attributes
+        #  - mlp (L-LN-A-L), learnable lookup table (see Stratified Transformer)
+        #  - scalar rpe, vector rpe (see Stratified Transformer)
         if self.k_rpe is not None and edge_attr is not None:
             rpe = self.k_rpe(edge_attr)
 

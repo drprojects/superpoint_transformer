@@ -1,0 +1,67 @@
+# @package model
+
+_target_: src.models.panoptic.PanopticSegmentationModule
+
+# Stuff class indices must be specified for instantiation.
+# Concretely, stuff_classes is recovered from the datamodule config
+stuff_classes: ${datamodule.stuff_classes}
+
+# Minimum size for an instance to be taken into account in the instance
+# segmentation metrics
+min_instance_size: ${datamodule.min_instance_size}
+
+# Make the point encoder slightly smaller than for the default SPT. This
+# may slightly affect semantic segmentation results but allows fitting
+# into 32G with the edge affinity head
+_point_mlp: [32, 64, 64]  # point encoder layers
+
+# Edge affinity prediction head for instance/panoptic graph clustering.
+# Importantly, we pass `dims` to characterize the MLP layers. The size
+# of the first layer is directly computed from the config
+edge_affinity_head:
+  _target_: src.nn.MLP
+  dims: ${eval:'[ ${model._up_dim}[-1] * 2, 32, 16, 1 ]'}
+  activation:
+    _target_: torch.nn.LeakyReLU
+  norm: null
+  last_norm: False
+  last_activation: False
+
+# Instance/panoptic partitioner module. See the `InstancePartitioner`
+# documentation for more details on the available parameters
+partitioner:
+  _target_: src.nn.instance.InstancePartitioner
+
+# Frequency at which the partition should be computed. If lower or equal
+# to 0, the partition will only be computed at the last training epoch
+partition_every_n_epoch: -1
+
+# If True, the instance metrics will never be computed. If only panoptic
+# metrics are of interest, this can save considerable training and
+# evaluation time, as instance metrics computation is relatively slow
+no_instance_metrics: True
+
+# If True, the instance segmentation metrics will not be computed on the
+# train set. This allows saving some computation and training time
+no_instance_metrics_on_train_set: True
+
+# Edge affinity loss
+edge_affinity_criterion:
+  _target_: src.loss.BCEWithLogitsLoss
+  weight: null
+
+# Weights for insisting on certain cases in the edge affinity loss:
+#  - 0: same-class same-object edges
+#  - 1: same-class different-object edges
+#  - 2: different-class same-object edges
+#  - 3: different-class different-object edges
+edge_affinity_loss_weights: [1, 1, 1, 1]
+
+# Node offset loss
+node_offset_criterion:
+  _target_: src.loss.WeightedL2Loss
+
+# Weights for combining the semantic segmentation loss with the node
+# offset and edge affinity losses
+edge_affinity_loss_lambda: 1
+node_offset_loss_lambda: 1

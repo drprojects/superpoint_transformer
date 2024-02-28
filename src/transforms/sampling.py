@@ -7,8 +7,8 @@ from torch_scatter import scatter_mean
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
 from src.utils import fast_randperm, sparse_sample, scatter_pca, sanitize_keys
 from src.transforms import Transform
-from src.data import Data, NAG, NAGBatch
-from src.utils.metrics import atomic_to_histogram
+from src.data import Data, NAG, NAGBatch, CSRData, InstanceData, Cluster
+from src.utils.histogram import atomic_to_histogram
 
 
 __all__ = [
@@ -31,16 +31,14 @@ class SaveNodeIndex(Transform):
     allows tracking nodes from the output back to the input Data object.
     """
 
-    KEY = 'node_id'
+    DEFAULT_KEY = 'node_id'
 
     def __init__(self, key=None):
-        self.KEY = key if key is not None else self.KEY
+        self.key = key if key is not None else self.DEFAULT_KEY
 
     def _process(self, data):
-        if hasattr(data, self.KEY):
-            return data
-
-        setattr(data, self.KEY, torch.arange(0, data.pos.shape[0]))
+        idx = torch.arange(0, data.pos.shape[0], device=data.device)
+        setattr(data, self.key, idx)
         return data
 
 
@@ -52,7 +50,7 @@ class NAGSaveNodeIndex(SaveNodeIndex):
     _OUT_TYPE = NAG
 
     def _process(self, nag):
-        transform = SaveNodeIndex(key=self.KEY)
+        transform = SaveNodeIndex(key=self.key)
         for i_level in range(nag.num_levels):
             nag._list[i_level] = transform(nag._list[i_level])
         return nag
@@ -60,6 +58,20 @@ class NAGSaveNodeIndex(SaveNodeIndex):
 
 class GridSampling3D(Transform):
     """ Clusters 3D points into voxels with size :attr:`size`.
+
+    By default, some special keys undergo dedicated grouping mechanisms.
+    The `_VOTING_KEYS=['y', 'super_index', 'is_val']` keys are grouped
+    by their majority label. The `_INSTANCE_KEYS=['obj']` keys are
+    grouped into an InstanceData, which stores all values in CSR format.
+    The `_LAST_KEYS = ['batch', SaveNodeIndex.DEFAULT_KEY]` keys are by
+    default grouped following `mode='last'`.
+
+    Besides, for keys where a more subtle histogram mechanism is needed,
+    (e.g. for 'y'), the 'hist_key' and 'hist_size' arguments can be
+    used.
+
+    Modified from: https://github.com/torch-points3d/torch-points3d
+
     Parameters
     ----------
     size: float
@@ -112,8 +124,9 @@ class GridSampling3D(Transform):
 
         if verbose:
             print(
-                "If you need to keep track of the position of your points, use "
-                "SaveNodeIndex transform before using GridSampling3D.")
+                f"If you need to keep track of the position of your points, "
+                f"use SaveNodeIndex transform before using "
+                f"{self.__class__.__name__}.")
 
             if self.mode == "last":
                 print(
@@ -167,22 +180,35 @@ def _group_data(
     """Group data based on indices in cluster. The option ``mode``
     controls how data gets aggregated within each cluster.
 
-    Warning: this modifies the input Data object in-place
+    By default, some special keys undergo dedicated grouping mechanisms.
+    The `_VOTING_KEYS=['y', 'super_index', 'is_val']` keys are grouped
+    by their majority label. The `_INSTANCE_KEYS=['obj']` keys are
+    grouped into an `InstanceData`, which stores all instance/panoptic
+    overlap data values in CSR format. The `_CLUSTER_KEYS=['point_id']` 
+    keys are grouped into a `Cluster` object, which stores indices of 
+    child elements for parent clusters in CSR format. The 
+    `_LAST_KEYS = ['batch', SaveNodeIndex.DEFAULT_KEY]` keys are by
+    default grouped following `mode='last'`.
+
+    Besides, for keys where a more subtle histogram mechanism is needed,
+    (e.g. for 'y'), the 'bins' argument can be used.
+
+    Warning: this function modifies the input Data object in-place.
 
     :param data : Data
-    :param cluster : torch.Tensor
+    :param cluster : Tensor
         Tensor of the same size as the number of points in data. Each
         element is the cluster index of that point.
-    :param unique_pos_indices : torch.tensor
+    :param unique_pos_indices : Tensor
         Tensor containing one index per cluster, this index will be used
-        to select features and labels
+        to select features and labels.
     :param mode : str
         Option to select how the features and labels for each voxel is
         computed. Can be ``last`` or ``mean``. ``last`` selects the last
         point falling in a voxel as the representative, ``mean`` takes
         the average.
     :param skip_keys: list
-        Keys of attributes to skip in the grouping
+        Keys of attributes to skip in the grouping.
     :param bins: dict
         Dictionary holding ``{'key': n_bins}`` where ``key`` is a Data
         attribute for which we would like to aggregate values into an
@@ -194,10 +220,22 @@ def _group_data(
     skip_keys = sanitize_keys(skip_keys, default=[])
 
     # Keys for which voxel aggregation will be based on majority voting
-    _VOTING_KEYS = ['y', 'instance_labels', 'super_index', 'is_val']
+    _VOTING_KEYS = ['y', 'obj', 'super_index', 'is_val']
+
+    # Keys for which voxel aggregation will use an InstanceData object,
+    # which store all input information in CSR format
+    _INSTANCE_KEYS = ['obj']
+
+    # Keys for which voxel aggregation will use a Cluster object, which 
+    # store all input information in CSR format
+    _CLUSTER_KEYS = ['sub']
 
     # Keys for which voxel aggregation will be based on majority voting
-    _LAST_KEYS = ['batch', SaveNodeIndex.KEY]
+    _LAST_KEYS = ['batch', SaveNodeIndex.DEFAULT_KEY]
+
+    # Keys to be treated as normal vectors, for which the unit-norm must
+    # be preserved
+    _NORMAL_KEYS = ['normal']
 
     # Supported mode for aggregation
     _MODES = ['mean', 'last']
@@ -222,10 +260,37 @@ def _group_data(
 
         # Edges cannot be aggregated
         if bool(re.search('edge', key)):
-            raise ValueError("Edges not supported. Wrong data type.")
+            raise NotImplementedError("Edges not supported. Wrong data type.")
 
-        if key == 'sub':
-            raise ValueError("'sub' not supported. Wrong data type.")
+        # For instance labels grouped into an InstanceData. Supports
+        # input instance labels either as InstanceData or as a simple
+        # index tensor
+        if key in _INSTANCE_KEYS:
+            if isinstance(item, InstanceData):
+                data[key] = item.merge(cluster)
+            else:
+                count = torch.ones_like(item)
+                y = data.y if getattr(data, 'y', None) is not None \
+                    else torch.zeros_like(item)
+                data[key] = InstanceData(cluster, item, count, y, dense=True)
+            continue
+        
+        # For point indices to be grouped in Cluster. This allows 
+        # backtracking full-resolution point indices to the voxels
+        if key in _CLUSTER_KEYS:
+            if (isinstance(item, torch.Tensor) and item.dim() == 1
+                    and not item.is_floating_point()):
+                data[key] = Cluster(cluster, item, dense=True)
+            else:
+                raise NotImplementedError(
+                    f"Cannot merge '{key}' with data type: {type(item)} into "
+                    f"a Cluster object. Only supports 1D Tensor of integers.")
+            continue
+
+        # TODO: adapt to make use of CSRData batching ?
+        if isinstance(item, CSRData):
+            raise NotImplementedError(
+                f"Cannot merge '{key}' with data type: {type(item)}")
 
         # Only torch.Tensor attributes of size Data.num_nodes are
         # considered for aggregation
@@ -259,6 +324,10 @@ def _group_data(
         # averaged across the clusters
         else:
             data[key] = scatter_mean(item, cluster, dim=0)
+
+        # For normals, make sure to re-normalize the mean-normal
+        if key in _NORMAL_KEYS:
+            data[key] = data[key] / data[key].norm(dim=1).view(-1, 1)
 
         # Convert back to boolean if need be
         if is_item_bool:
@@ -405,7 +474,7 @@ class SampleSubNodes(Transform):
     :param low: int
         Partition level we will sample from, guided by the `high`
         segments. By default, `high=0` to sample the level-0 points.
-        `low=-1` is accepted when level-0 has a `sub` attribute (ie
+        `low=-1` is accepted when level-0 has a `sub` attribute (i.e.
         level-0 points are themselves segments of `-1` level absent
         from the NAG object).
     :param n_max: int
@@ -413,7 +482,7 @@ class SampleSubNodes(Transform):
         `high`-level segment
     :param n_min: int
         Minimum number of `low`-level elements to sample in each
-        `high`-level segment, within the limits of its size (ie no
+        `high`-level segment, within the limits of its size (i.e. no
         oversampling)
     :param mask: list, np.ndarray, torch.LongTensor, torch.BoolTensor
         Indicates a subset of `low`-level elements to consider. This
@@ -795,12 +864,12 @@ class SampleRadiusSubgraphs(BaseSampleSubgraphs):
         # an Identity, if need be
         if self.r <= 0:
             return nag
-        
+
         # Neighbors are searched using the node coordinates. This is not
         # the optimal search for cluster-cluster distances, but is the
         # fastest for our needs here. If need be, one could make this
         # search more accurate using something like:
-        # `src.utils.neighbors.cluster_radius_nn`
+        # `src.utils.neighbors.cluster_radius_nn_graph`
 
         # TODO: searching using knn_2 was sluggish, switching to brute
         #  force for now. If bottleneck, need to investigate alternative

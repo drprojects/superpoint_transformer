@@ -91,6 +91,9 @@ class RandomTiltAndRotate(Transform):
                 if getattr(nag[i_level], k, None) is not None:
                     nag[i_level][k] = self._rotate_normal(nag[i_level][k], R)
 
+            # TODO: this is an ugly, hardcoded patch to deal with
+            #  features assumedly created by
+            #  _minimalistic_horizontal_edge_features........
             if nag[i_level].edge_attr is not None:
                 edge_attr = nag[i_level].edge_attr
                 assert edge_attr.shape[1] == 7, \
@@ -162,6 +165,9 @@ class RandomAnisotropicScale(Transform):
                 if getattr(nag[i_level], k, None) is not None:
                     nag[i_level][k] = self._scale_normal(nag[i_level][k], scale)
 
+            # TODO: this is an ugly, hardcoded patch to deal with
+            #  features assumedly created by
+            #  _minimalistic_horizontal_edge_features........
             if getattr(nag[i_level], 'edge_attr', None) is not None:
                 edge_attr = nag[i_level].edge_attr
                 assert edge_attr.shape[1] == 7, \
@@ -217,6 +223,9 @@ class RandomAxisFlip(Transform):
                 if getattr(nag[i_level], k, None) is not None:
                     nag[i_level][k] = self._flip_normal(nag[i_level][k], axis)
 
+            # TODO: this is an ugly, hardcoded patch to deal with
+            #  features assumedly created by
+            #  _minimalistic_horizontal_edge_features........
             if nag[i_level].edge_attr is not None:
                 edge_attr = nag[i_level].edge_attr
                 assert edge_attr.shape[1] == 7, \

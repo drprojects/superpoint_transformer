@@ -1,0 +1,99 @@
+# @package datamodule
+defaults:
+  - /datamodule/semantic/_features.yaml
+
+_target_: null
+
+data_dir: ${paths.data_dir}
+
+# Number of classes must be specified to help instantiating the model.
+# Concretely, num_classes here will be passed to the DataModule and the
+# Dataset upon hydra.utils.instantiate. But it will likely be ignored by
+# those. Specifying num_classes in the data config actually allows the
+# model config to capture it and assign the proper model output size by
+# config interpolation
+num_classes: ???
+
+# Stuff class indices are not needed for semantic segmentation but must
+# be specified for instance/panoptic segmentation
+stuff_classes: []
+
+# Whether the dataset produces instance labels. In any case, the
+# instance labels will be preprocessed, if any. However, `instance: False`
+# will avoid unwanted instance-related I/O operations, to save memory
+instance: False
+
+# Instantiation graph parameters. These are used for instance/panoptic
+# segmentation but will be skipped for semantic segmentation (ie if
+# `datamodule.instance: False`)
+instance_k_max: 30  # maximum number of neighbors for each superpoint in the instance graph
+instance_radius: 0.1  # maximum distance of neighbors for each superpoint in the instance graph
+min_instance_size: 100
+
+# Mini dataset
+# Each dataset has a 'mini' version which only uses a small portion of
+# the data. Can be useful for experimentation and debugging
+mini: False
+
+# I/O parameters
+save_y_to_csr: True  # save 'y' label histograms using a custom CSR format to save memory and I/O time
+save_pos_dtype: 'float32'  # dtype to which 'pos' will be saved on disk
+save_fp_dtype: 'float16'  # dtype to which all other floating point tensors will be saved to disk
+in_memory: False
+
+# Disk memory
+# Set lite_preprocessing to only preprocess and save to disk features
+# strictly needed for training, to save disk memory. If False, all
+# supported point, segment features will be computed. This can be useful
+# if you are experimenting with various feature combinations and do not
+# want preprocessing to start over whenever testing a new combination
+# If True, lite_preprocessing alleviate disk memory use and makes I/O
+# faster, hence faster training and inference
+lite_preprocessing: True
+
+# Full-resolution prediction
+# By default, we do not need to load the full-resolution input point 
+# cloud for training, validating, and testing, because we compute 
+# metrics and losses based on hisograms of full-resolution labels inside
+# voxels and superpoints. Yet, for some inference applications, it may 
+# be needed to produce a full-resolution prediction. To this end, 
+# setting load_full_res_idx to True will load, for each preprocessed 
+# voxel, the indices of the full-resolution points it contains. This 
+# information can then be used by our model when required to produce a 
+# full-resolution prediction. Leaving load_full_res_idx to False by 
+# default avoids unnecessary I/O disk operations and saves RAM
+load_full_res_idx: False
+
+# GPU memory
+# The following parameters are not the only ones affecting GPU memory.
+# Several strategies can be deployed to mitigate memory impact, from
+# batch construction to architecture size. However, these are good
+# safeguard settings as a last resort to prevent our base model from OOM
+# a 32G GPU at training time. May be adapted to other GPUs, models and
+# training procedures
+max_num_nodes: 50000
+max_num_edges: 1000000
+
+# Transforms
+pre_transform: null
+train_transform: null
+val_transform: null
+test_transform: null
+on_device_train_transform: null
+on_device_val_transform: null
+on_device_test_transform: null
+
+# Test-time augmentation
+tta_runs: null
+tta_val: False
+
+# Produce submission data if trainer.test=true, for datasets with a
+# submission process
+submit: False
+
+# DataLoader parameters. Would be good to have them live in another file
+dataloader:
+    batch_size: 4
+    num_workers: 4
+    pin_memory: True
+    persistent_workers: True

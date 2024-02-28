@@ -1,0 +1,52 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=panoptic/kitti360
+
+defaults:
+  - override /datamodule: panoptic/kitti360.yaml
+  - override /model: panoptic/spt-2.yaml
+  - override /trainer: gpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+trainer:
+  max_epochs: 200
+
+model:
+  optimizer:
+    lr: 0.01
+    weight_decay: 1e-4
+
+  _down_dim: [ 128, 128, 128, 128 ]
+  _up_dim: [ 128, 128, 128 ]
+
+  net:
+    no_ffn: False
+    down_ffn_ratio: 1
+
+
+  partitioner:
+    regularization: 10
+    x_weight: 5e-2
+    cutoff: 1
+
+  partition_every_n_epoch: 10
+
+logger:
+  wandb:
+    project: "spt_kitti360"
+    name: "SPT-128"
+
+# metric based on which models will be selected
+optimized_metric: "val/pq"
+
+# modify checkpointing callbacks to adapt to partition_every_n_epoch
+# being potentially different
+callbacks:
+  model_checkpoint:
+    every_n_epochs: ${eval:'max(${trainer.check_val_every_n_epoch}, ${model.partition_every_n_epoch})'}
+
+  early_stopping:
+    strict: False

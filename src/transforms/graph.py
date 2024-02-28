@@ -9,9 +9,9 @@ import src
 from src.data import NAG
 from pgeof import pgeof
 from src.utils import print_tensor_info, isolated_nodes, edge_to_superedge, \
-    subedges, to_trimmed, cluster_radius_nn, is_trimmed, base_vectors_3d, \
-    scatter_mean_orientation, POINT_FEATURES, SEGMENT_BASE_FEATURES, \
-    SUBEDGE_FEATURES, ON_THE_FLY_HORIZONTAL_FEATURES, \
+    subedges, to_trimmed, cluster_radius_nn_graph, is_trimmed, \
+    base_vectors_3d, scatter_mean_orientation, POINT_FEATURES, \
+    SEGMENT_BASE_FEATURES, SUBEDGE_FEATURES, ON_THE_FLY_HORIZONTAL_FEATURES, \
     ON_THE_FLY_VERTICAL_FEATURES, sanitize_keys
 
 __all__ = [
@@ -74,7 +74,7 @@ class AdjacencyGraph(Transform):
 
 class SegmentFeatures(Transform):
     """Compute segment features for all the NAG levels except its first
-    (ie the 0-level). These are handcrafted node features that will be
+    (i.e. the 0-level). These are handcrafted node features that will be
     saved in the node attributes. To make use of those at training time,
     remember to move them to the `x` attribute using `AddKeysTo` and
     `NAGAddKeysTo`.
@@ -184,7 +184,7 @@ def _compute_cluster_features(
     nn_ptr = ptr_samples.cpu().numpy().astype('uint32')
 
     # Heuristic to avoid issues when a cluster sampling is such that
-    # it produces singular covariance matrix (eg the sampling only
+    # it produces singular covariance matrix (e.g. the sampling only
     # contains the same point repeated multiple times)
     xyz = xyz + torch.rand(xyz.shape).numpy() * 1e-5
 
@@ -289,7 +289,7 @@ def _compute_cluster_features(
 
 class DelaunayHorizontalGraph(Transform):
     """Compute horizontal edges for all NAG levels except its first
-    (ie the 0-level). These are the edges connecting the segments at
+    (i.e. the 0-level). These are the edges connecting the segments at
     each level, equipped with handcrafted edge features.
 
     This approach relies on the dual graph of the Delaunay triangulation
@@ -409,6 +409,13 @@ def _horizontal_graph_by_delaunay(
     # in the level-0 adjacency graph. For that reason, we need to look
     # for such isolated nodes and sample point inside them, since the
     # above approach will otherwise ignore them
+    # TODO: This approach has 2 downsides: it samples points anywhere in
+    #  the isolated cluster and does not drive the other clusters
+    #  sampling around the isolated clusters. This means that edges may
+    #  not be the true visibility-based, simplest edges of the isolated
+    #  clusters. Could be solved by dense sampling inside the clusters
+    #  with points near the isolated clusters, but requires a bit of
+    #  effort...
     is_isolated = isolated_nodes(edges_point_adj_inter, num_nodes=num_nodes)
     is_isolated_point = is_isolated[super_index]
 
@@ -540,7 +547,7 @@ def _horizontal_graph_by_delaunay(
 
 class RadiusHorizontalGraph(Transform):
     """Compute horizontal edges for all NAG levels except its first
-    (ie the 0-level). These are the edges connecting the segments at
+    (i.e. the 0-level). These are the edges connecting the segments at
     each level, equipped with handcrafted edge features.
 
     This approach relies on a fast heuristics to search neighboring
@@ -661,7 +668,7 @@ class RadiusHorizontalGraph(Transform):
 
     def _process_edge_features_for_single_level(
             self, nag, i_level, se_ratio, se_min, cycles, margin, chunk_size):
-        # Compute 'subedges', ie edges between level-0 points making up
+        # Compute 'subedges', i.e. edges between level-0 points making up
         # the edges between the segments. These will be used for edge
         # features computation. NB: this operation simplifies the
         # edge_index graph into a trimmed graph. To restore
@@ -804,9 +811,15 @@ def _horizontal_graph_by_radius_for_single_level(
 
     # Search neighboring clusters
     data.raise_if_edge_keys()
-    edge_index, distances = cluster_radius_nn(
-        nag[0].pos, super_index, k_max=k_max, gap=gap, trim=trim,
-        cycles=cycles, chunk_size=chunk_size)
+    edge_index, distances = cluster_radius_nn_graph(
+        nag[0].pos,
+        super_index,
+        k_max=k_max,
+        gap=gap,
+        batch=nag[i_level].batch,
+        trim=trim,
+        cycles=cycles,
+        chunk_size=chunk_size)
 
     # Save the graph in the Data object
     data.edge_index = edge_index
@@ -841,6 +854,23 @@ def _minimalistic_horizontal_edge_features(
     :param se_id:
     :param keys:
     """
+    # TODO: other superedge ideas to better describe how 2 clusters
+    #  relate and the geometry of their border (S=source, T=target):
+    #  - matrix that transforms unary_vector_source into
+    #   unary_vector_target ? Should express, differences in pose, size
+    #   and shape as it requires rotation, translation and scaling. Poses
+    #   questions regarding the canonical base, PCA orientation ±π
+    #  - current SE direction is not the axis/plane of the edge but
+    #   rather its normal... build it with PCA and for points sampled in
+    #    each side ? careful with single-point edges...
+    #  - avg distance S/T points in border to centroid S/T (how far
+    #    is the border from the cluster center)
+    #  - angle of mean S->T direction wrt S/T principal components (is
+    #    the border along the long of short side of objects ?)
+    #  - PCA of points in S/T cloud (is it linear border or surfacic
+    #    border ?)
+    #  - mean dist of S->T along S/T normal (offset along the objects
+    #    normals, e.g. offsets between steps)
 
     keys = sanitize_keys(keys, default=SUBEDGE_FEATURES)
 
@@ -898,7 +928,7 @@ def _minimalistic_horizontal_edge_features(
 
 class OnTheFlyHorizontalEdgeFeatures(Transform):
     """Compute edge features "on-the-fly" for all i->j and j->i
-    horizontal edges of the NAG levels except its first (ie the
+    horizontal edges of the NAG levels except its first (i.e. the
     0-level).
 
     Expects only trimmed edges as input, along with some edge-specific
@@ -1310,7 +1340,7 @@ class NodeSize(Transform):
     attribute of the corresponding Data objects.
 
     Note: `low=-1` is accepted when level-0 has a `sub` attribute
-    (ie level-0 points are themselves segments of `-1` level absent
+    (i.e. level-0 points are themselves segments of `-1` level absent
     from the NAG object).
 
     :param low: int

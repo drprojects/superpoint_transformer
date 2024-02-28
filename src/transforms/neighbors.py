@@ -44,8 +44,13 @@ class KNN(Transform):
 
     def _process(self, data):
         neighbors, distances = knn_1(
-            data.pos, self.k, r_max=self.r_max, oversample=self.oversample,
-            self_is_neighbor=self.self_is_neighbor, verbose=self.verbose)
+            data.pos,
+            self.k,
+            r_max=self.r_max,
+            batch=data.batch,
+            oversample=self.oversample,
+            self_is_neighbor=self.self_is_neighbor,
+            verbose=self.verbose)
         data.neighbor_index = neighbors
         data.neighbor_distance = distances
         return data

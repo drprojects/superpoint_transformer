@@ -1,0 +1,16 @@
+# @package model
+defaults:
+  - /model/semantic/default.yaml
+
+# Partial spt config specifically for the decoder
+net:
+  up_dim: ${model._up_dim}
+  up_in_mlp: ${eval:'[ [${model._node_injection_dim} + ${model._down_dim}[-1] + ${model._down_dim}[-2]] + [${model._up_dim}[0]] * ${model._mlp_depth}, [${model._node_injection_dim} + ${model._up_dim}[0] + ${model._down_dim}[-3]] + [${model._up_dim}[1]] * ${model._mlp_depth}, [${model._node_injection_dim} + ${model._up_dim}[1] + ${model._down_dim}[-4]] + [${model._up_dim}[2]] * ${model._mlp_depth} ]'}
+  up_out_mlp: ${model.net.down_out_mlp}
+  up_mlp_drop: ${model.net.down_mlp_drop}
+  up_num_heads: ${model.net.down_num_heads}
+  up_num_blocks: 1
+  up_ffn_ratio: ${model.net.down_ffn_ratio}
+  up_residual_drop: ${model.net.down_residual_drop}
+  up_attn_drop: ${model.net.down_attn_drop}
+  up_drop_path: ${model.net.down_drop_path}

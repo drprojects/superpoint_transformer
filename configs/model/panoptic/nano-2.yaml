@@ -1,0 +1,4 @@
+# @package model
+defaults:
+  - /model/semantic/nano-2.yaml
+  - /model/panoptic/_instance.yaml

@@ -25,7 +25,7 @@ def fusion_factory(mode):
 class BaseFusion(nn.Module):
     def forward(self, x1, x2):
         if x1 is None and x2 is None:
-            return None
+            return
         if x1 is None:
             return x2
         if x2 is None:

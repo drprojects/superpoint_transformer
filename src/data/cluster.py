@@ -21,7 +21,7 @@ class Cluster(CSRData):
 
     @staticmethod
     def get_batch_type():
-        """Required by CSRBatch.from_csr_list."""
+        """Required by CSRBatch.from_list."""
         return ClusterBatch
 
     @property
@@ -48,10 +48,12 @@ class Cluster(CSRData):
         """Return a 1D tensor of indices converting the CSR-formatted
         clustering structure in 'self' into the 'super_index' format.
         """
+        # TODO: this assumes 'self.point' is a permutation, shall we
+        #  check this (although it requires sorting) ?
         device = self.device
         out = torch.empty((self.num_items,), dtype=torch.long, device=device)
         cluster_idx = torch.arange(self.num_groups, device=device)
-        out[self.points] = cluster_idx.repeat_interleave(self.size)
+        out[self.points] = cluster_idx.repeat_interleave(self.sizes)
         return out
 
     def select(self, idx, update_sub=True):
@@ -70,19 +72,19 @@ class Cluster(CSRData):
             Cluster indices to select from 'self'. Must NOT contain
             duplicates
         update_sub: bool
-            If True, the point (ie subpoint) indices will also be
+            If True, the point (i.e. subpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
             of a NAG.
 
-        :returns cluster, (idx_sub, sub_super)
-        clusters: Cluster
-            indexed cluster
-        idx_sub: torch.LongTensor
-            to be used with 'Data.select()' on the sub-level
-        sub_super: torch.LongTensor
-            to replace 'Data.super_index' on the sub-level
+        :return: cluster, (idx_sub, sub_super)
+            clusters: Cluster
+                indexed cluster
+            idx_sub: torch.LongTensor
+                to be used with 'Data.select()' on the sub-level
+            sub_super: torch.LongTensor
+                to replace 'Data.super_index' on the sub-level
         """
         # Normal CSRData indexing, creates a new object in memory
         cluster = self[idx]
@@ -93,6 +95,8 @@ class Cluster(CSRData):
         # Convert subpoint indices, in case some subpoints have
         # disappeared. 'idx_sub' is intended to be used with
         # Data.select() on the level below
+        # TODO: IMPORTANT consecutive_cluster is a bottleneck for NAG
+        #  and Data indexing, can we do better ?
         new_cluster_points, perm = consecutive_cluster(cluster.points)
         idx_sub = cluster.points[perm]
         cluster.points = new_cluster_points
@@ -136,21 +140,23 @@ class Cluster(CSRData):
     def load(f, idx=None, update_sub=True, verbose=False):
         """Load Cluster from an HDF5 file. See `Cluster.save` for
         writing such file. Options allow reading only part of the
-        points.
+        clusters.
 
         This reproduces the behavior of Cluster.select but without
         reading the full pointer data from disk.
 
         :param f: h5 file path of h5py.File or h5py.Group
         :param idx: int, list, numpy.ndarray, torch.Tensor
-            Used to select points when reading. Supports fancy indexing
+            Used to select clusters when reading. Supports fancy
+            indexing
         :param update_sub: bool
-            If True, the point (ie subpoint) indices will also be
+            If True, the point (i.e. subpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
             of a NAG.
         :param verbose: bool
+
         :return: cluster, (idx_sub, sub_super)
         """
         KEYS = ['pointers', 'points']
@@ -226,6 +232,8 @@ class Cluster(CSRData):
         # Convert subpoint indices, in case some subpoints have
         # disappeared. 'idx_sub' is intended to be used with
         # Data.select() on the level below
+        # TODO: IMPORTANT consecutive_cluster is a bottleneck for NAG
+        #  and Data indexing, can we do better ?
         start = time()
         new_cluster_points, perm = consecutive_cluster(cluster.points)
         idx_sub = cluster.points[perm]

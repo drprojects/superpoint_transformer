@@ -1,0 +1,28 @@
+# @package model
+defaults:
+  - /model/semantic/default.yaml
+
+# Partial spt config specifically for the attention blocks
+net:
+  activation:
+    _target_: torch.nn.LeakyReLU
+  norm:
+    _target_: src.nn.GraphNorm
+    _partial_: True
+  pre_norm: True
+  no_sa: False
+  no_ffn: True
+  qk_dim: 4
+  qkv_bias: True
+  qk_scale: null
+  in_rpe_dim: ${eval:'${model._h_edge_mlp_out} if ${model._h_edge_mlp_out} else ${model._h_edge_hf_dim}'}
+  k_rpe: True
+  q_rpe: True
+  v_rpe: True
+  k_delta_rpe: False
+  q_delta_rpe: False
+  qk_share_rpe: False
+  q_on_minus_rpe: False
+  stages_share_rpe: False
+  blocks_share_rpe: False
+  heads_share_rpe: False

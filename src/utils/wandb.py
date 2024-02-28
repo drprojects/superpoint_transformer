@@ -13,7 +13,7 @@ def wandb_confusion_matrix(cm, class_names=None, title=None):
     Indeed, the native wandb confusion matrix logging requires the
     element-wise prediction and ground truth. This is not adapted when
     we already have the confusion matrix at hand or that the number of
-    elements is too large (eg point clouds).
+    elements is too large (e.g. point clouds).
 
     :param cm:
     :return:

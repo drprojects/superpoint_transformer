@@ -23,7 +23,7 @@ class _WarmupLR(_LRScheduler):
         optimizer's parameter groups will be warmed up from
         `init_lr` to their initial value as set in the optimizer
     :param num_warmup: int
-        Number of scheduler steps (ie epochs, most of the time)
+        Number of scheduler steps (i.e. epochs, most of the time)
         dedicated to warming up
     :param warmup_strategy: str
         Warmup strategy, among ['linear', 'cos', 'constant']
@@ -64,7 +64,7 @@ class _WarmupLR(_LRScheduler):
             if name in self.__dict__.keys():
                 return self._scheduler
             else:
-                return None
+                return
         return getattr(self._scheduler, name)
 
     def state_dict(self):
@@ -148,7 +148,7 @@ class _WarmupLR(_LRScheduler):
 class CosinePowerAnnealingLR(CosineAnnealingLR):
     """Same as CosineAnnealingLR, but with an additional `power`
     parameter, to mitigate the annealing time spent on large learning
-    rates (ie `power < 1`) or small learning rates (ie `power > 1`).
+    rates (i.e. `power < 1`) or small learning rates (i.e. `power > 1`).
     """
 
     def __init__(

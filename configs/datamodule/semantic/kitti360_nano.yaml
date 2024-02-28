@@ -1,0 +1,15 @@
+# @package datamodule
+defaults:
+  - /datamodule/semantic/kitti360.yaml
+
+# point features used for training
+point_hf: []
+
+# segment-wise features computed at preprocessing
+segment_mean_hf:
+  - 'hsv'
+  - 'linearity'
+  - 'planarity'
+  - 'scattering'
+  - 'verticality'
+  - 'elevation'

@@ -47,7 +47,7 @@ class BatchNorm(nn.Module):
 
 class UnitSphereNorm(nn.Module):
     """Normalize positions of same-segment nodes in a unit sphere of
-    diameter 1 (ie radius 1/2).
+    diameter 1 (i.e. radius 1/2).
 
     :param log_diameter: bool
         Whether the returned diameter should be log-normalized. This may
@@ -83,7 +83,7 @@ class UnitSphereNorm(nn.Module):
         provided. Applies the sphere normalization on all pos
         coordinates together.
         """
-        # Compute the diameter (ie the maximum span along the main axes
+        # Compute the diameter (i.e. the maximum span along the main axes
         # here)
         min_ = pos.min(dim=0).values
         max_ = pos.max(dim=0).values
@@ -108,7 +108,7 @@ class UnitSphereNorm(nn.Module):
         """Forward with scatter operations, in case `idx` is provided.
         Applies the sphere normalization for each segment separately.
         """
-        # Compute the diameter (ie the maximum span along the main axes
+        # Compute the diameter (i.e. the maximum span along the main axes
         # here)
         min_segment = scatter(pos, idx, dim=0, dim_size=num_super, reduce='min')
         max_segment = scatter(pos, idx, dim=0, dim_size=num_super, reduce='max')

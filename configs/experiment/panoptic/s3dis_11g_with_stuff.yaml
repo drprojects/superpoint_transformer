@@ -1,0 +1,68 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=panoptic/s3dis_11g_with_stuff
+
+# This configuration allows training SPT on a single 11G GPU, with a
+# training procedure comparable with the default
+# experiment/semantic/s3dis configuration.
+# Among the multiple ways of reducing memory impact, we choose here to
+#   - divide the dataset into smaller tiles (facilitates preprocessing
+#     and inference on smaller GPUs)
+#   - reduce the number of samples in each batch (facilitates training
+#     on smaller GPUs)
+# To keep the total number of training steps consistent with the default
+# configuration, while keeping informative gradient despite the smaller
+# batches, we use gradient accumulation and reduce the number of epochs.
+# DISCLAIMER: the tiling procedure may increase the preprocessing time
+# (more raw data reading steps), and slightly reduce mode performance
+# (less diversity in the spherical samples)
+
+defaults:
+  - override /datamodule: panoptic/s3dis_with_stuff.yaml
+  - override /model: panoptic/spt-2.yaml
+  - override /trainer: gpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+datamodule:
+  xy_tiling: 3  # split each cloud into xy_tiling^2=9 tiles, based on a regular XY grid. Reduces preprocessing- and inference-time GPU memory
+  sample_graph_k: 2  # 2 spherical samples in each batch instead of 4. Reduces train-time GPU memory
+
+trainer:
+  max_epochs: 500  # to keep same nb of steps: 8x more tiles, 2-step gradient accumulation -> epochs/4
+
+model:
+  optimizer:
+    lr: 0.1
+    weight_decay: 1e-2
+
+  partitioner:
+    regularization: 10
+    x_weight: 5e-2
+    cutoff: 300
+
+  partition_every_n_epoch: 5
+
+logger:
+  wandb:
+    project: "spt_s3dis"
+    name: "SPT-64"
+
+# metric based on which models will be selected
+optimized_metric: "val/pq"
+
+# modify checkpointing callbacks to adapt to partition_every_n_epoch
+# being potentially different
+callbacks:
+  model_checkpoint:
+    every_n_epochs: ${eval:'max(${trainer.check_val_every_n_epoch}, ${model.partition_every_n_epoch})'}
+
+  early_stopping:
+    strict: False
+
+  gradient_accumulator:
+    scheduling:
+      0:
+        2  # accumulate gradient every 2 batches, to make up for reduced batch size

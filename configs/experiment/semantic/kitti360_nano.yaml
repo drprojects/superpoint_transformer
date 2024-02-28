@@ -1,0 +1,30 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=semantic/kitti360_nano
+
+defaults:
+  - override /datamodule: semantic/kitti360_nano.yaml
+  - override /model: semantic/nano-2.yaml
+  - override /trainer: gpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+trainer:
+  max_epochs: 200
+
+model:
+  optimizer:
+    lr: 0.01
+    weight_decay: 1e-4
+
+  _down_dim: [ 32, 32, 32, 32 ]
+  _up_dim: [ 32, 32, 32 ]
+  _node_mlp_out: 32
+  _h_edge_mlp_out: 32
+
+logger:
+  wandb:
+    project: "spt_kitti360"
+    name: "NANO-32"

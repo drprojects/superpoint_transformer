@@ -6,8 +6,12 @@ __all__ = ['MLP', 'FFN', 'Classifier']
 
 
 def mlp(
-        dims, activation=nn.LeakyReLU(), last_activation=True,
-        norm=BatchNorm, drop=None):
+        dims,
+        activation=nn.LeakyReLU(),
+        last_activation=True,
+        norm=BatchNorm,
+        last_norm=True,
+        drop=None):
     """Helper to build MLP-like structures.
 
     :param dims: List[int]
@@ -21,6 +25,8 @@ def mlp(
         instantiable using norm(in_channels). If more parameters need to
         be passed to the norm, consider using a partially instantiated
         class
+    :param last_norm: bool
+        Whether the last layer should have a normalization
     :param drop: float in [0, 1]
         Dropout on the output features. No dropout layer will be
         created if `drop=None` or `drop < 0`
@@ -35,7 +41,7 @@ def mlp(
     modules = []
     for i in range(1, len(dims)):
         modules.append(nn.Linear(dims[i - 1], dims[i], bias=bias))
-        if norm is not None:
+        if norm is not None and (last_norm or i < len(dims) - 1):
             modules.append(norm(dims[i]))
         if activation is not None and (last_activation or i < len(dims) - 1):
             modules.append(activation)
@@ -53,12 +59,21 @@ class MLP(nn.Module):
     """
 
     def __init__(
-            self, dims, activation=nn.LeakyReLU(), last_activation=True,
-            norm=BatchNorm, drop=None):
+            self,
+            dims,
+            activation=nn.LeakyReLU(),
+            last_activation=True,
+            norm=BatchNorm,
+            last_norm=True,
+            drop=None):
         super().__init__()
         self.mlp = mlp(
-            dims, activation=activation, last_activation=last_activation,
-            norm=norm, drop=drop)
+            dims,
+            activation=activation,
+            last_activation=last_activation,
+            norm=norm,
+            last_norm=last_norm,
+            drop=drop)
         self.out_dim = dims[-1]
 
     def forward(self, x, batch=None):
@@ -81,7 +96,11 @@ class FFN(MLP):
     """
 
     def __init__(
-            self, dim, hidden_dim=None, out_dim=None, activation=nn.LeakyReLU(),
+            self,
+            dim,
+            hidden_dim=None,
+            out_dim=None,
+            activation=nn.LeakyReLU(),
             drop=None):
 
         # Build the channel sizes for the 2 linear layers
@@ -90,7 +109,11 @@ class FFN(MLP):
         channels = [dim, hidden_dim, out_dim]
 
         super().__init__(
-            channels, activation=activation, last_activation=False, norm=None,
+            channels,
+            activation=activation,
+            last_activation=False,
+            norm=None,
+            last_norm=False,
             drop=drop)
 
 

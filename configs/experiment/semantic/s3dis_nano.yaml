@@ -1,0 +1,25 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=semantic/s3dis_nano
+
+defaults:
+  - override /datamodule: semantic/s3dis_nano.yaml
+  - override /model: semantic/nano-2.yaml
+  - override /trainer: gpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+trainer:
+  max_epochs: 2000
+
+model:
+  optimizer:
+    lr: 0.1
+    weight_decay: 1e-2
+
+logger:
+  wandb:
+    project: "spt_s3dis"
+    name: "NANO"

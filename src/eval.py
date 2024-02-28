@@ -99,7 +99,7 @@ def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
     
     if cfg.get("compile"):
         log.info("Compiling model!")
-        model = torch_geometric.compile(model)
+        model = torch.compile(model, dynamic=True)
 
     log.info("Starting testing!")
     trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)

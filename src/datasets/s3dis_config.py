@@ -1,5 +1,4 @@
 import numpy as np
-import os.path as osp
 
 
 ########################################################################
@@ -382,3 +381,10 @@ def object_name_to_label(object_class):
     """
     object_label = OBJECT_LABEL.get(object_class, OBJECT_LABEL["clutter"])
     return object_label
+
+# For instance segmentation
+MIN_OBJECT_SIZE = 100
+STUFF_CLASSES = []
+THING_CLASSES = list(range(S3DIS_NUM_CLASSES))
+STUFF_CLASSES_MODIFIED = [0, 1, 2]
+THING_CLASSES_MODIFIED = list(range(3, S3DIS_NUM_CLASSES))

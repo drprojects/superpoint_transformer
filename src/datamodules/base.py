@@ -179,8 +179,6 @@ class BaseDataModule(LightningDataModule):
             transform=self.test_transform, pre_transform=self.pre_transform,
             on_device_transform=self.on_device_test_transform, **self.kwargs)
 
-        self.predict_dataset = None
-
     def set_transforms(self):
         """Parse in self.hparams in search for '*transform*' keys and
         instantiate the corresponding transforms.
@@ -227,6 +225,14 @@ class BaseDataModule(LightningDataModule):
         if not self.hparams.submit:
             return
 
+        # TODO
+        # # Make sure the test dataset does not have any tiling
+        # if self.test_dataset.xy_tiling is not None \
+        #         or self.test_dataset.pc_tiling is not None:
+        #     raise NotImplementedError(
+        #         f"Cannot run test prediction submission for test datasets "
+        #         f"with tiling")
+
         # Make sure the dataloader only produces predictions for 1 cloud
         # at a time
         if self.hparams.dataloader.batch_size > 1:
@@ -245,7 +251,6 @@ class BaseDataModule(LightningDataModule):
                     f"{_SUBMISSION_CONFLICTS}")
 
     def train_dataloader(self):
-        from torch.utils.data import RandomSampler
         return DataLoader(
             dataset=self.train_dataset,
             batch_size=self.hparams.dataloader.batch_size,
@@ -273,7 +278,10 @@ class BaseDataModule(LightningDataModule):
             shuffle=False)
 
     def predict_dataloader(self):
-        raise NotImplementedError
+        """By default, each DataModule uses its test dataset for predict
+        behavior.
+        """
+        return self.test_dataloader()
 
     def teardown(self, stage=None):
         """Clean up after fit or test."""
@@ -312,7 +320,7 @@ class BaseDataModule(LightningDataModule):
         elif self.trainer.testing:
             on_device_transform = self.on_device_test_transform
         elif self.trainer.predicting:
-            raise NotImplementedError('No on_device_predict_transform yet...')
+            on_device_transform = self.on_device_test_transform
         elif self.trainer.evaluating:
             on_device_transform = self.on_device_test_transform
         elif self.trainer.sanity_checking:

@@ -1,0 +1,11 @@
+# @package datamodule
+defaults:
+  - /datamodule/semantic/s3dis.yaml
+
+# Room-wise learning on the S3DIS dataset
+_target_: src.datamodules.s3dis_room.S3DISRoomDataModule
+
+dataloader:
+    batch_size: 8
+
+sample_graph_k: -1  # skip subgraph sampling; to directly use the whole room

@@ -54,12 +54,12 @@ def edge_to_superedge(edges, super_index, edge_attr=None):
     se = super_index[edges]
     inter_cluster = torch.where(se[0] != se[1])[0]
 
-    # Now only consider the edges of interest (ie inter-cluster edges)
+    # Now only consider the edges of interest (i.e. inter-cluster edges)
     edges_inter = edges[:, inter_cluster]
     edge_attr = edge_attr[inter_cluster] if edge_attr is not None else None
     se = se[:, inter_cluster]
 
-    # Search for undirected edges, ie edges with (i,j) and (j,i)
+    # Search for undirected edges, i.e. edges with (i,j) and (j,i)
     # both present in edge_index. Flip (j,i) into (i,j) to make them
     # redundant. By default, the final edges are expressed with i <= j
     s_larger_t = se[0] > se[1]
@@ -70,7 +70,7 @@ def edge_to_superedge(edges, super_index, edge_attr=None):
     # aggregate those into 'superedges' and compute corresponding
     # features (designated with 'se_'), we will need unique and
     # compact inter-cluster edge identifiers for torch_scatter
-    # operations. We use 'se' to designate 'superedge' (ie an edge
+    # operations. We use 'se' to designate 'superedge' (i.e. an edge
     # between two clusters)
     se_id = \
         se[0] * (max(se[0].max(), se[1].max()) + 1) + se[1]
@@ -240,7 +240,7 @@ def subedges(
     # Select points that are in the half-space before their anchor.
     # Since subedge points (level-0 point pairs making up the superedge
     # between two segments) are searched along the nearest-neighbors
-    # (ie anchor points) direction, this operation aims at dealing with
+    # (i.e. anchor points) direction, this operation aims at dealing with
     # edges located in concave regions of the segment boundaries
     if halfspace_filter:
         in_S_halfspace = S_points[:, 0] <= margin
@@ -331,6 +331,8 @@ def subedges(
     # Local helper to compute, for each edge, the first eigen vector of
     # the selected subedge points for the source --target,
     # respectively-- segment
+    # TODO: scatter_pca is the bottleneck of subedges(), we could
+    #  accelerate things by randomly sampling in the clusters
     def first_component(source=True):
         if source:
             X_points, X_uid = S_points, S_uid
@@ -400,7 +402,7 @@ def to_trimmed(edge_index, edge_attr=None, reduce='mean'):
         Reduction modes supported by `torch_geometric.utils.coalesce`
     :return:
     """
-    # Search for undirected edges, ie edges with (i,j) and (j,i)
+    # Search for undirected edges, i.e. edges with (i,j) and (j,i)
     # both present in edge_index. Flip (j,i) into (i,j) to make them
     # redundant
     s_larger_t = edge_index[0] > edge_index[1]

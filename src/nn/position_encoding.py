@@ -139,11 +139,12 @@ class LearnableFourierInjection(BasePositionalInjection):
         nn.init.normal_(self.Wr.weight.data, mean=0, std=self.gamma ** -2)
 
     def forward(self, x):
-        """
-        Produce positional encodings from x
+        """Produce positional encodings from x.
+
         :param x: tensor of shape [N, G, M] that represents N positions where each position is in the shape of [G, M],
                   where G is the positional group and each group has M-dimensional positional values.
                   Positions in different positional groups are independent
+
         :return: positional encoding for X
         """
         N, G, M = x.shape

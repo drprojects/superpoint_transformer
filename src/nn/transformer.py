@@ -6,6 +6,10 @@ from src.nn import SelfAttentionBlock, FFN, DropPath, LayerNorm, \
 __all__ = ['TransformerBlock']
 
 
+# TODO: Careful with how we define the index for LayerNorm:
+#  cluster-wise or cloud-wise ? Maybe cloud-wise, seems more stable...
+
+
 class TransformerBlock(nn.Module):
     """Base block of the Transformer architecture:
 

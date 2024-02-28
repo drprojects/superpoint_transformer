@@ -54,7 +54,7 @@ def base_vectors_3d(x):
     b = torch.vstack((a[:, 1] - a[:, 2], a[:, 2] - a[:, 0], a[:, 0] - a[:, 1])).T
 
     # In the same fashion as when building a, the second base vector
-    # may be 0 by construction (ie a is of type (v, v, v)). So we need
+    # may be 0 by construction (i.e. a is of type (v, v, v)). So we need
     # to deal with this edge case by setting
     b[torch.where(b.norm(dim=1) == 0)[0]] = torch.tensor(
         [[2, 1, -1]], dtype=x.dtype, device=x.device)

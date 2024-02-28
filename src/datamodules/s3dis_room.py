@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 
 class S3DISRoomDataModule(BaseDataModule):
-    """LightningDataModule for S3DIS dataset.
+    """LightningDataModule for room-wise S3DIS dataset.
 
     A DataModule implements 5 key methods:
 
@@ -50,6 +50,6 @@ if __name__ == "__main__":
     import pyrootutils
 
     root = str(pyrootutils.setup_root(__file__, pythonpath=True))
-    cfg = omegaconf.OmegaConf.load(root + "/configs/datamodule/s3dis_room.yaml")
+    cfg = omegaconf.OmegaConf.load(root + "/configs/datamodule/semantic/s3dis_room.yaml")
     cfg.data_dir = root + "/data"
     _ = hydra.utils.instantiate(cfg)

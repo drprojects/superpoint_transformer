@@ -11,6 +11,7 @@ for more details.
 | Dataset                                                                                                                 |                                                           Download from ?                                                            | Which files ?                                        | Where to ? |
 |:------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------:|:-----------------------------------------------------|:----|
 | [S3DIS](http://buildingparser.stanford.edu/dataset.html)                                                                |         [link](https://docs.google.com/forms/d/e/1FAIpQLScDimvNMCGhy_rmBA2gHfDu3naktRm6A8BPwAWWDv-Uhm6Shw/viewform?c=0&w=1)          | `Stanford3dDataset_v1.2.zip`                         | `data/s3dis/` |
+| [ScanNetV2](http://www.scan-net.org/)                                                                |         [link](http://www.scan-net.org/ScanNet)          | `scannetv2-labels.combined.tsv` `{{scan_name}}.aggregation.json` `{{scan_name}}.txt` `{{scan_name}}_vh_clean_2.0.010000.segs.json` `{{scan_name}}_vh_clean_2.ply` | `data/scannet/` |
 | [KITTI-360](https://www.cvlibs.net/datasets/kitti-360/index.php)                                                        |                                    [link](http://www.cvlibs.net/datasets/kitti-360/download.php)                                     | `data_3d_semantics.zip` `data_3d_semantics_test.zip` | `data/kitti360/` |
 | [DALES](https://udayton.edu/engineering/research/centers/vision_lab/research/was_data_analysis_and_processing/dale.php) | [link](https://docs.google.com/forms/d/e/1FAIpQLSefhHMMvN0Uwjnj_vWQgYSvtFOtaoGFWsTIcRuBTnP09NHR7A/viewform?fbzx=5530674395784263977) | `DALESObjects.tar.gz`                                | `data/dales/` |
 
@@ -43,6 +44,34 @@ for more details.
 > which does not contain the `Area_{{1, 2, 3, 4, 5, 6}}_alignmentAngle.txt` 
 > files.
 
+<br>
+</details>
+
+<details>
+<summary><b>ScanNetV2 data directory structure.</b></summary>
+<br><br>
+
+```
+└── data
+    └─── scannet                                     # Structure for ScanNetV2
+        ├── raw                                         # Raw dataset files
+        |   ├── scannetv2-labels.combined.tsv
+        |   ├── scans
+        |   │   └── {{scan_name}}
+        |   │       ├── {{scan_name}}.aggregation.json
+        |   │       ├── {{scan_name}}.txt
+        |   │       ├── {{scan_name}}_vh_clean_2.0.010000.segs.json
+        |   │       └── {{scan_name}}_vh_clean_2.ply
+        |   └── scans_test
+        |       └── {{scan_name}}
+        |           └── {{scan_name}}_vh_clean_2.ply
+        └── processed                                   # Preprocessed data
+            └── {{train, val, test}}                      # Dataset splits
+                └── {{preprocessing_hash}}                  # Preprocessing folder
+                    └── {{scans, scans_test}}
+                        └── {{scan_name}}.h5                # Preprocessed scan file
+
+```
 <br>
 </details>
 
@@ -164,8 +193,8 @@ transforms will not affect your preprocessing hash.
 
 ## Mini datasets
 Each dataset has a "mini" version which only processes a portion of the data, to
-speedup experimentation. To use it, set your the 
-[dataset config](configs/datamodule) of your choice:
+speedup experimentation. To use it, set the
+[dataset config](../configs/datamodule) of your choice:
 ```yaml
 mini: True
 ```
@@ -180,14 +209,14 @@ python src/train.py experiment=dales +datamodule.mini=True
 To create your own dataset, you will need to do the following:
 - create `YourDataset` class inheriting from `src.datasets.BaseDataset`
 - create `YourDataModule` class inheriting from `src.datamodules.DataModule`
-- create `configs/datamodule/your_dataset.yaml` config 
+- create `configs/datamodule/<TASK>/your_dataset.yaml` config 
  
-Instructions are provided in the docstrings of those classes and you can get
-inspiration from our code for S3DIS, KITTI-360 and DALES to get started. 
+Instructions are provided in the docstrings of those classes, and you can get
+inspiration from our code for S3DIS, ScanNet, KITTI-360 and DALES to get started. 
 
-We suggest that your config inherits from `configs/datamodule/default.yaml`. See
-`configs/datamodule/s3dis.yaml`, `configs/datamodule/kitti360.yaml`, and 
-`configs/datamodule/dales.yaml` for inspiration.
+We suggest that your config inherits from `configs/datamodule/<TASK>/default.yaml`, where `<TASK>` is be `semantic` or `panoptic`, depending on your segmentation task of interest. See
+`configs/datamodule/<TASK>/s3dis.yaml`, `configs/datamodule/<TASK>/scannet.yaml`, `configs/datamodule/<TASK>/kitti360.yaml`, and 
+`configs/datamodule/<TASK>/dales.yaml` for inspiration.
 
 #### Semantic label format
 The semantic labels of your dataset must follow certain rules. 
@@ -243,7 +272,7 @@ def all_base_cloud_ids(self):
 
 Still, you can specify that you want to also use the `test` set as a `val` set 
 (which is dangerous ML practice) by setting in your 
-`configs/datamodule/your_dataset.yaml` datamodule config:
+`configs/datamodule/your_task/your_dataset.yaml` datamodule config:
 
 ```yaml
 val_on_test: True
@@ -268,7 +297,7 @@ def all_base_cloud_ids(self):
 ```
 
 You must specify one of the following in your 
-`configs/datamodule/your_dataset.yaml` datamodule config:
+`configs/datamodule/your_task/your_dataset.yaml` datamodule config:
 
 ```yaml
 val_mixed_in_train: True  # if some preprocessed clouds contain both validation and train points

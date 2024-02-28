@@ -43,6 +43,6 @@ if __name__ == "__main__":
     import pyrootutils
 
     root = str(pyrootutils.setup_root(__file__, pythonpath=True))
-    cfg = omegaconf.OmegaConf.load(root + "/configs/datamodule/kitti360.yaml")
+    cfg = omegaconf.OmegaConf.load(root + "/configs/datamodule/semantic/kitti360.yaml")
     cfg.data_dir = root + "/data"
     _ = hydra.utils.instantiate(cfg)

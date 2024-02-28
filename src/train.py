@@ -107,7 +107,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 
     if cfg.get("compile"):
         log.info("Compiling model!")
-        model = torch_geometric.compile(model)
+        model = torch.compile(model, dynamic=True)
 
     if cfg.get("train"):
         log.info("Starting training!")

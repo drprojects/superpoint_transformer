@@ -1,0 +1,8 @@
+# @package model
+defaults:
+  - /model/semantic/default.yaml
+
+# Partial spt config specifically for the point encoder
+net:
+  point_mlp: ${eval:'[${model._point_hf_dim}] + ${model._point_mlp}'}
+  point_drop: null

@@ -432,6 +432,7 @@ class SPT(nn.Module):
         # assert nag.num_levels >= 2
         # assert nag.num_levels > self.num_down_stages
 
+        # TODO: this will need to be changed if we want FAST NANO
         if self.nano:
             nag = nag[1:]
 

@@ -8,7 +8,9 @@ from torch_geometric.data import Data as PyGData
 from torch_geometric.data import Batch as PyGBatch
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
 import src
+from src.data.cluster import CSRData
 from src.data.cluster import Cluster, ClusterBatch
+from src.data.instance import InstanceData, InstanceBatch
 from src.utils import tensor_idx, is_dense, has_duplicates, \
     isolated_nodes, knn_2, save_tensor, load_tensor, save_dense_to_csr, \
     load_csr_to_dense, to_trimmed, to_float_rgb, to_byte_rgb
@@ -22,7 +24,7 @@ class Data(PyGData):
     specific needs.
     """
 
-    _NOT_INDEXABLE = ['_csr_', '_cluster_', 'edge_index', 'edge_attr']
+    _NOT_INDEXABLE = ['_csr_', '_cluster_', '_obj_', 'edge_index', 'edge_attr']
 
 
     def __init__(self, **kwargs):
@@ -39,8 +41,15 @@ class Data(PyGData):
         return self['rgb'] if 'rgb' in self._store else None
 
     @property
-    def pred(self):
-        return self['pred'] if 'pred' in self._store else None
+    def obj(self) -> InstanceData:
+        """InstanceData object indicating the instance indices for each
+        node/point/superpoint in the Data.
+        """
+        return self['obj'] if 'obj' in self._store else None
+
+    @property
+    def semantic_pred(self):
+        return self['semantic_pred'] if 'semantic_pred' in self._store else None
 
     @property
     def neighbor_index(self):
@@ -48,7 +57,7 @@ class Data(PyGData):
             else None
 
     @property
-    def sub(self):
+    def sub(self) -> Cluster:
         """Cluster object indicating subpoint indices for each point."""
         return self['sub'] if 'sub' in self._store else None
 
@@ -66,10 +75,10 @@ class Data(PyGData):
         """Index to be used for LayerNorm.
 
         :param mode: str
-            Normalization mode. 'graph' will normalize per graph (ie per
-            cloud, ie per batch). 'node' will normalize per node (ie per
-            point). 'segment' will normalize per segment (ie per
-            cluster)
+            Normalization mode. 'graph' will normalize per graph (i.e.
+            per cloud, i.e. per batch). 'node' will normalize per node
+            (i.e. per point). 'segment' will normalize per segment
+            (i.e.  per cluster)
         """
         if getattr(self, 'batch', None) is not None:
             batch = self.batch
@@ -161,20 +170,25 @@ class Data(PyGData):
         return self.sub.points.max() + 1 if self.is_super else 0
 
     def detach(self):
-        """Extend `torch_geometric.Data.detach` to handle Cluster
-        attributes.
+        """Extend `torch_geometric.Data.detach` to handle Cluster and
+        InstanceData attributes.
         """
         self = super().detach()
         if self.is_super:
             self.sub = self.sub.detach()
+        if self.obj is not None:
+            self.obj = self.obj.detach()
         return self
 
     def to(self, device, **kwargs):
-        """Extend `torch_geometric.Data.to` to handle Cluster attributes.
+        """Extend `torch_geometric.Data.to` to handle Cluster and
+        InstanceData attributes.
         """
         self = super().to(device, **kwargs)
         if self.is_super:
             self.sub = self.sub.to(device, **kwargs)
+        if self.obj is not None:
+            self.obj = self.obj.to(device, **kwargs)
         return self
 
     def cpu(self, **kwargs):
@@ -197,14 +211,18 @@ class Data(PyGData):
         """Sanity checks."""
         if self.is_super:
             assert isinstance(self.sub, Cluster), \
-                "Clusters must be expressed using a Cluster object"
+                "Clusters in 'sub' must be expressed using a Cluster object"
             assert self.y is None or self.y.dim() == 2, \
-                "Clusters must hold label histograms"
+                "Clusters in 'sub' must hold label histograms"
+        if self.obj is not None:
+            assert isinstance(self.obj, InstanceData), \
+                "Instance labels in 'obj' must be expressed using an " \
+                "InstanceData object"
         if self.is_sub:
             if not is_dense(self.super_index):
                 print(
                     "WARNING: super_index indices are generally expected to be "
-                    "dense (ie all indices in [0, super_index.max()] are used),"
+                    "dense (i.e. all indices in [0, super_index.max()] are used),"
                     " which is not the case here. This may be because you are "
                     "creating a Data object after applying a selection of "
                     "points without updating the cluster indices.")
@@ -247,29 +265,29 @@ class Data(PyGData):
             Data indices to select from 'self'. Must NOT contain
             duplicates
         update_sub: bool
-            If True, the point (ie subpoint) indices will also be
+            If True, the point (i.e. subpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
             of a NAG.
         update_super: bool
-            If True, the cluster (ie superpoint) indices will also be
+            If True, the cluster (i.e. superpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_super, super_sub)' which can help apply these
             changes to maintain consistency with higher hierarchy levels
             of a NAG.
 
-        :returns data, (idx_sub, sub_super), (idx_super, super_sub)
-        data: Data
-            indexed data
-        idx_sub: torch.LongTensor
-            to be used with 'Data.select()' on the sub-level
-        sub_super: torch.LongTensor
-            to replace 'Data.super_index' on the sub-level
-        idx_super: torch.LongTensor
-            to be used with 'Data.select()' on the super-level
-        super_sub: Cluster
-            to replace 'Data.sub' on the super-level
+        :return: data, (idx_sub, sub_super), (idx_super, super_sub)
+            data: Data
+                indexed data
+            idx_sub: torch.LongTensor
+                to be used with 'Data.select()' on the sub-level
+            sub_super: torch.LongTensor
+                to replace 'Data.super_index' on the sub-level
+            idx_super: torch.LongTensor
+                to be used with 'Data.select()' on the super-level
+            super_sub: Cluster
+                to replace 'Data.sub' on the super-level
         """
         device = self.device
 
@@ -287,7 +305,7 @@ class Data(PyGData):
         # Data like this, as it might cause issues when calling
         # 'data.num_nodes' later on. Need to be careful when calling
         # 'data.num_nodes' before having set any of the pointwise
-        # attributes (eg 'x', 'pos', 'rgb', 'y', etc)
+        # attributes (e.g. 'x', 'pos', 'rgb', 'y', etc)
         data = self.__class__()
 
         # If Data contains edges, we will want to update edge indices
@@ -305,7 +323,7 @@ class Data(PyGData):
                 0, idx, torch.arange(idx.shape[0], device=device))
             edge_index = reindex[self.edge_index]
 
-            # Remove obsolete edges (ie those involving a '-1' index)
+            # Remove obsolete edges (i.e. those involving a '-1' index)
             idx_edge = torch.where((edge_index != -1).all(dim=0))[0]
             data.edge_index = edge_index[:, idx_edge]
 
@@ -355,6 +373,12 @@ class Data(PyGData):
                     f"WARNING: Data.select does not support '{key}', this "
                     f"attribute will be absent from the output")
             if key in skip_keys:
+                continue
+
+            # Slice CSRData elements, unless specified otherwise
+            # (e.g. 'sub')
+            if isinstance(item, CSRData):
+                data[key] = item[idx]
                 continue
 
             is_tensor = torch.is_tensor(item)
@@ -429,7 +453,12 @@ class Data(PyGData):
         low = self.pos.min(dim=0).values
         r_max = (high - low).norm()
         neighbors, distances = knn_2(
-            self.pos, self.pos[is_out], k + 1, r_max=r_max)
+            self.pos,
+            self.pos[is_out],
+            k + 1,
+            r_max=r_max,
+            batch_search=self.batch,
+            batch_query=self.batch[is_out] if self.batch is not None else None)
         distances = distances[:, 1:]
         neighbors = neighbors[:, 1:]
 
@@ -455,7 +484,7 @@ class Data(PyGData):
         d = (self.pos[s] - self.pos[t]).norm(dim=1)
         d_1 = torch.vstack((d, torch.ones_like(d))).T
 
-        # Least square on d_1.x = w  (ie d.a + b = w)
+        # Least square on d_1.x = w  (i.e. d.a + b = w)
         # NB: CUDA may crash trying to solve this simple system, in
         # which case we will fall back to CPU. Not ideal though
         try:
@@ -564,13 +593,18 @@ class Data(PyGData):
         assert isinstance(f, (h5py.File, h5py.Group))
 
         for k, val in self.items():
-            if k == 'pos':
+            if k == 'pos_offset':
+                save_tensor(val, f, k, fp_dtype=torch.double)
+            elif k == 'pos':
                 save_tensor(val, f, k, fp_dtype=pos_dtype)
             elif k == 'y' and val.dim() > 1 and y_to_csr:
                 sg = f.create_group(f"{f.name}/_csr_/{k}")
                 save_dense_to_csr(val, sg, fp_dtype=fp_dtype)
-            elif isinstance(val, Cluster):
+            elif k == 'sub' and isinstance(val, Cluster):
                 sg = f.create_group(f"{f.name}/_cluster_/sub")
+                val.save(sg, fp_dtype=fp_dtype)
+            elif k == 'obj' and isinstance(val, InstanceData):
+                sg = f.create_group(f"{f.name}/_obj_/obj")
                 val.save(sg, fp_dtype=fp_dtype)
             elif k in ['rgb', 'mean_rgb']:
                 if val.is_floating_point():
@@ -597,7 +631,7 @@ class Data(PyGData):
         :param keys: List(str)
             Keys should be loaded from the file, ignoring the rest
         :param update_sub: bool
-            If True, the point (ie subpoint) indices will also be
+            If True, the point (i.e. subpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
@@ -623,7 +657,7 @@ class Data(PyGData):
             keys_idx = list(set(f.keys()) - set(Data._NOT_INDEXABLE))
         if keys is None:
             all_keys = list(f.keys())
-            for k in ['_csr_', '_cluster_']:
+            for k in ['_csr_', '_cluster_', '_obj_']:
                 if k in all_keys:
                     all_keys.remove(k)
                     all_keys += list(f[k].keys())
@@ -632,6 +666,7 @@ class Data(PyGData):
         d_dict = {}
         csr_keys = []
         cluster_keys = []
+        obj_keys = []
 
         # Deal with special keys first, then read other keys if required
         for k in f.keys():
@@ -642,6 +677,9 @@ class Data(PyGData):
             if k == '_cluster_':
                 cluster_keys = list(f[k].keys())
                 continue
+            if k == '_obj_':
+                obj_keys = list(f[k].keys())
+                continue
             if k in keys_idx:
                 d_dict[k] = load_tensor(f[k], idx=idx)
             elif k in keys:
@@ -649,11 +687,12 @@ class Data(PyGData):
             if verbose and k in d_dict.keys():
                 print(f'Data.load {k:<22}: {time() - start:0.5f}s')
 
-        # Update the 'keys_idx' with newly-found 'csr_keys' and
-        # 'cluster_keys'
+        # Update the 'keys_idx' with newly-found 'csr_keys',
+        # 'cluster_keys', and 'obj_keys'
         if idx.shape[0] != 0:
             keys_idx = list(set(keys_idx).union(set(csr_keys)))
             keys_idx = list(set(keys_idx).union(set(cluster_keys)))
+            keys_idx = list(set(keys_idx).union(set(obj_keys)))
 
         # Special key '_csr_' holds data saved in CSR format
         for k in csr_keys:
@@ -680,6 +719,17 @@ class Data(PyGData):
             if verbose and k in d_dict.keys():
                 print(f'Data.load {k:<22}: {time() - start:0.5f}s')
 
+        # Special key '_obj_' holds InstanceData data
+        for k in obj_keys:
+            start = time()
+            if k in keys_idx:
+                d_dict[k] = InstanceData.load(
+                    f['_obj_'][k], idx=idx, verbose=verbose)
+            elif k in keys:
+                d_dict[k] = InstanceData.load(f['_obj_'][k], verbose=verbose)
+            if verbose and k in d_dict.keys():
+                print(f'Data.load {k:<22}: {time() - start:0.5f}s')
+
         # In case RGB is among the keys and is in integer type, convert
         # to float
         for k in ['rgb', 'mean_rgb']:
@@ -688,6 +738,146 @@ class Data(PyGData):
                     else to_byte_rgb(d_dict[k])
 
         return Data(**d_dict)
+
+    def estimate_instance_centroid(self, mode='iou'):
+        """Estimate the centroid position of each target instance
+        object, based on the position of the clusters.
+
+        Based on the hypothesis that clusters are relatively
+        instance-pure, we approximate the centroid of each object by
+        taking the barycenter of the centroids of the clusters
+        overlapping with each object, weighed down by their respective
+        IoUs.
+
+        NB: This is a proxy and one could design failure cases, when
+        clusters are not pure enough.
+
+        :param mode: str
+            Method used to estimate the centroids. 'iou' will weigh down
+            the centroids of the clusters overlapping each instance by
+            their IoU. 'ratio-product' will use the product of the size
+            ratios of the overlap wrt the cluster and wrt the instance.
+            'overlap' will use the size of the overlap between the
+            cluster and the instance.
+
+        :return obj_pos, obj_idx
+            obj_pos: Tensor
+                Estimated position for each object
+            obj_idx: Tensor
+                Corresponding object indices
+        """
+        if self.obj is None:
+            return None, None
+
+        return self.obj.estimate_centroid(self.pos, mode=mode)
+
+    def semantic_segmentation_oracle(
+            self, num_classes, *metric_args, **metric_kwargs):
+        """Compute the oracle performance for semantic segmentation,
+        when all nodes predict the dominant label among their points.
+        This corresponds to the highest achievable performance with the
+        partition at hand.
+
+        This expects one of the following attributes:
+          - `Data.obj`: holding node overlaps with instance annotations
+          - `Data.y`: holding node label histograms
+
+        :param num_classes: int
+            Number of valid classes. By convention, we assume
+            `y ∈ [0, num_classes-1]` are VALID LABELS, while
+            `y < 0` AND `y >= num_classes` ARE VOID LABELS
+        :param metric_args:
+            Args for the metrics computation
+        :param metric_kwargs:
+            Kwargs for the metrics computation
+
+        :return: mIoU, pre-class IoU, OA, mAcc
+        """
+        # Rely on the InstanceData for computation, if any
+        if self.obj is not None:
+            return self.obj.semantic_segmentation_oracle(
+                num_classes, *metric_args, **metric_kwargs)
+
+        # Return None if no labels
+        if getattr(self, 'y', None) is None:
+            return
+
+        # We expect the network to predict the most frequent label. For
+        # clusters where the dominant label is 'void', we expect the
+        # network to predict the second most frequent label. In the
+        # event where the cluster is 100% 'void', the metric will ignore
+        # the prediction, regardless its value
+        pred = self.y[:, :num_classes].argmax(dim=1)
+        target = self.y
+
+        # Performance evaluation
+        from src.metrics import ConfusionMatrix
+        metric = ConfusionMatrix(num_classes, *metric_args, **metric_kwargs)
+        metric(pred.cpu(), target.cpu())
+
+        return metric.miou(), metric.iou(), metric.oa(), metric.macc()
+
+    def instance_segmentation_oracle(self, *metric_args, **metric_kwargs):
+        """Compute the oracle performance for instance segmentation.
+        This is a proxy for the highest achievable performance with the
+        cluster partition at hand.
+
+        More precisely, for the oracle prediction:
+          - each cluster is assigned to the instance it shares the most
+            points with
+          - clusters assigned to the same instance are merged into a
+            single prediction
+          - each predicted instance has a score equal to its IoU with
+            the assigned target instance
+
+        This expects the following attributes:
+          - `Data.obj`: holding node overlaps with instance annotations
+
+        :param metric_args:
+            Args for the metrics computation
+        :param metric_kwargs:
+            Kwargs for the metrics computation
+
+        :return: InstanceMetricResults
+        """
+        # Rely on the InstanceData for computation, if any
+        if self.obj is not None:
+            return self.obj.instance_segmentation_oracle(
+                *metric_args, **metric_kwargs)
+        return
+
+    def panoptic_segmentation_oracle(self, *metric_args, **metric_kwargs):
+        """Compute the oracle performance for panoptic segmentation.
+        This is a proxy for the highest achievable performance with the
+        cluster partition at hand.
+
+        More precisely, for the oracle prediction:
+          - each cluster is assigned to the instance it shares the most
+            points with
+          - clusters assigned to the same instance are merged into a
+            single prediction
+
+        This expects the following attributes:
+          - `Data.obj`: holding node overlaps with instance annotations
+
+        :param metric_args:
+            Args for the metrics computation
+        :param metric_kwargs:
+            Kwargs for the metrics computation
+
+        :return: PanopticMetricResults
+        """
+        # Rely on the InstanceData for computation, if any
+        if self.obj is not None:
+            return self.obj.panoptic_segmentation_oracle(
+                *metric_args, **metric_kwargs)
+        return
+
+    def show(self, **kwargs):
+        """See `src.visualization.show`."""
+        # Local import to avoid import loop errors
+        from src.visualization import show
+        return show(self, **kwargs)
 
 
 class Batch(PyGBatch):
@@ -698,7 +888,7 @@ class Batch(PyGBatch):
     @classmethod
     def from_data_list(cls, data_list, follow_batch=None, exclude_keys=None):
         """Overwrite torch_geometric from_data_list to be able to handle
-        Cluster objects batching.
+        Cluster and InstanceData objects batching.
         """
 
         # Local hack to avoid being overflowed with pesky warnings
@@ -735,26 +925,34 @@ class Batch(PyGBatch):
             batch = super().from_data_list(
                 data_list, follow_batch=follow_batch, exclude_keys=exclude_keys)
 
-        # Dirty trick: manually convert 'sub' to a proper ClusterBatch.
+        # Dirty trick: manually convert 'sub' to a proper ClusterBatch
+        # and 'obj' to a proper InstanceBatch.
         # Note we will need to do the same in `get_example` to avoid
         # breaking PyG Batch mechanisms
         if batch.is_super:
-            batch.sub = ClusterBatch.from_csr_list(batch.sub)
+            batch.sub = ClusterBatch.from_list(batch.sub)
+        if batch.obj is not None:
+            batch.obj = InstanceBatch.from_list(batch.obj)
 
         return batch
 
     def get_example(self, idx):
         """Overwrite torch_geometric get_example to be able to handle
-        Cluster objects batching.
+        Cluster and InstanceData objects batching.
         """
 
         if self.is_super:
             sub_bckp = self.sub.clone()
-            self.sub = self.sub.to_csr_list()
+            self.sub = self.sub.to_list()
+        if self.obj is not None:
+            obj_bckp = self.obj.clone()
+            self.obj = self.obj.to_list()
 
         data = super().get_example(idx)
 
         if self.is_super:
             self.sub = sub_bckp
+        if self.obj is not None:
+            self.obj = obj_bckp
 
         return data

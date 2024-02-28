@@ -8,3 +8,4 @@ from .dropout import *
 from .transformer import *
 from .stage import *
 from .position_encoding import *
+from .instance import *

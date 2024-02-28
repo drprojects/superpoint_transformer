@@ -1,0 +1,12 @@
+# @package datamodule
+defaults:
+  - /datamodule/semantic/s3dis_room.yaml
+
+# Whether the dataset produces instance labels. In any case, the
+# instance labels will be preprocessed, if any. However, `instance: False`
+# will avoid unwanted instance-related I/O operations, to save memory
+instance: True
+
+# Instance graph parameters
+instance_k_max: 30  # maximum number of neighbors for each superpoint in the instance graph
+instance_radius: 0.1  # maximum distance of neighbors for each superpoint in the instance graph

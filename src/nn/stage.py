@@ -288,7 +288,7 @@ class DownNFuseStage(Stage):
 
         # Pooling operator
         # IMPORTANT: the `down_pool_block` naming MUST MATCH the one
-        # used in `PointSegmentationModule.configure_optimizers()` for
+        # used in `SemanticSegmentationModule.configure_optimizers()` for
         # differential learning rates to work
         self.down_pool_block = pool_factory(pool)
 

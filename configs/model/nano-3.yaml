@@ -1,5 +1,0 @@
-defaults:
-  - spt-3.yaml
-
-net:
-  nano: True
