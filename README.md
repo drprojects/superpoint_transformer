@@ -43,7 +43,7 @@ If you ❤️ or use this project, don't forget to give it a ⭐, it means a lot
 ```
 ```
 @article{robert2024scalable,
-  title={Scalable 3D Panoptic Segmentation With Superpoint Graph Clustering},
+  title={Scalable 3D Panoptic Segmentation as Superpoint Graph Clustering},
   author={Robert, Damien and Raguet, Hugo and Landrieu, Loic},
   journal={Proceedings of the IEEE International Conference on 3D Vision},
   year={2024}
@@ -558,7 +558,7 @@ If your work uses all or part of the present code, please include the following 
 }
 
 @article{robert2024scalable,
-  title={Scalable 3D Panoptic Segmentation With Superpoint Graph Clustering},
+  title={Scalable 3D Panoptic Segmentation as Superpoint Graph Clustering},
   author={Robert, Damien and Raguet, Hugo and Landrieu, Loic},
   journal={Proceedings of the IEEE International Conference on 3D Vision},
   year={2024}
