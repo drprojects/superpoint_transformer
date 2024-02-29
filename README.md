@@ -334,7 +334,7 @@ python src/train.py experiment=semantic/dales_11g
 python src/train.py experiment=panoptic/s3dis_11g datamodule.fold=5
 
 # Train SuperCluster on S3DIS Fold 5 with {wall, floor, ceiling} as 'stuff'
-python src/train.py experiment=panoptic/s3dis_11g_with_stuff datamodule.fold=5
+python src/train.py experiment=panoptic/s3dis_with_stuff_11g datamodule.fold=5
 
 # Train SuperCluster on ScanNet Val
 python src/train.py experiment=panoptic/scannet_11g
@@ -488,7 +488,7 @@ training SuperCluster on an **11G-GPU 💾**:
 python src/train.py experiment=panoptic/s3dis_11g datamodule.fold=5
 
 # Train SuperCluster on S3DIS Fold 5 with {wall, floor, ceiling} as 'stuff'
-python src/train.py experiment=panoptic/s3dis_11g_with_stuff datamodule.fold=5
+python src/train.py experiment=panoptic/s3dis_with_stuff_11g datamodule.fold=5
 
 # Train SuperCluster on ScanNet Val
 python src/train.py experiment=panoptic/scannet_11g
