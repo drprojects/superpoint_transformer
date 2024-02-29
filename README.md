@@ -98,16 +98,16 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 
 <div align="center">
 
-| ✨ SuperCluster in numbers ✨ |
-| :---: |
-| 📊 **SOTA on S3DIS 6-Fold** (55.9 PQ) |
-| 📊 **SOTA on S3DIS Area 5** (50.1 PQ) |
-| 📊 **SOTA on ScanNet Val** (58.7 PQ) |
-| 📊 **FIRST on KITTI-360 Val** (48.3 mIoU) |
-| 📊 **FIRST on DALES** (61.2 mIoU) |
+|                               ✨ SuperCluster in numbers ✨                                |
+|:----------------------------------------------------------------------------------------:|
+|                          📊 **SOTA on S3DIS 6-Fold** (55.9 PQ)                           |
+|                          📊 **SOTA on S3DIS Area 5** (50.1 PQ)                           |
+|                           📊 **SOTA on ScanNet Val** (58.7 PQ)                           |
+|                         📊 **FIRST on KITTI-360 Val** (48.3 PQ)                          |
+|                             📊 **FIRST on DALES** (61.2 PQ)                              |
 | 🦋 **212k parameters** ([PointGroup](https://github.com/dvlab-research/PointGroup) ÷ 37) | 
-| ⚡ S3DIS training in **4h on 1 GPU** | 
-| ⚡ **7.8km²** tile of **18M** points in **10.1s** on **1 GPU** |
+|                           ⚡ S3DIS training in **4h on 1 GPU**                            | 
+|              ⚡ **7.8km²** tile of **18M** points in **10.1s** on **1 GPU**               |
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-s3dis)](https://paperswithcode.com/sota/panoptic-segmentation-on-s3dis?p=scalable-3d-panoptic-segmentation-with)
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-s3dis-area5)](https://paperswithcode.com/sota/panoptic-segmentation-on-s3dis-area5?p=scalable-3d-panoptic-segmentation-with)
