@@ -23,7 +23,7 @@ task_name: "eval"
 tags: ["dev"]
 
 # compile model for faster training with pytorch >=2.1.0
-compile: True
+compile: False
 
 # passing checkpoint path is necessary for evaluation
 ckpt_path: ???

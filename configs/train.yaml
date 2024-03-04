@@ -48,7 +48,7 @@ train: True
 test: True
 
 # compile model for faster training with pytorch >=2.1.0
-compile: True
+compile: False
 
 # simply provide checkpoint path to resume training
 ckpt_path: null
