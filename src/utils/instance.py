@@ -17,6 +17,7 @@ from src.utils.neighbors import knn_2
 from src.utils.graph import to_trimmed
 from src.utils.cpu import available_cpu_count
 from src.utils.scatter import scatter_mean_weighted
+from src.utils.semantic import _set_attribute_preserving_transforms
 
 
 src_folder = osp.dirname(osp.dirname(osp.abspath(__file__)))
@@ -32,7 +33,7 @@ from cp_d0_dist import cp_d0_dist
 __all__ = [
     'generate_random_bbox_data', 'generate_random_segment_data',
     'instance_cut_pursuit', 'oracle_superpoint_clustering', 'get_stuff_mask',
-    'compute_panoptic_metrics', 'compute_metrics_s3dis_6fold',
+    'compute_panoptic_metrics', 'compute_panoptic_metrics_s3dis_6fold',
     'grid_search_panoptic_partition']
 
 
@@ -904,6 +905,8 @@ def compute_panoptic_metrics(
             # tile for inference
             nag = dataset.on_device_transform(nag)
 
+            # NB: we use the "validation_step" protocol here, regardless
+            # of the stage the data comes from
             model.validation_step(nag, None)
 
         # Actions taken from on_validation_epoch_end()
@@ -938,7 +941,7 @@ def compute_panoptic_metrics(
     return panoptic, instance, semantic
 
 
-def compute_metrics_s3dis_6fold(
+def compute_panoptic_metrics_s3dis_6fold(
         fold_ckpt,
         experiment_config,
         stage='val',
@@ -950,8 +953,8 @@ def compute_metrics_s3dis_6fold(
     instance graph and partition parameters.
 
     :param fold_ckpt: dict
-        Dictionary with S3DIS folds as keys and checkpoint paths as
-        values
+        Dictionary with S3DIS fold numbers as keys and checkpoint paths
+        as values
     :param experiment_config: str
         Experiment config to use for inference. For instance for S3DIS
         with stuff panoptic segmentation: 'panoptic/s3dis_with_stuff'
@@ -1004,7 +1007,6 @@ def compute_metrics_s3dis_6fold(
             edge_affinity_head=model.edge_affinity_head,
             partitioner=model.partitioner,
             criterion=model.criterion)
-        # model.criterion = hydra.utils.instantiate(cfg.model).criterion
         model = model.eval().cuda()
 
         # Compute metrics on the fold
@@ -1071,21 +1073,6 @@ def compute_metrics_s3dis_6fold(
     print(f"mIoU                  : {semantic_6fold.miou().cpu().item()}")
 
     return (panoptic_6fold, panoptic_list), (instance_6fold, instance_list), (semantic_6fold, semantic_list)
-
-
-def _set_attribute_preserving_transforms(dataset):
-    """For the sake of visualization, we require that `NAGAddKeysTo`
-    does not remove input `Data` attributes after moving them to `Data.x`,
-    so we may visualize them.
-    """
-    # Local imports to avoid import loop errors
-    from src.transforms import NAGAddKeysTo
-
-    for t in dataset.on_device_transform.transforms:
-        if isinstance(t, NAGAddKeysTo):
-            t.delete_after = False
-
-    return dataset
 
 
 def _set_graph_construction_parameters(dataset, graph_kwargs):
