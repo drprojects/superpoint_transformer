@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from sklearn.linear_model import RANSACRegressor
-from pgeof import pgeof
+import pgeof
 from src.utils import rgb2hsv, rgb2lab, sizes_to_pointers, to_float_rgb, \
     POINT_FEATURES, sanitize_keys
 from src.transforms import Transform
@@ -165,10 +165,19 @@ class PointFeatures(Transform):
             nn_ptr = np.ascontiguousarray(nn_ptr)
 
             # C++ geometric features computation on CPU
-            f = pgeof(
-                xyz, nn, nn_ptr, k_min=self.k_min, k_step=self.k_step,
-                k_min_search=self.k_min_search, verbose=False)
-            f = torch.from_numpy(f.astype('float32'))
+            if self.k_step < 0:
+                f = pgeof.compute_features(xyz, nn, nn_ptr, self.k_min, verbose=False)
+            else:
+                f = pgeof.compute_features_optimal(
+                    xyz,
+                    nn,
+                    nn_ptr,
+                    self.k_min,
+                    self.k_step,
+                    self.k_min_search,
+                    verbose=False,
+                )
+            f = torch.from_numpy(f)
 
             # Keep only required features
             if 'linearity' in keys:

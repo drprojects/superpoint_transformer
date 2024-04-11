@@ -7,7 +7,7 @@ from torch_geometric.utils import add_self_loops
 from src.transforms import Transform
 import src
 from src.data import NAG
-from pgeof import pgeof
+import pgeof
 from src.utils import print_tensor_info, isolated_nodes, edge_to_superedge, \
     subedges, to_trimmed, cluster_radius_nn_graph, is_trimmed, \
     base_vectors_3d, scatter_mean_orientation, POINT_FEATURES, \
@@ -189,8 +189,8 @@ def _compute_cluster_features(
     xyz = xyz + torch.rand(xyz.shape).numpy() * 1e-5
 
     # C++ geometric features computation on CPU
-    f = pgeof(xyz, nn, nn_ptr, k_min=5, k_step=-1, verbose=False)
-    f = torch.from_numpy(f.astype('float32'))
+    f = pgeof.compute_features(xyz, nn, nn_ptr, 5, verbose=False)
+    f = torch.from_numpy(f)
 
     # Recover length, surface and volume
     if 'linearity' in keys:
