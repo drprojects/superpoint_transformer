@@ -91,7 +91,7 @@ pip install plyfile
 pip install h5py
 pip install colorhash
 pip install seaborn
-pip3 install numba
+pip install numba
 pip install pytorch-lightning
 pip install pyrootutils
 pip install hydra-core --upgrade
@@ -123,9 +123,7 @@ echo
 echo
 echo "⭐ Installing Point Geometric Features"
 echo
-conda install -c omnia eigen3 -y
-export EIGEN_LIB_PATH="$CONDA_PREFIX/include"
-python -m pip install git+https://github.com/drprojects/point_geometric_features
+pip install git+https://github.com/drprojects/point_geometric_features.git
 
 echo
 echo
