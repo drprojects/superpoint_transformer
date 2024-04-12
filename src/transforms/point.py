@@ -166,7 +166,12 @@ class PointFeatures(Transform):
 
             # C++ geometric features computation on CPU
             if self.k_step < 0:
-                f = pgeof.compute_features(xyz, nn, nn_ptr, self.k_min, verbose=False)
+                f = pgeof.compute_features(
+                    xyz, 
+                    nn, 
+                    nn_ptr, 
+                    self.k_min, 
+                    verbose=False)
             else:
                 f = pgeof.compute_features_optimal(
                     xyz,
@@ -175,8 +180,7 @@ class PointFeatures(Transform):
                     self.k_min,
                     self.k_step,
                     self.k_min_search,
-                    verbose=False,
-                )
+                    verbose=False)
             f = torch.from_numpy(f)
 
             # Keep only required features
