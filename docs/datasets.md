@@ -153,7 +153,7 @@ logs. By default, these are placed in the repository directory.
 
 Since this may take some space, or your heavy data may be stored elsewhere, you 
 may specify other paths for these directories by creating a 
-`configs/local/defaults.yaml` file containing the following:
+`configs/local/default.yaml` file containing the following:
 
 ```yaml
 # @package paths
