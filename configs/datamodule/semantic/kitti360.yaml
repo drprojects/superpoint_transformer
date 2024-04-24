@@ -408,16 +408,6 @@ on_device_val_transform:
     # segment-wise position normalization with UnitSphereNorm
     - transform: NodeSize
 
-    # Apply sampling transforms first to reduce the number of nodes and
-    # edges. These operations are compute-intensive and are the reason
-    # why these transforms are not performed on CPU
-    - transform: SampleSubNodes
-      params:
-        low: 0
-        high: 1
-        n_min: 128
-        n_max: 256
-
     # Cast all attributes to either float or long. Doing this only now
     # allows speeding up disk I/O and CPU->GPU transfer
     - transform: NAGCast
