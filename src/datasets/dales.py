@@ -39,8 +39,8 @@ def read_dales_tile(
         Absolute path to the PLY file
     :param xyz: bool
         Whether XYZ coordinates should be saved in the output Data.pos
-    :param rgb: bool
-        Whether RGB colors should be saved in the output Data.rgb
+    :param intensity: bool
+        Whether intensity should be saved in the output Data.intensity
     :param semantic: bool
         Whether semantic labels should be saved in the output Data.y
     :param instance: bool

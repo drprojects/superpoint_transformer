@@ -121,6 +121,7 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 
 ## 📰  Updates
 
+- **14.06.2024** Added some documentation for our **[interactive visualization tool](docs/visualization.md)**.
 - **28.02.2024** Major code release for **panoptic segmentation**, implementing 
 **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704)**.
 This new version also implements long-awaited features such as lightning's
@@ -452,6 +453,7 @@ provided in [media/visualizations.7z](media/visualizations.7z)
 - [Data](docs/data_structures.md) - Introduction to `NAG` and `Data`, the core data structures of this project
 - [Datasets](docs/datasets.md) - Introduction to `Datasets` and the project's `data/` structure
 - [Logging](docs/logging.md) - Introduction to logging and the project's `logs/` structure
+- [Visualization](docs/visualization.md) - Introduction to our interactive 3D visualization tool
 
 > **Note**: We endeavoured to **comment our code** as much as possible to make 
 > this project usable. Still, if you find some parts are unclear or some more 

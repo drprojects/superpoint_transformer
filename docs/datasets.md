@@ -18,7 +18,7 @@ for more details.
 </div>
 
 
-### Structure of the `data/` directory
+#### Structure of the `data/` directory
 <details>
 <summary><b>S3DIS data directory structure.</b></summary>
 <br><br>
@@ -39,7 +39,7 @@ for more details.
 
 ```
 
-> **Warning**: Make sure you download `Stanford3dDataset_v1.2.zip` and 
+> **Warning ⚠️**: Make sure you download `Stanford3dDataset_v1.2.zip` and 
 > **NOT** the aligned version ⛔ `Stanford3dDataset_v1.2_Aligned_Version.zip`,
 > which does not contain the `Area_{{1, 2, 3, 4, 5, 6}}_alignmentAngle.txt` 
 > files.
@@ -117,7 +117,7 @@ for more details.
 
 ```
 
-> **Warning**: Make sure you download the `DALESObjects.tar.gz` and **NOT** 
+> **Warning ⚠️**: Make sure you download the `DALESObjects.tar.gz` and **NOT** 
 > ⛔ `dales_semantic_segmentation_las.tar.gz` nor 
 > ⛔ `dales_semantic_segmentation_ply.tar.gz` versions, which do not contain 
 > all required point attributes.
@@ -125,11 +125,11 @@ for more details.
 <br>
 </details>
 
-> **Note**: **Already have the dataset on your machine ?** Save memory 💾 by 
+> **Tip 💡**: **Already have the dataset on your machine ?** Save memory 💾 by 
 > simply symlinking or copying the files to `data/<dataset_name>/raw/`, following the 
 > [above-described `data/` structure](#structure-of-the-data-directory).
 
-### Automatic download and preprocessing
+#### Automatic download and preprocessing
 Following `torch_geometric`'s `Dataset` behaviour:
 
 0. Dataset instantiation <br>
@@ -141,7 +141,7 @@ Following `torch_geometric`'s `Dataset` behaviour:
 3. Missing downloaded dataset in `data/<dataset_name>` structure<br>
 ➡ ~~**Automatic**~~ **manual** download to `data/<dataset_name>`
 
-> **Warning**: We **do not support ❌ automatic download**, for compliance 
+> **Warning ⚠️**: We **do not support ❌ automatic download**, for compliance 
 >reasons.
 >Please _**manually download**_ the required dataset files to the required 
 >location as indicated in the above [table](#supported-datasets).
@@ -167,18 +167,19 @@ log_dir: /path/to/your/logs/
 
 ## Pre-transforms, transforms, on-device transforms
 
-Pre-transforms are the functions making up the preprocessing. 
+**Pre-transforms** are the functions making up the preprocessing. 
 These are called only once and their output is saved in 
 `data/<dataset_name>/processed/`. These typically encompass neighbor search and 
 partition construction.
 
-The transforms are called by the `Dataloaders` at batch-creation time. These 
+The **transforms** are called by the `Dataloader` at batch-creation time. These 
 typically encompass sampling and data augmentations and are performed on CPU, 
 before moving the batch to the GPU.
 
-On-device transforms, are transforms to be performed on GPU. These are 
-typically compute intensive operations that could not be done once and for all 
-at preprocessing time, and are too slow to be performed on CPU.
+**On-device transforms**, are transforms to be performed on GPU. These are 
+typically compute-intensive operations that could not be done once and for all 
+at preprocessing time, and are too slow to be performed on CPU by the 
+`Dataloader`.
 
 ## Preprocessing hash
 Different from `torch_geometric`, you can have **multiple 
