@@ -121,6 +121,10 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 
 ## 📰  Updates
 
+- **21.06.2024** [Damien](https://github.com/drprojects) will be giving a 
+**🧑‍🏫 tutorial on Superpoint Transformer on 📅 27.06.2024 at 1pm CEST**. 
+Make sure to come if you want to gain some hands-on experience with the project !
+**[Registration here](https://www.linkedin.com/events/superpointtransformersfor3dpoin7209130538110963712)**. 
 - **14.06.2024** Added some documentation for our **[interactive visualization tool](docs/visualization.md)**.
 - **28.02.2024** Major code release for **panoptic segmentation**, implementing 
 **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704)**.
