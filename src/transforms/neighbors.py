@@ -16,7 +16,7 @@ class KNN(Transform):
     of each point. This may result in points having less-than-expected
     neighbors (missing neighbors are indicated by -1 indices). The
     `oversample` mechanism allows for oversampling the found neighbors
-    so as to replace the missing ones.
+    to replace the missing ones.
 
     :param k: int
         Number of neighbors to search for
