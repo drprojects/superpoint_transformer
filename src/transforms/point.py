@@ -88,8 +88,8 @@ class PointFeatures(Transform):
 
         # Build the set of keys that must be computed/updated. In
         # particular, if `overwrite=False`, we do not modify
-        # already-existing keys in the input Data. With the exception of
-        # 'rgb', for which we always enforce [0, 1] float encoding
+        # already-existing keys in the input Data. Except for 'rgb', for
+        # which we always enforce [0, 1] float encoding
         keys = set(self.keys) if self.overwrite \
             else set(self.keys) - set(data.keys)
 
@@ -227,11 +227,12 @@ class GroundElevation(Transform):
     Parameters
     ----------
     :param threshold: float
-        Ground points will be searched within threshold of the lowest
+        Ground points will be searched within `threshold` of the lowest
         point in the cloud. Adjust this if the lowest point is below the
         ground or if you have large above-ground planar structures
     :param scale: float
-        Scaling by which the computed elevation will be divided
+        Scaling by which the computed elevation should be divided, for
+        the sake of normalization
     """
 
     def __init__(self, threshold=1.5, scale=3.0):

@@ -384,7 +384,7 @@ class SampleRecursiveMainXYAxisTiling(Transform):
         median of each split considered before those above the median
     :param steps: int
         Number of splitting steps. By construction, the total number of
-        tiles is 2**tiling
+        tiles is 2**steps
     """
 
     def __init__(self, x=0, steps=2):

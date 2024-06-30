@@ -10,8 +10,8 @@ from src.utils.sparse import dense_to_csr, csr_to_dense
 
 
 __all__ = [
-    'dated_dir', 'save_tensor', 'load_tensor', 'save_dense_to_csr',
-    'load_csr_to_dense']
+    'dated_dir', 'host_data_root', 'save_tensor', 'load_tensor',
+    'save_dense_to_csr', 'load_csr_to_dense']
 
 
 def dated_dir(root, create=False):
@@ -29,6 +29,26 @@ def dated_dir(root, create=False):
     if create and not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
     return path
+
+
+#TODO: remove this for deployment !
+def host_data_root():
+    """Read the host machine's name and return the known $DATA_ROOT
+    directory
+    """
+    HOST = socket.gethostname()
+    if HOST == 'DEL2001W017':
+        DATA_ROOT = '/media/drobert-admin/DATA2/datasets'
+    elif HOST == 'HP-2010S002':
+        DATA_ROOT = '/var/data/drobert/datasets'
+    elif HOST == '9c81b1a54ad8':
+        DATA_ROOT = '/raid/dataset/pointcloud/data'
+    elif HOST.endswith('sis.cnes.fr'):
+        DATA_ROOT = '/home/qt/robertda/scratch/datasets'
+    else:
+        raise NotImplementedError(
+            f"Unknown host '{HOST}', cannot set DATA_ROOT")
+    return DATA_ROOT
 
 
 def save_tensor(x, f, key, fp_dtype=torch.float):

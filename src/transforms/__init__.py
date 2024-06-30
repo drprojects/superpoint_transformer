@@ -1,4 +1,5 @@
 import sys
+import copy
 from .transforms import *
 from .data import *
 from .device import *
@@ -44,9 +45,9 @@ if len(_intersection_tr) > 0:
 
 
 def instantiate_transform(transform_option, attr="transform"):
-    """Create a transform from an OmegaConf dict such as
+    """Create a transform from an OmegaConf dict such as:
 
-    ```
+    ```yaml
     transform: GridSampling3D
         params:
             size: 0.01
@@ -88,9 +89,9 @@ def instantiate_transform(transform_option, attr="transform"):
 
 def instantiate_transforms(transform_options):
     """Create a torch_geometric composite transform from an OmegaConf
-    list such as
+    list such as:
 
-    ```
+    ```yaml
     - transform: GridSampling3D
         params:
             size: 0.01
@@ -117,6 +118,58 @@ def instantiate_transforms(transform_options):
                 f"while {t_in} expects a {in_type} input.")
 
     return pygT.Compose(transforms)
+
+
+def instantiate_datamodule_transforms(transform_options, log=None):
+    """Create a dictionary of torch_geometric composite transforms from
+    a datamodule OmegaConf holding lists of transforms characterized by
+    a `*transform*` key such as:
+
+    ```yaml
+    # parsed in the output dictionary
+    pre_transform:
+        - transform: GridSampling3D
+            params:
+                size: 0.01
+        - transform: NormaliseScale
+
+    # not parsed in the output dictionary
+    foo:
+        a: 1
+        b: 10
+
+    # parsed in the output dictionary
+    on_device_transform:
+        - transform: NodeSize
+        - transform: NAGAddSelfLoops
+    ```
+
+    This helper function is typically intended for instantiating the
+    transforms of a `BaseDataModule` from an Omegaconf config object
+
+    Credit: https://github.com/torch-points3d/torch-points3d
+    """
+    transforms_dict = {}
+    for key_name in transform_options.keys():
+        if "transform" not in key_name:
+            continue
+        name = key_name.replace("transforms", "transform")
+        params = getattr(transform_options, key_name, None)
+        if params is None:
+            continue
+        try:
+            transform = instantiate_transforms(params)
+        except Exception:
+            msg = f"Error trying to create {name}, {params}"
+            log.exception(msg) if log is not None else print(msg)
+            continue
+        transforms_dict[name] = transform
+    if len(transforms_dict) == 0:
+        msg = (f"Could not find any '*transform*' key among the provided config"
+               f" keys: {transform_options.keys()}. Are you sure you passed a "
+               f"datamodule config as input ?")
+        log.exception(msg) if log is not None else print(msg)
+    return transforms_dict
 
 
 def explode_transform(transform_list):

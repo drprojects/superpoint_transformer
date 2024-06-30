@@ -17,10 +17,11 @@ def make_experiment_widgets():
     """
     # Parse list of experiment configs
     experiment_configs = {
-        k: v[1] for k, v in get_config_structure()[0]['experiment'][0].items()}
+        k: sorted(v[1])
+        for k, v in get_config_structure()[0]['experiment'][0].items()}
     default_task = list(experiment_configs.keys())[0]
     default_expe = experiment_configs[default_task][0]
-    
+
     w_task = widgets.ToggleButtons(
         options=experiment_configs.keys(),
         value=default_task,

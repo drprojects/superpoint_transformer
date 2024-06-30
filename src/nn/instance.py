@@ -10,6 +10,7 @@ __all__ = ['InstancePartitioner']
 class InstancePartitioner(nn.Module):
     """Partition a graph into instances using cut-pursuit.
     More specifically, this step will group nodes together based on:
+        - node offset position
         - node predicted classification logits
         - node size
         - edge affinity

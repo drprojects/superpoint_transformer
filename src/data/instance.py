@@ -752,10 +752,11 @@ class InstanceData(CSRData):
 
         # Performance evaluation
         from src.metrics import ConfusionMatrix
-        metric = ConfusionMatrix(num_classes, *metric_args, **metric_kwargs)
-        metric(pred.cpu(), target.cpu())
+        cm = ConfusionMatrix(num_classes, *metric_args, **metric_kwargs)
+        cm(pred.cpu(), target.cpu())
+        metrics = cm.all_metrics()
 
-        return metric.miou(), metric.iou(), metric.oa(), metric.macc()
+        return metrics
 
     def oracle(self, num_classes):
         """Compute the oracle predictions for instance and panoptic

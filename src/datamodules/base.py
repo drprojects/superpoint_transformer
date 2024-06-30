@@ -182,21 +182,10 @@ class BaseDataModule(LightningDataModule):
     def set_transforms(self):
         """Parse in self.hparams in search for '*transform*' keys and
         instantiate the corresponding transforms.
-
-        Credit: https://github.com/torch-points3d/torch-points3d
         """
-        for key_name in self.hparams.keys():
-            if "transform" in key_name:
-                name = key_name.replace("transforms", "transform")
-                params = getattr(self.hparams, key_name, None)
-                if params is None:
-                    continue
-                try:
-                    transform = instantiate_transforms(params)
-                except Exception:
-                    log.exception(f"Error trying to create {name}, {params}")
-                    continue
-                setattr(self, name, transform)
+        t_dict = instantiate_datamodule_transforms(self.hparams, log=log)
+        for key, transform in t_dict.items():
+            setattr(self, key, transform)
 
     def check_tta_conflicts(self):
         """Make sure the transforms are Test-Time Augmentation-friendly

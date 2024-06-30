@@ -97,8 +97,9 @@ def feats_to_plotly_rgb(feats, normalize=False, colorscale='Agsunset'):
         if colorscale is None:
             color = feats.repeat_interleave(3, 1)
         else:
-            color = np.array(sample_colorscale(
-                get_colorscale(colorscale), feats.squeeze().numpy()))
+            colorscale = get_colorscale(colorscale)
+            feats = min_max_normalize(feats).squeeze().numpy()
+            color = np.array(sample_colorscale(colorscale, feats))
             is_plotly_rgb_string_format = True
 
     elif feats.shape[1] == 2:
@@ -116,18 +117,26 @@ def feats_to_plotly_rgb(feats, normalize=False, colorscale='Agsunset'):
         is_normalized = True
 
     if normalize and not is_normalized and not is_plotly_rgb_string_format:
-        # Unit-normalize the features in a hypercube of shared scale
-        # for nicer visualizations
-        high = color.max(dim=0).values
-        low = color.min(dim=0).values
-        color = (color - low) / (high - low)
-        color[color.isnan() | color.isinf()] = 0
+        color = min_max_normalize(color)
 
     # Convert to RGB-255 plotly-friendly numpy format
     if not is_plotly_rgb_string_format:
         color = rgb_to_plotly_rgb(color)
 
     return color
+
+
+def min_max_normalize(x):
+    """Normalize an array of floats in a unit-hypercube of shared scale.
+    Typically useful for visualizing float features with colors
+    """
+    # Unit-normalize the features in a hypercube of shared scale
+    # for nicer visualizations
+    high = x.max(dim=0).values
+    low = x.min(dim=0).values
+    x_normalized = (x - low) / (high - low)
+    x_normalized[x_normalized.isnan() | x_normalized.isinf()] = 0
+    return x_normalized
 
 
 def identity_PCA(x, dim=3, normalize=False):

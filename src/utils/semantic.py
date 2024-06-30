@@ -127,10 +127,7 @@ def compute_semantic_metrics_s3dis_6fold(
         model = hydra.utils.instantiate(cfg.model)
 
         # Load pretrained weights from a checkpoint file
-        model = model.__class__.load_from_checkpoint(
-            cfg.ckpt_path,
-            net=model.net,
-            criterion=model.criterion)
+        model = model._load_from_checkpoint(cfg.ckpt_path)
         model = model.eval().cuda()
 
         # Compute metrics on the fold
@@ -167,8 +164,8 @@ def compute_semantic_metrics_s3dis_6fold(
 
 def _set_attribute_preserving_transforms(dataset):
     """For the sake of visualization, we require that `NAGAddKeysTo`
-    does not remove input `Data` attributes after moving them to `Data.x`,
-    so we may visualize them.
+    does not remove input `Data` attributes after moving them to
+    `Data.x`, so we may visualize them.
     """
     # Local imports to avoid import loop errors
     from src.transforms import NAGAddKeysTo

@@ -162,6 +162,18 @@ def visualize_3d(
 
     :return:
     """
+    # Data attributes plotted by default if found in the input
+    _DEFAULT_KEYS = [
+        'pos',
+        'rgb',
+        'y',
+        'semantic_pred',
+        'obj',
+        'obj_pred',
+        'x',
+        'super_sampling',
+        'super_index']
+
     # assert isinstance(input, (Data, NAG))
     gap = torch.tensor(gap) if gap is not None else gap
     assert gap is None or gap.shape == torch.Size([3])
@@ -327,6 +339,9 @@ def visualize_3d(
     i_point_trace = 0
     i_unselected_point_trace = 1
 
+    # Initialize `void_classes`
+    void_classes = [num_classes] if num_classes else []
+
     # Draw a trace for position-colored 3D point cloud
     mini = data_0.pos.min(dim=0).values
     maxi = data_0.pos.max(dim=0).values
@@ -417,7 +432,6 @@ def visualize_3d(
             # Create a mask over the points identifying those whose
             # ground truth label is void
             is_void = np.zeros(y_gt.max() + 1, dtype='bool')
-            void_classes = [num_classes] if num_classes else []
             for i in void_classes:
                 if i < is_void.shape[0]:
                     is_void[i] = True
@@ -467,7 +481,6 @@ def visualize_3d(
         # the expected behavior is the same, except that we will ensure
         # that the hover text distinguishes between stuff and void
         stuff_classes = stuff_classes if stuff_classes is not None else []
-        void_classes = [num_classes] if num_classes else []
         stuff_classes = list(set(stuff_classes).union(set(void_classes)))
 
         # Colors and text for stuff points
@@ -539,7 +552,6 @@ def visualize_3d(
         # the expected behavior is the same, except that we will ensure
         # that the hover text distinguishes between stuff and void
         stuff_classes = stuff_classes if stuff_classes is not None else []
-        void_classes = [num_classes] if num_classes else []
         stuff_classes = list(set(stuff_classes).union(set(void_classes)))
 
         # If the ground truth labels are available, we use them to
@@ -614,20 +626,26 @@ def visualize_3d(
         trace_modes[i_unselected_point_trace]['Features 3D'] = {
             'marker.color': colors[~data_0.selected], 'hovertext': None}
 
-    # Draw a trace for each key specified in keys
+    # Draw a trace for each key specified in keys. Only displays
+    # point-wise tensor attributes that have not already been plotted
+    # (ie not in `_DEFAULT_KEYS`)
     if keys is None:
         keys = []
     elif isinstance(keys, str):
         keys = [keys]
+    keys = [k for k in keys if k not in _DEFAULT_KEYS]
     for key in keys:
-        if getattr(data_0, key, None) is not None:
-            colors = feats_to_plotly_rgb(
-                data_0[key], normalize=True, colorscale=colorscale)
-            data_0[f"{key}_colors"] = colors
-            trace_modes[i_point_trace][str(key).title()] = {
-                'marker.color': colors[data_0.selected], 'hovertext': None}
-            trace_modes[i_unselected_point_trace][str(key).title()] = {
-                'marker.color': colors[~data_0.selected], 'hovertext': None}
+        val = getattr(data_0, key, None)
+        if (val is None or not torch.is_tensor(val)
+                or val.shape[0] != data_0.num_points):
+            continue
+        colors = feats_to_plotly_rgb(
+            val, normalize=True, colorscale=colorscale)
+        data_0[f"{key}_colors"] = colors
+        trace_modes[i_point_trace][str(key).title()] = {
+            'marker.color': colors[data_0.selected], 'hovertext': None}
+        trace_modes[i_unselected_point_trace][str(key).title()] = {
+            'marker.color': colors[~data_0.selected], 'hovertext': None}
 
     # Draw a trace for 3D point cloud sampling (for sampling debugging)
     if 'super_sampling' in data_0.keys:
@@ -1058,6 +1076,12 @@ def show(input, path=None, title=None, no_output=True, pt_path=None, **kwargs):
         Figure title
     :param no_output: bool
         Set to True if you want to return the 3D Plotly figure objects
+    :param pt_path:str
+        Path to save the visualization-ready `Data` object as a `*.pt`.
+        In this `Data` object, the `pos` and all `*color*` attributes
+        will be saved, the rest is discarded. This is typically useful
+        for exporting the visualization layers to another visualization
+        tool
     :param kwargs:
     :return:
     """

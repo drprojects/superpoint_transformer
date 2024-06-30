@@ -4,12 +4,24 @@ import logging
 import numpy as np
 from torchmetrics.classification import MulticlassConfusionMatrix
 from torch_scatter import scatter_add
+from src.metrics.mean_average_precision import BaseMetricResults
 
 
 log = logging.getLogger(__name__)
 
 
 __all__ = ['ConfusionMatrix']
+
+
+class SemanticMetricResults(BaseMetricResults):
+    """Class to wrap the final metric results for Semantic Segmentation.
+    """
+    __slots__ = (
+        'oa',
+        'macc',
+        'miou',
+        'iou_per_class',
+        'seen_class')
 
 
 class ConfusionMatrix(MulticlassConfusionMatrix):
@@ -230,6 +242,22 @@ class ConfusionMatrix(MulticlassConfusionMatrix):
                 print(f'  {c:<13}: not seen')
                 continue
             print(f'  {c:<13}: {iou:0.2f}')
+
+    def all_metrics(self, as_percent=True):
+        """Helper to return all important metrics, stored in a
+        `SemanticMetricResults` object   print the OA, mAcc, mIoU and per-class IoU.
+
+        :param as_percent: bool
+            If True, the returned metric is expressed in [0, 100]
+        """
+        metrics = SemanticMetricResults()
+        metrics.oa = self.oa(as_percent=as_percent)
+        metrics.macc = self.macc(as_percent=as_percent)
+        metrics.miou = self.miou(as_percent=as_percent)
+        iou, seen = self.iou(as_percent=as_percent)
+        metrics.iou_per_class = iou
+        metrics.seen_class = seen
+        return metrics
 
 
 def save_confusion_matrix(cm, path2save, ordered_names):

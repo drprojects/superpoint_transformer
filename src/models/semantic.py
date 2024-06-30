@@ -1,4 +1,8 @@
+from typing import Union, IO, Optional, Any
+from typing_extensions import Self
+
 import torch
+from lightning_fabric.utilities.types import _PATH, _MAP_LOCATION_TYPE
 from torch.nn import ModuleList
 import logging
 from copy import deepcopy
@@ -734,6 +738,14 @@ class SemanticSegmentationModule(LightningModule):
         if self.multi_stage_loss:
             self.criterion.weight = class_weight if class_weight is not None \
                 else class_weight_bckp
+
+    def _load_from_checkpoint(self, checkpoint_path, **kwargs):
+        """Simpler version of `LightningModule.load_from_checkpoint()`
+        for easier use: no need to explicitly pass `model.net`,
+        `model.criterion`, etc.
+        """
+        return self.__class__.load_from_checkpoint(
+            checkpoint_path, net=self.net, criterion=self.criterion, **kwargs)
 
     @staticmethod
     def sanitize_step_output(out_dict):

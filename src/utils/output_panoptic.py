@@ -22,6 +22,7 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
             logits,
             stuff_classes,
             edge_affinity_logits,
+            # node_offset_pred,
             node_size,
             y_hist=None,
             obj=None,
@@ -31,6 +32,7 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
             obj_pos=None,
             obj_index_pred=None,
             semantic_loss=None,
+            # node_offset_loss=None,
             edge_affinity_loss=None):
         # We set the child class attributes before calling the parent
         # class constructor, because the parent constructor calls
@@ -40,6 +42,7 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
             if stuff_classes is not None \
             else torch.empty(0, device=device).long()
         self.edge_affinity_logits = edge_affinity_logits
+        # self.node_offset_pred = node_offset_pred
         self.node_size = node_size
         self.obj = obj
         self.obj_edge_index = obj_edge_index
@@ -48,6 +51,7 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
         self.obj_pos = obj_pos
         self.obj_index_pred = obj_index_pred
         self.semantic_loss = semantic_loss
+        # self.node_offset_loss = node_offset_loss
         self.edge_affinity_loss = edge_affinity_loss
         super().__init__(logits, y_hist=y_hist)
 
@@ -56,6 +60,8 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
         super().debug()
 
         # Instance predictions
+        # assert self.node_offset_pred.dim() == 2
+        # assert self.node_offset_pred.shape[0] == self.num_nodes
         assert self.edge_affinity_logits.dim() == 1
 
         # Node properties
@@ -94,6 +100,8 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
         assert self.obj_edge_index.shape[1] == self.num_edges
         assert self.obj_edge_affinity.dim() == 1
         assert self.obj_edge_affinity.shape[0] == self.num_edges
+        # assert self.pos.shape == self.node_offset_pred.shape
+        # assert self.obj_pos.shape == self.node_offset_pred.shape
 
     @property
     def has_target(self):
@@ -130,6 +138,14 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
         """
         return self.edge_affinity_logits.shape[1]
 
+    # @property
+    # def node_offset(self):
+    #     """Target node offset: `offset = obj_pos - pos`.
+    #     """
+    #     if not self.has_target:
+    #         return
+    #     return self.obj_pos - self.pos
+
     @property
     def edge_affinity_pred(self):
         """Simply applies a sigmoid on `edge_affinity_logits` to produce
@@ -148,6 +164,45 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
 
         mask = self.void_mask[self.obj_edge_index]
         return mask[0] & mask[1]
+
+    # @property
+    # def sanitized_node_offsets(self):
+    #     """Return the predicted and target node offsets, along with node
+    #     size, sanitized for node offset loss and metrics computation.
+    #
+    #     By convention, we want stuff nodes to have 0 offset. Two
+    #     reasons for that:
+    #       - defining a stuff target center is ambiguous
+    #       - by predicting 0 offsets, the corresponding nodes are
+    #         likely to be isolated by the superpoint clustering step.
+    #         This is what we want, because the predictions will be
+    #         merged as a post-processing step, to ensure there is a
+    #         most one prediction per batch item for each stuff class
+    #
+    #     Besides, we choose to exclude nodes/superpoints with more than
+    #     50% 'void' points from node offset loss and metrics computation.
+    #
+    #     To this end, the present function does the following:
+    #       - ASSUME predicted offsets are 0 when predicted semantic class
+    #         is of type 'stuff'
+    #       - set target offsets to 0 when target semantic class is of
+    #         type 'stuff'
+    #       - remove predicted and target offsets for 'void' nodes (see
+    #         `self.void_mask`)
+    #     """
+    #     if not self.has_target:
+    #         return None, None, None
+    #
+    #     # We exclude the void nodes from loss computation
+    #     idx = torch.where(~self.void_mask)[0]
+    #
+    #     # Set target offsets to 0 when predicted semantic is stuff
+    #     y_hist = self.semantic_target
+    #     is_stuff = get_stuff_mask(y_hist, self.stuff_classes)
+    #     node_offset = self.node_offset
+    #     node_offset[is_stuff] = 0
+    #
+    #     return self.node_offset_pred[idx], node_offset[idx], self.node_size[idx]
 
     @property
     def sanitized_edge_affinities(self):
@@ -225,6 +280,21 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
         obj_y, obj_semantic_score, obj_logits = \
             self.weighted_instance_semantic_pred
 
+        # # Compute the mean node offset, weighted by node sizes, for each
+        # # object
+        # node_x = self.pos + self.node_offset_pred
+        # obj_x = scatter_mean_weighted(
+        #     node_x, self.obj_index_pred, self.node_size)
+        #
+        # # Compute the mean squared distance to the mean predicted offset
+        # # for each object
+        # node_x_error = ((node_x - obj_x[self.obj_index_pred]) ** 2).sum(dim=1)
+        # obj_x_error = scatter_mean_weighted(
+        #     node_x_error, self.obj_index_pred, self.node_size).squeeze()
+        #
+        # # Compute the node offset prediction score
+        # obj_x_score = 1 / (1 + obj_x_error)
+
         # TODO: should we take object size into account in the scoring ?
 
         # Compute, for each predicted object, the mean inter-object and
@@ -243,6 +313,10 @@ class PanopticSegmentationOutput(SemanticSegmentationOutput):
         obj_inter_score = 1 / (1 + obj_mean_inter)
 
         # Final prediction score is the product of individual scores
+        # TODO : cleanly remove offset
+        # obj_score = \
+        #     obj_semantic_score * obj_x_score * obj_intra_score * obj_inter_score
+        # obj_score = obj_semantic_score * obj_intra_score * obj_inter_score
         obj_score = obj_semantic_score
 
         return obj_score, obj_y, instance_data

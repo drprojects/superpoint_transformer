@@ -812,10 +812,11 @@ class Data(PyGData):
 
         # Performance evaluation
         from src.metrics import ConfusionMatrix
-        metric = ConfusionMatrix(num_classes, *metric_args, **metric_kwargs)
-        metric(pred.cpu(), target.cpu())
+        cm = ConfusionMatrix(num_classes, *metric_args, **metric_kwargs)
+        cm(pred.cpu(), target.cpu())
+        metrics = cm.all_metrics()
 
-        return metric.miou(), metric.iou(), metric.oa(), metric.macc()
+        return metrics
 
     def instance_segmentation_oracle(self, *metric_args, **metric_kwargs):
         """Compute the oracle performance for instance segmentation.
@@ -929,7 +930,7 @@ class Batch(PyGBatch):
         # and 'obj' to a proper InstanceBatch.
         # Note we will need to do the same in `get_example` to avoid
         # breaking PyG Batch mechanisms
-        if batch.is_super:
+        if batch.is_super and isinstance(batch.sub, Cluster):
             batch.sub = ClusterBatch.from_list(batch.sub)
         if batch.obj is not None:
             batch.obj = InstanceBatch.from_list(batch.obj)

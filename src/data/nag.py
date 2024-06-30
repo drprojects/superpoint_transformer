@@ -88,6 +88,16 @@ class NAG:
         """Number of points/nodes in the lower-level graph."""
         return [d.num_points for d in self] if self.num_levels > 0 else 0
 
+    @property
+    def level_ratios(self):
+        """Ratios of number of nodes between consecutive partition
+        levels. This can be useful for investigating how much each
+        partition level 'compresses' the previous one.
+        """
+        return {
+            f"|P_{i}| / |P_{i+1}|": self.num_points[i] / self.num_points[i + 1]
+            for i in range(self.num_levels - 1)}
+
     def to_list(self):
         """Return the Data list"""
         return self._list
