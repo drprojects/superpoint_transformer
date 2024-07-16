@@ -904,8 +904,8 @@ def _minimalistic_horizontal_edge_features(
     # Compute std of the offset, in a base built around the mean offset
     base = base_vectors_3d(se_mean_off)[se_id]
     u = (offset * base[:, 0]).sum(dim=1).view(-1, 1)
-    v = (offset * base[:, 0]).sum(dim=1).view(-1, 1)
-    w = (offset * base[:, 0]).sum(dim=1).view(-1, 1)
+    v = (offset * base[:, 1]).sum(dim=1).view(-1, 1)
+    w = (offset * base[:, 2]).sum(dim=1).view(-1, 1)
     se_std_off = scatter_std(torch.cat((u, v, w), dim=1), se_id, dim=0)
     se_std_off = se_std_off.clip(-2, 2)
 
