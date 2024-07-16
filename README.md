@@ -20,6 +20,7 @@ Official implementation for
 [![arXiv](https://img.shields.io/badge/arxiv-2306.08045-b31b1b.svg)](https://arxiv.org/abs/2306.08045)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/superpoint-transformer)
+[![Tutorial](https://img.shields.io/badge/Tutorial-FFC300)](https://www.youtube.com/watch?v=2qKhpQs9gJw)
 <br>
 <br>
 [_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704) (3DV 2024 Oral)
@@ -120,10 +121,10 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 <br>
 
 ## 📰  Updates
-
-- **27.06.2024** Released 🧑‍🏫 tutorial 
-[slides](media/superpoint_transformer_tutorial.pdf) and 
-[notebook](notebooks/superpoint_transformer_tutorial.ipynb). 
+- **27.06.2024** Released our Superpoint Transformer 🧑‍🏫 tutorial 
+[slides](media/superpoint_transformer_tutorial.pdf), 
+[notebook](notebooks/superpoint_transformer_tutorial.ipynb), and [video](https://www.youtube.com/watch?v=2qKhpQs9gJw). 
+Check these out if you are getting started with the project ! 
 - **21.06.2024** [Damien](https://github.com/drprojects) will be giving a 
 **🧑‍🏫 tutorial on Superpoint Transformer on 📅 27.06.2024 at 1pm CEST**. 
 Make sure to come if you want to gain some hands-on experience with the project !
@@ -429,6 +430,21 @@ To this end, we provide helper functions to recover voxel-wise and full-resoluti
 predictions.
 
 See our [demo notebook](notebooks/demo.ipynb) for more details on these.
+
+### Using a pretrained model on custom data
+For running a pretrained model on your own point cloud, please refer to our 
+tutorial [slides](media/superpoint_transformer_tutorial.pdf), 
+[notebook](notebooks/superpoint_transformer_tutorial.ipynb), 
+and [video](https://www.youtube.com/watch?v=2qKhpQs9gJw).
+
+### Parametrizing the superpoint partition on custom data
+Our hierarchical superpoint partition is computed at preprocessing time. Its
+construction involves several steps whose parametrization must be adapted to
+your specific dataset and task. Please refer to our 
+tutorial [slides](media/superpoint_transformer_tutorial.pdf), 
+[notebook](notebooks/superpoint_transformer_tutorial.ipynb), 
+and [video](https://www.youtube.com/watch?v=2qKhpQs9gJw) for better 
+understanding this process and tuning it to your needs.
 
 ### Parameterizing SuperCluster graph clustering
 One specificity of SuperCluster is that the model is not trained to explicitly 
