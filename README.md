@@ -30,7 +30,8 @@ Official implementation for
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/supercluster)
 <br>
 <br>
-If you ❤️ or use this project, don't forget to give it a ⭐, it means a lot to us !
+**If you ❤️ or simply use this project, don't forget to give the repository a ⭐,
+it means a lot to us !**
 <br>
 </div>
 
@@ -472,15 +473,20 @@ provided in [media/visualizations.7z](media/visualizations.7z)
 <br>
 
 ## 📚  Documentation
-- [README](README.md) - General introduction to the project
-- [Data](docs/data_structures.md) - Introduction to `NAG` and `Data`, the core data structures of this project
-- [Datasets](docs/datasets.md) - Introduction to `Datasets` and the project's `data/` structure
-- [Logging](docs/logging.md) - Introduction to logging and the project's `logs/` structure
-- [Visualization](docs/visualization.md) - Introduction to our interactive 3D visualization tool
+
+| Location                                          | Content                                                                                                                     |
+|:--------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------|
+| [README](README.md)                               | General introduction to the project                                                                                         |
+| [`docs/data_structures`](docs/data_structures.md) | Introduction to the core data structures of this project: `Data`, `NAG`, `Cluster`, and `InstanceData`                      |
+| [`docs/datasets`](docs/datasets.md)               | Introduction to our implemented datasets, to our `BaseDataset` class, and how to create your own dataset inheriting from it |
+| [`docs/logging`](docs/logging.md)                 | Introduction to logging and the project's `logs/` structure                                                                 |
+| [`docs/visualization`](docs/visualization.md)     | Introduction to our interactive 3D visualization tool                                                                       |
 
 > **Note**: We endeavoured to **comment our code** as much as possible to make 
-> this project usable. Still, if you find some parts are unclear or some more 
-> documentation would be needed, feel free to let us know by creating an issue ! 
+> this project usable. If you don't find the answer you are looking for in the 
+> `docs/`, make sure to **have a look at the source code and past issues**. 
+> Still, if you find some parts are unclear or some more documentation would be 
+> needed, feel free to let us know by creating an issue ! 
 
 <br>
 
@@ -592,4 +598,5 @@ If your work uses all or part of the present code, please include the following 
 
 You can find our [SPT paper 📄](https://arxiv.org/abs/2306.08045) and [SuperCluster paper 📄](https://arxiv.org/abs/2401.06704) on arxiv.
 
-Also, if you ❤️ or use this project, don't forget to give it a ⭐, it means a lot to us !
+Also, **if you ❤️ or simply use this project, don't forget to give the 
+repository a ⭐, it means a lot to us !**

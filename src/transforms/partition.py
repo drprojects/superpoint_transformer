@@ -21,22 +21,62 @@ __all__ = ['CutPursuitPartition', 'GridPartition']
 
 
 class CutPursuitPartition(Transform):
-    """Partition Data using cut-pursuit.
+    """Partition a graph contained in a `Data` object using cut-pursuit.
+
+    The input `Data` object is assumed to hold the following attributes:
+      - `pos` carrying node spatial coordinates
+      - `x` carrying node features
+      - `edge_index` carrying the adjacency graph edges in Pytorch
+         Geometric format (typically generated with `AdjacencyGraph`)
+      - `edge_attr` carrying the scalar edge weights in Pytorch
+         Geometric format (typically generated with `AdjacencyGraph`)
+
+    The quality of a partition may be assessed in terms of efficiency
+    (how much it simplifies the input graph) and accuracy (how well it
+    respects the semantic boundaries). We provide two tools for
+    assessing these: `NAG.level_ratios` which computes the ratio of the
+    number of elements between successive partition levels, and
+    `Data.semantic_segmentation_oracle()` which computes the semantic
+    segmentation metrics of a hypothetical oracle model capable of
+    predicting the majority label for each superpoint. See our
+    Superpoint Transformer tutorial
+    `notebooks/superpoint_transformer_tutorial.ipynb` for more on this.
 
     :param regularization: float or List(float)
+        Regularization strength used for each partition level. This is
+        the primary parameter for adjusting cut-pursuit partitions. The
+        larger the regularization, the coarser the partition, the fewer
+        the superpoints, the bigger the superpoints, the lower their
+        semantic purity (ie superpoints are more likely to bleed across
+        semantic object boundaries). And vice versa. If a list is
+        passed, the values are assumed to be increasing
     :param spatial_weight: float or List(float)
         Weight used to mitigate the impact of the point position in the
-        partition. The larger, the less spatial coordinates matter. This
-        can be loosely interpreted as the inverse of a maximum
-        superpoint radius. If a list is passed, it must match the length
-        of `regularization`
+        partition. The smaller, the less spatial coordinates matter.
+        This can be loosely interpreted as the inverse of a maximum
+        superpoint radius. It typically affects the size of superpoints
+        in geometrically/radiometrically homogeneous regions such as the
+        ground, walls, or ceilings. Setting a large `spatial_weight`
+        will have a "voronoi tessellation" effect on the superpoint
+        partition, preventing too-large superpoints from being
+        constructed in these otherwise-homogeneous regions. Inversely,
+        setting a small `spatial_weight` will encourage cut-pursuit to
+        create superpoints as large as possible, so long as the features
+        of the points inside are homogeneous. In an extreme case: the
+        entire floor would then be a single superpoint. If a list is
+        passed, it must match the length of `regularization`
     :param cutoff: float or List(float)
-        Minimum number of points in each cluster. If a list is passed,
-        it must match the length of `regularization`
+        Minimum number of points in each superpoint. The output
+        partition will not contain any superpoint smaller than `cutoff`.
+        If a list is passed, it must match the length of
+        `regularization`
     :param parallel: bool
-        Whether cut-pursuit should run in parallel
+        Whether cut-pursuit should run in parallel (ie on multiple CPU
+        threads)
     :param iterations: int
-        Maximum number of iterations for each partition
+        Maximum number of iterations for the cut-pursuit algorithm. The
+        higher, the longer the processing. A value in $[10, 15]$ is
+        usually sufficient
     :param k_adjacency: int
         When a node is isolated after a partition, we connect it to the
         nearest nodes. This rules the number of neighbors it should be
