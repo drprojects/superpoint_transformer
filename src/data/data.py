@@ -926,11 +926,13 @@ class Batch(PyGBatch):
             batch = super().from_data_list(
                 data_list, follow_batch=follow_batch, exclude_keys=exclude_keys)
 
-        # Dirty trick: manually convert 'sub' to a proper ClusterBatch
-        # and 'obj' to a proper InstanceBatch.
+        # PyG does not know how to batch Cluster and InstanceData
+        # objects. So the 'sub' and 'obj' attributes will contain lists
+        # of such objects. We now need to manually convert these to
+        # proper ClusterBatch and InstanceBatch.
         # Note we will need to do the same in `get_example` to avoid
         # breaking PyG Batch mechanisms
-        if batch.is_super and isinstance(batch.sub, Cluster):
+        if batch.is_super:
             batch.sub = ClusterBatch.from_list(batch.sub)
         if batch.obj is not None:
             batch.obj = InstanceBatch.from_list(batch.obj)
