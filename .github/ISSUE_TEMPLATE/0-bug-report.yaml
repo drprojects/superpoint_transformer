@@ -15,6 +15,7 @@ body:
         required: true
       - label: "I have checked the [introduction page](https://github.com/drprojects/superpoint_transformer/blob/master/README.md ) and the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs) "
         required: true
+      - label: " I have check that this bug is a SuperPoint Transformers bug and is not in fact a sub-dependency issue (ex: pytorch installation issue, pytorch geometric not installed with GPU support... )."
 
 - type: textarea
   attributes:
