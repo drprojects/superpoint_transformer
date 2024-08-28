@@ -161,11 +161,10 @@ named `spt`.
 # Creates a conda env named 'spt' env and installs dependencies
 setup/install.sh
 ```
-You can run 
 > **Note**: See the [Datasets page](docs/datasets.md) for setting up your dataset
 > path and file structure.
 
-> **Debug**: In case your pytorch version is not supported or you are facing some installation issue, you can check github issue or run [check_dependency.sh](setup/check_dependency.sh) to isolate your issue. 
+> **Debug**: In case your pytorch version is not supported and you are facing some installation issue, you can check github issue and run [check_dependency.sh](setup/check_dependency.sh) to isolate the dependency issue. 
 > ```bash
 >#  check that some dependency are installed. 
 >setup/check_dependency.sh
