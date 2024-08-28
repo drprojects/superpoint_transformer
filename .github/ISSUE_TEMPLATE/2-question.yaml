@@ -1,0 +1,27 @@
+
+name: Ask a Question
+description: Ask a question on how to use SuperPoint Transformer, how to implement something, etc.
+title: "Summarize the question. \")"
+labels: [question]
+
+body:
+
+- type: checkboxes
+  attributes:
+    label: "Checklist"
+    options:
+      - label: "I have searched for [similar issues](https://github.com/drprojects/superpoint_transformer/issues)."
+        required: true
+      - label: " I have tested with the lastest available version."
+        required: true
+      - label: "I have checked the [introduction page](https://github.com/drprojects/superpoint_transformer/blob/master/README.md ) and the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs) "
+        required: true
+
+- type: textarea
+  attributes:
+    label: "My Question"
+    description: >
+      Provide the *detailed* description of your query. Kindly attach code
+      snippets, screen-shots, data files used in your application, etc.
+  validations:
+    required: true
