@@ -7,8 +7,8 @@ python $SCRIPTPATH/check_torch_scatter_CUDA.py
 
 echo "⭐ check that FRNN and prefix_sum are installed"
 cd $SCRIPTPATH
-cd ../src/dependencies/FRNN/tests/
-python frnn_ratio_small.py
+cd ../src/dependencies/FRNN/
+python tests/frnn_ratio_small.py
 
 echo "⭐ check that pgeof is installed"
 cd $SCRIPTPATH
