@@ -1,0 +1,67 @@
+name: Report a Bug
+description: Create a new ticket for a bug.	
+title: "Summarize the bug"
+labels: [bug]
+
+body:
+
+- type: checkboxes
+  attributes:
+    label: "Checklist"
+    options:
+      - label: "I have searched for [similar issues](https://github.com/drprojects/superpoint_transformer/issues)."
+        required: true
+      - label: " I have tested with the lastest available version."
+        required: true
+      - label: "I have checked the [introduction page](https://github.com/drprojects/superpoint_transformer/blob/master/README.md ) and the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs) "
+        required: true
+
+- type: textarea
+  attributes:
+    label: "Describe the issue"
+    description: >
+      Provide the *detailed* description of the issue you are facing. Include
+      references to any documentation or issues you referred.
+
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: "Steps to reproduce the bug"
+    description: >
+      Please provide step-by-step instructions and full source code to reproduce
+      the bug. The instructions shall be self-contained.
+    placeholder: |
+      << your code here >>
+      import numpy as np
+
+
+    render: python
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: "Error message"
+    description: >
+      Please include the *full* error message, if any. You may submit/attach
+      the entire terminal output with the error message.
+    placeholder: |
+      << Full error message >>
+  validations:
+    required: false
+
+- type: textarea
+  attributes:
+    label: "Expected behavior"
+    description: >
+      A clear and concise description of what you expected to happen.
+
+- type: textarea
+  attributes:
+    label: "Additional information"
+    description: >
+      Please add any additional information that could help us diagnose the
+      problem better. Provide screenshots if applicable. You may attach
+      log files, generated wheel, or any other files, that could be helpful.
