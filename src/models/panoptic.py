@@ -9,6 +9,7 @@ from src.metrics import MeanAveragePrecision3D, PanopticQuality3D, \
     ConfusionMatrix
 from src.models.semantic import SemanticSegmentationModule
 from src.loss import BCEWithLogitsLoss
+from src.data import NAG
 
 
 log = logging.getLogger(__name__)
@@ -341,7 +342,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return output
 
-    def _forward_partition(self, nag, output, grid=None) -> PanopticSegmentationOutput:
+    def _forward_partition(self, nag, output, grid=None, force=False) -> PanopticSegmentationOutput:
         """Compute the panoptic partition based on the predicted node
         offsets, node semantic logits, and edge affinity logits.
 
@@ -356,6 +357,12 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         :param grid: Dict
             A dictionary containing settings for grid-searching optimal
             partition parameters
+        :param force: bool
+            Whether to forcefully compute the partition, regardless of
+            `self.needs_partition`. This mechanism is typically needed
+            during training when we want to store or log predictions for
+            a batch of interest at an epoch when `self.needs_partition`
+            is False
 
         :return: output
         """
@@ -1177,6 +1184,56 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         self.test_panoptic.reset()
         self.test_semantic.reset()
         self.test_instance.reset()
+
+    def save_batch(self, batch, batch_idx, output, folder=None):
+        """Store a batch prediction to disk. The corresponding `NAG`
+        object will be populated with panoptic segmentation predictions
+        for:
+        - levels 1+ if `multi_stage` output (i.e. loss supervision on
+          levels 1 and above)
+        - only level 1 otherwise
+
+        Besides, we also pre-compute the level-0 predictions as this is
+        frequently required for downstream tasks. However, we choose not
+        to compute the full-resolution predictions for the sake of disk
+        memory.
+
+        If a `folder` is provided, the NAG will be saved there under:
+          <folder>/<epoch>/<batch_idx>.h5
+        If not, the folder will be the logger's directory, if any.
+        If not, the current working directory will be used.
+
+        :param batch:
+        :param batch_idx:
+        :param output:
+        :param folder:
+        :return:
+        """
+        # Sanity check in case using multi-run inference
+        if not isinstance(batch, NAG):
+            raise NotImplementedError(
+                f"Expected as NAG, but received a {type(batch)}. Are you "
+                f"perhaps running multi-run inference ? If so, this is not "
+                f"compatible with batch_saving, please deactivate either one.")
+
+        # Compute the panoptic partition if not already done
+        if output.obj_index_pred is None:
+            output = self._forward_partition(batch, output, force=True)
+
+        # Detach the batch object and move it to CPU before saving
+        batch = batch.detach().cpu()
+
+        # Store the output predictions in conveniently-accessible
+        # attributes in the NAG, for easy downstream use of the saved
+        # object
+        vox_y, vox_index, vox_obj_pred = output.voxel_panoptic_pred(
+            super_index=batch[0].super_index)
+        batch[1].obj_pred = output.obj_index_pred.detach().cpu()
+        batch[0].obj_pred = vox_obj_pred.detach().cpu()
+        batch[1].edge_affinity_logits = output.edge_affinity_logits.detach().cpu()
+
+        # Parent behavior for saving semantic segmentation prediction
+        super().save_batch(batch, batch_idx, output, folder=folder)
 
     def load_state_dict(self, state_dict, strict=True):
         """Basic `load_state_dict` from `torch.nn.Module` with a bit of

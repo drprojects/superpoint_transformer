@@ -2,6 +2,8 @@ from typing import Union, IO, Optional, Any
 from typing_extensions import Self
 
 import torch
+import os
+import os.path as osp
 from lightning_fabric.utilities.types import _PATH, _MAP_LOCATION_TYPE
 from torch.nn import ModuleList
 import logging
@@ -11,7 +13,7 @@ from torchmetrics import MaxMetric, MeanMetric
 from src.metrics import ConfusionMatrix
 from src.utils import loss_with_target_histogram, atomic_to_histogram, \
     init_weights, wandb_confusion_matrix, knn_2, garbage_collection_cuda, \
-    SemanticSegmentationOutput
+    SemanticSegmentationOutput, date_time_string
 from src.nn import Classifier
 from src.loss import MultiLoss
 from src.optim.lr_scheduler import ON_PLATEAU_SCHEDULERS
@@ -46,6 +48,9 @@ class SemanticSegmentationModule(LightningModule):
             transformer_lr_scale=1,
             multi_stage_loss_lambdas=None,
             gc_every_n_steps=0,
+            track_val_every_n_epoch=1,
+            track_val_idx=None,
+            track_test_idx=None,
             **kwargs):
         super().__init__()
 
@@ -152,7 +157,7 @@ class SemanticSegmentationModule(LightningModule):
 
         # Get the LightningDataModule number of classes and make sure it
         # matches self.num_classes. We could also forcefully update the
-        # LightningModule with this new information but it could easily
+        # LightningModule with this new information, but it could easily
         # become tedious to track all places where num_classes affects
         # the LightningModule object.
         num_classes = self.trainer.datamodule.train_dataset.num_classes
@@ -395,7 +400,7 @@ class SemanticSegmentationModule(LightningModule):
     @staticmethod
     def _update_output_multi(output_multi, nag, output, nag_transformed, key):
         """Local helper method to accumulate multiple predictions on
-        the same -or part of the same- point cloud.
+        the same--or part of the same--point cloud.
         """
         # Recover the node identifier that should have been
         # implanted by `NAGSaveNodeIndex` and forward on the
@@ -526,6 +531,19 @@ class SemanticSegmentationModule(LightningModule):
         self.validation_step_update_metrics(loss, output)
         self.validation_step_log_metrics()
 
+        # Store features and predictions for a batch of interest
+        # NB: the `batch_idx` produced by torch lightning here
+        # corresponds to the `Dataloader`'s index wrt the current epoch
+        # and NOT an index wrt the `Dataset`. Said otherwise, if the
+        # `Dataloader(shuffle=True)` then, the stored batch will not be
+        # the same at each epoch. For this reason, if tracking the same
+        # object across training is needed, the `Dataloader` and the
+        # transforms should be free from any stochasticity
+        track_epoch = self.current_epoch % self.hparams.track_every_n_epoch == 0
+        track_batch = batch_idx == self.hparams.track_val_idx
+        if track_epoch and track_batch:
+            self.save_batch(batch, batch_idx, output)
+
         # Explicitly delete the output, for memory release
         del output
 
@@ -606,6 +624,19 @@ class SemanticSegmentationModule(LightningModule):
             self.trainer.datamodule.test_dataset.make_submission(
                 batch_idx, l0_pred, l0_pos, submission_dir=self.submission_dir)
 
+        # Store features and predictions for a batch of interest
+        # NB: the `batch_idx` produced by torch lightning here
+        # corresponds to the `Dataloader`'s index wrt the current epoch
+        # and NOT an index wrt the `Dataset`. Said otherwise, if the
+        # `Dataloader(shuffle=True)` then, the stored batch will not be
+        # the same at each epoch. For this reason, if tracking the same
+        # object across training is needed, the `Dataloader` and the
+        # transforms should be free from any stochasticity
+        track_batch = batch_idx == self.hparams.track_test_idx
+        track_all_batches = self.hparams.track_test_idx == -1
+        if track_batch or track_all_batches:
+            self.save_batch(batch, batch_idx, output)
+
         # Explicitly delete the output, for memory release
         del output
 
@@ -664,6 +695,89 @@ class SemanticSegmentationModule(LightningModule):
     def predict_step(self, batch, batch_idx):
         _, output = self.model_step(batch)
         return batch, output
+
+    def save_batch(self, batch, batch_idx, output, folder=None):
+        """Store a batch prediction to disk. The corresponding `NAG`
+        object will be populated with semantic segmentation predictions
+        for:
+        - levels 1+ if `multi_stage` output (i.e. loss supervision on
+          levels 1 and above)
+        - only level 1 otherwise
+
+        Besides, we also pre-compute the level-0 predictions as this is
+        frequently required for downstream tasks. However, we choose not
+        to compute the full-resolution predictions for the sake of disk
+        memory.
+
+        If a `folder` is provided, the NAG will be saved there under:
+          <folder>/<epoch>/<batch_idx>.h5
+        If not, the folder will be the logger's directory, if any.
+        If not, the current working directory will be used.
+
+        :param batch:
+        :param batch_idx:
+        :param output:
+        :param folder:
+        :return:
+        """
+        # Sanity check in case using multi-run inference
+        if not isinstance(batch, NAG):
+            raise NotImplementedError(
+                f"Expected as NAG, but received a {type(batch)}. Are you "
+                f"perhaps running multi-run inference ? If so, this is not "
+                f"compatible with batch_saving, please deactivate either one.")
+
+        # Detach the batch object and move it to CPU before saving
+        batch = batch.detach().cpu()
+
+        # Store the output predictions in conveniently-accessible
+        # attributes in the NAG, for easy downstream use of the saved
+        # object
+        if not output.multi_stage:
+            logits = output.logits.detach().cpu()
+            pred = torch.argmax(logits, dim=1)
+
+            # Store level-1 predictions and logits
+            batch[1].semantic_pred = pred
+            batch[1].logits = logits
+
+            # Store level-0 (voxel-wise) predictions and logits
+            batch[0].semantic_pred = pred[batch[0].super_index]
+            batch[0].logits = logits[batch[0].super_index]
+
+        else:
+            for i, _logits in enumerate(output.logits):
+                logits = _logits.detach().cpu()
+                pred = torch.argmax(logits, dim=1)
+
+                # Store level-1 predictions and logits
+                batch[i + 1].semantic_pred = pred
+                batch[i + 1].logits = logits
+
+                # Store level-0 (voxel-wise) predictions and logits
+                if i > 0:
+                    continue
+                batch[0].semantic_pred = pred[batch[0].super_index]
+                batch[0].logits = logits[batch[0].super_index]
+
+        # Prepare the folder
+        if folder is not None:
+            folder = osp.join(folder, self.current_epoch)
+        elif self.logger and self.logger.save_dir:
+            folder = osp.join(self.logger.save_dir, self.current_epoch)
+        else:
+            folder = osp.join('', self.current_epoch)
+        if not osp.isdir(folder):
+            os.makedirs(folder, exist_ok=True)
+
+        # Save to disk
+        path = osp.join(folder, f"{batch_idx}.h5")
+        batch.save(path)
+        log.info(f'Storing predictions at: "{path}"')
+
+        # TODO: log plotly plot to wandb
+        if isinstance(self.logger, WandbLogger):
+            pass
 
     def configure_optimizers(self):
         """Choose what optimizers and learning-rate schedulers to use in your optimization.

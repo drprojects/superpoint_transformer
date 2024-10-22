@@ -10,13 +10,13 @@ from src.utils.sparse import dense_to_csr, csr_to_dense
 
 
 __all__ = [
-    'dated_dir', 'host_data_root', 'save_tensor', 'load_tensor',
-    'save_dense_to_csr', 'load_csr_to_dense']
+    'date_time_string', 'dated_dir', 'host_data_root', 'save_tensor',
+    'load_tensor', 'save_dense_to_csr', 'load_csr_to_dense']
 
 
-def dated_dir(root, create=False):
-    """Returns a directory path in root, named based on the current date
-    and time.
+def date_time_string():
+    """Returns a string holding the current date and time. Useful for
+    creating an output file or directory.
     """
     date = '-'.join([
         f'{getattr(datetime.now(), x)}'
@@ -24,7 +24,14 @@ def dated_dir(root, create=False):
     time = '-'.join([
         f'{getattr(datetime.now(), x)}'
         for x in ['hour', 'minute', 'second']])
-    dir_name = f'{date}_{time}'
+    return f'{date}_{time}'
+
+
+def dated_dir(root, create=False):
+    """Returns a directory path in root, named based on the current date
+    and time.
+    """
+    dir_name = date_time_string()
     path = os.path.join(root, dir_name)
     if create and not os.path.exists(path):
         os.makedirs(path, exist_ok=True)

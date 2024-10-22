@@ -12,6 +12,14 @@ multi_stage_loss_lambdas: [1, 50]  # weights for the multi-stage loss
 transformer_lr_scale: 0.1
 gc_every_n_steps: 0
 
+# Every N epoch, the model may store to disk predictions for some
+# tracked validation batch of interest. This assumes the validation
+# dataloader is non-stochastic. Additionally, the model may store to
+# disk predictions for some or all the test batches.
+track_val_every_n_epoch: 10  # trigger the tracking every N epoch
+track_val_idx: null  # index of the validation batch to track
+track_test_idx: null  # index of the test batch to track. If -1, all the test batches will be tracked
+
 optimizer:
   _target_: torch.optim.AdamW
   _partial_: True
