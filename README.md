@@ -157,6 +157,8 @@ This project was tested with:
 ## 🏗  Installation
 Simply run [`install.sh`](install.sh) to install all dependencies in a new conda environment 
 named `spt`. 
+dos2unix install.sh
+
 ```bash
 # Creates a conda env named 'spt' env and installs dependencies
 ./install.sh

@@ -1,10 +1,10 @@
 # @package _global_
 
 # to execute this experiment run:
-# python train.py experiment=semantic/s3dis_room
+# python train.py experiment=semantic/building
 
 defaults:
-  - override /datamodule: semantic/s3dis_room.yaml
+  - override /datamodule: semantic/building.yaml
   - override /model: semantic/spt-2.yaml
   - override /trainer: gpu.yaml
 
@@ -21,5 +21,5 @@ model:
 
 logger:
   wandb:
-    project: "spt_s3dis_room"
+    project: "spt_building"
     name: "SPT-64"
