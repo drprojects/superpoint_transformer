@@ -539,7 +539,7 @@ class SemanticSegmentationModule(LightningModule):
         # the same at each epoch. For this reason, if tracking the same
         # object across training is needed, the `Dataloader` and the
         # transforms should be free from any stochasticity
-        track_epoch = self.current_epoch % self.hparams.track_every_n_epoch == 0
+        track_epoch = self.current_epoch % self.hparams.track_val_every_n_epoch == 0
         track_batch = batch_idx == self.hparams.track_val_idx
         if track_epoch and track_batch:
             self.save_batch(batch, batch_idx, output)
