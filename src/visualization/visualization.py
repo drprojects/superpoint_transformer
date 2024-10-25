@@ -194,7 +194,8 @@ def visualize_3d(
         sub = Cluster(
             data_last.super_index, torch.arange(data_last.num_nodes),
             dense=True)
-        obj = data_last.obj.merge(data_last.super_index)
+        obj = data_last.obj.merge(data_last.super_index) \
+            if data_last.obj else None
         pos = scatter_mean(data_last.pos, data_last.super_index, dim=0)
         input = NAG(input.to_list() + [Data(pos=pos, sub=sub, obj=obj)])
     is_nag = isinstance(input, NAG)

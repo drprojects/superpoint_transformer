@@ -4,10 +4,10 @@ import os.path as osp
 import torch
 import numpy as np
 from torch_scatter import scatter_sum, scatter_mean
-from torch_geometric.nn.pool.consecutive import consecutive_cluster
 from src.transforms import Transform
 from src.data import Data, NAG, Cluster, InstanceData
 from src.utils.cpu import available_cpu_count
+from src.utils import xy_partition
 
 dependencies_folder = osp.dirname(osp.dirname(osp.abspath(__file__)))
 sys.path.append(dependencies_folder)
@@ -314,14 +314,11 @@ class GridPartition(Transform):
 
         # XY-grid partitions
         for w in size:
-            # Compute the (i, j) coordinates on the XY grid size
-            d = data_list[-1]
-            i = d.pos[:, 0].div(w, rounding_mode='trunc').long()
-            j = d.pos[:, 1].div(w, rounding_mode='trunc').long()
-
             # Compute a "manual" partition based on the grid coordinates
-            super_index = i * (max(i.max(), j.max()) + 1) + j
-            super_index = consecutive_cluster(super_index)[0]
+            d = data_list[-1]
+            super_index = xy_partition(d.pos, consecutive=True)
+
+            # Compute the superpoint centroids and Cluster object
             pos = scatter_mean(d.pos, super_index, dim=0)
             cluster = Cluster(
                 super_index, torch.arange(d.num_nodes), dense=True)

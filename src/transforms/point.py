@@ -1,9 +1,10 @@
 import torch
 import numpy as np
-from sklearn.linear_model import RANSACRegressor
 import pgeof
 from src.utils import rgb2hsv, rgb2lab, sizes_to_pointers, to_float_rgb, \
-    POINT_FEATURES, sanitize_keys
+    POINT_FEATURES, sanitize_keys, filter_by_z_distance_of_global_min, \
+    filter_by_local_z_min, filter_by_verticality, single_plane_model, \
+    neighbor_interpolation_model, mlp_model
 from src.transforms import Transform
 from src.data import NAG
 
@@ -221,43 +222,120 @@ class PointFeatures(Transform):
 
 
 class GroundElevation(Transform):
-    """Compute pointwise elevation by approximating the ground as a
-    plane using RANSAC.
+    """Compute pointwise elevation with respect to the ground.
 
-    Parameters
-    ----------
-    :param threshold: float
-        Ground points will be searched within `threshold` of the lowest
-        point in the cloud. Adjust this if the lowest point is below the
-        ground or if you have large above-ground planar structures
+    We do so in a two-step process where we first remove as many
+    potentially non-ground points as possible, before fitting a surface
+    model to the resulting trimmed cloud to estimate the ground surface.
+
+    We offer several tools for filtering out non-ground points:
+    - filtering out all points that are higher than a given threshold
+      above the lowest point in the cloud
+    - filtering out all points whose local verticality (see
+      `PointFeatures`) is above a given threshold
+    - projecting points into a horizontal XY grid and only keeping the
+      lowest point of each XY bin
+
+    We offer several tool for modeling the ground surface from the
+    trimmed cloud:
+    - 'ransac': single planar surface using RANSAC
+    - 'knn': linear interpolation of the k nearest trimmed points
+    - 'mlp': piecewise planar approximation with an MLP
+
+    :param z_threshold: float
+        Ground points will be first searched within `global_threshold`
+        of the lowest point in the cloud. Adjust this if the lowest
+        point is below the ground or if you have large above-ground
+        planar structures
+    :param verticality_threshold: float
+        Ground points will be searched among those with lower
+        verticality than `verticality_threshold`. This assumes
+        verticality has been computed beforehand using `PointFeatures`.
+        Note that, depending on the chosen value, this will also remove
+        steep slopes
+    :param xy_grid: float
+        Bin all points into a regular XY grid of size `xy_grid` and
+        isolate as candidate ground point for each cell the one with
+        the lowest Z value
     :param scale: float
         Scaling by which the computed elevation should be divided, for
         the sake of normalization
+    :param kwargs: dict
+        Arguments that will be passed down to the surface modeling
+        function
     """
 
-    def __init__(self, threshold=1.5, scale=3.0):
-        self.threshold = threshold
+    def __init__(
+            self,
+            z_threshold=1.5,
+            verticality_threshold=None,
+            xy_grid=None,
+            model='ransac',
+            scale=3.0,
+            **kwargs):
+        if verticality_threshold is not None:
+            assert 0 < verticality_threshold < 1
+        if xy_grid is not None:
+            assert xy_grid > 0
+        assert model in ['ransac', 'knn', 'mlp']
+
+        self.z_threshold = z_threshold
+        self.verticality_threshold = verticality_threshold
+        self.xy_grid = xy_grid
+        self.model = model
         self.scale = scale
+        self.kwargs = kwargs
 
     def _process(self, data):
         # Recover the point positions
-        pos = data.pos.cpu().numpy()
+        pos = data.pos
 
-        # To avoid capturing high above-ground flat structures, we only
-        # keep points which are within `threshold` of the lowest point.
-        idx_low = np.where(pos[:, 2] - pos[:, 2].min() < self.threshold)[0]
+        # Initialize a mask for the filtering out as many non-ground
+        # points as possible, to facilitate the subsequent search of the
+        # ground surface in the point cloud
+        mask = torch.ones(data.num_points, device=pos.device, dtype=torch.bool)
 
-        # Search the ground plane using RANSAC
-        ransac = RANSACRegressor(random_state=0, residual_threshold=1e-3).fit(
-            pos[idx_low, :2], pos[idx_low, 2])
+        # TODO: test all combinations on multiple devices
+        # TODO: integrate voxelization as filtering
 
-        # Compute the pointwise elevation as the distance to the plane
-        # and scale it
-        h = pos[:, 2] - ransac.predict(pos[:, :2])
-        h = h / self.scale
+        # See `filter_by_z_distance_of_global_min` for more details
+        if self.z_threshold is not None:
+            mask = mask & filter_by_z_distance_of_global_min(
+                pos, self.z_threshold)
 
-        # Save in Data attribute `elevation`
-        data.elevation = torch.from_numpy(h).to(data.device).view(-1, 1)
+        # See `filter_by_verticality` for more details
+        if self.verticality_threshold and (0 < self.verticality_threshold < 1):
+            if not hasattr(data, 'verticality'):
+                raise ValueError(
+                    f"The Data object does not have a 'verticality' attribute. "
+                    f"To compute verticality, please call PointFeatures on "
+                    f"your Data first")
+            mask = mask & filter_by_verticality(
+                data.verticality, self.verticality_threshold)
+
+        # See `filter_by_local_z_min` for more details
+        if self.xy_grid:
+            mask = mask & filter_by_local_z_min(pos, self.xy_grid)
+
+        # Trim the point cloud based on the computed filters. We hope
+        # that there are mostly ground points in there, but can't be
+        # 100% sure
+        pos_trimmed = pos[mask]
+
+        # Fit a model to the trimmed points
+        if self.model == 'ransac':
+            model = single_plane_model(pos_trimmed, **self.kwargs)
+        elif self.model == 'knn':
+            model = neighbor_interpolation_model(pos_trimmed, **self.kwargs)
+        elif self.model == 'mlp':
+            model = mlp_model(pos_trimmed, **self.kwargs)
+
+        # Compute the elevation of each point wrt the estimated ground
+        # surface
+        elevation = model(pos).view(-1, 1)
+
+        # Scale the elevation and save it in the Data object
+        data.elevation = elevation.view(-1, 1) / self.scale
 
         return data
 
@@ -273,8 +351,6 @@ class RoomPosition(Transform):
     dimensions and not so much for open outdoor clouds with unbounded
     sizes.
 
-    Parameters
-    ----------
     :param elevation: bool
         Whether the `elevation` attribute should be used to position the
         ground to z=0. If True, this assumes `GroundElevation` has been

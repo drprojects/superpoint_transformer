@@ -132,9 +132,9 @@ def min_max_normalize(x):
     """
     # Unit-normalize the features in a hypercube of shared scale
     # for nicer visualizations
-    high = x.max(dim=0).values
-    low = x.min(dim=0).values
-    x_normalized = (x - low) / (high - low)
+    high = x.max(dim=0).values.float()
+    low = x.min(dim=0).values.float()
+    x_normalized = (x.float() - low) / (high - low)
     x_normalized[x_normalized.isnan() | x_normalized.isinf()] = 0
     return x_normalized
 

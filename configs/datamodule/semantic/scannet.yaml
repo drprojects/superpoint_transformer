@@ -140,10 +140,6 @@ pre_transform:
     - transform: DataTo
       params:
         device: 'cpu'
-    - transform: GroundElevation
-      params:
-        threshold: ${datamodule.ground_threshold}
-        scale: ${datamodule.ground_scale}
     - transform: PointFeatures
       params:
         keys: ${datamodule.point_hf_preprocess}
@@ -151,6 +147,10 @@ pre_transform:
         k_step: ${datamodule.knn_step}
         k_min_search: ${datamodule.knn_min_search}
         overwrite: False
+    - transform: GroundElevation
+      params:
+        threshold: ${datamodule.ground_threshold}
+        scale: ${datamodule.ground_scale}
     - transform: DataTo
       params:
         device: 'cuda'
