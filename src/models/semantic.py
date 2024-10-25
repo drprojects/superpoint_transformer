@@ -762,11 +762,11 @@ class SemanticSegmentationModule(LightningModule):
 
         # Prepare the folder
         if folder is not None:
-            folder = osp.join(folder, self.current_epoch)
+            folder = osp.join(folder, str(self.current_epoch))
         elif self.logger and self.logger.save_dir:
-            folder = osp.join(self.logger.save_dir, self.current_epoch)
+            folder = osp.join(self.logger.save_dir, str(self.current_epoch))
         else:
-            folder = osp.join('', self.current_epoch)
+            folder = osp.join('', str(self.current_epoch))
         if not osp.isdir(folder):
             os.makedirs(folder, exist_ok=True)
 
