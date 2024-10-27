@@ -136,8 +136,8 @@ class Cluster(CSRData):
         save_tensor(self.pointers, f, 'pointers', fp_dtype=fp_dtype)
         save_tensor(self.points, f, 'points', fp_dtype=fp_dtype)
 
-    @staticmethod
-    def load(f, idx=None, update_sub=True, verbose=False):
+    @classmethod
+    def load(cls, f, idx=None, update_sub=True, verbose=False):
         """Load Cluster from an HDF5 file. See `Cluster.save` for
         writing such file. Options allow reading only part of the
         clusters.
@@ -163,7 +163,7 @@ class Cluster(CSRData):
 
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
-                out = Cluster.load(
+                out = cls.load(
                     file, idx=idx, update_sub=update_sub, verbose=verbose)
             return out
 
@@ -172,18 +172,18 @@ class Cluster(CSRData):
         start = time()
         idx = tensor_idx(idx)
         if verbose:
-            print(f'Cluster.load tensor_idx         : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load tensor_idx         : {time() - start:0.5f}s')
 
         if idx is None or idx.shape[0] == 0:
             start = time()
             pointers = load_tensor(f['pointers'])
             points = load_tensor(f['points'])
             if verbose:
-                print(f'Cluster.load read all           : {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load read all           : {time() - start:0.5f}s')
             start = time()
-            out = Cluster(pointers, points), (None, None)
+            out = cls(pointers, points), (None, None)
             if verbose:
-                print(f'Cluster.load init               : {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load init               : {time() - start:0.5f}s')
             return out
 
         # Read only pointers start and end indices based on idx
@@ -191,7 +191,7 @@ class Cluster(CSRData):
         ptr_start = load_tensor(f['pointers'], idx=idx)
         ptr_end = load_tensor(f['pointers'], idx=idx + 1)
         if verbose:
-            print(f'Cluster.load read ptr       : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load read ptr       : {time() - start:0.5f}s')
 
         # Create the new pointers
         start = time()
@@ -199,7 +199,7 @@ class Cluster(CSRData):
             torch.zeros(1, dtype=ptr_start.dtype),
             torch.cumsum(ptr_end - ptr_start, 0)])
         if verbose:
-            print(f'Cluster.load new pointers   : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load new pointers   : {time() - start:0.5f}s')
 
         # Create the indexing tensor to select and order values.
         # Simply, we could have used a list of slices, but we want to
@@ -212,19 +212,19 @@ class Cluster(CSRData):
             pointers[:-1]].repeat_interleave(sizes)
         val_idx += ptr_start.repeat_interleave(sizes)
         if verbose:
-            print(f'Cluster.load val_idx        : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load val_idx        : {time() - start:0.5f}s')
 
         # Read the points, now we have computed the val_idx
         start = time()
         points = load_tensor(f['points'], idx=val_idx)
         if verbose:
-            print(f'Cluster.load read points    : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load read points    : {time() - start:0.5f}s')
 
         # Build the Cluster object
         start = time()
-        cluster = Cluster(pointers, points)
+        cluster = cls(pointers, points)
         if verbose:
-            print(f'Cluster.load init           : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load init           : {time() - start:0.5f}s')
 
         if not update_sub:
             return cluster, (None, None)
@@ -239,7 +239,7 @@ class Cluster(CSRData):
         idx_sub = cluster.points[perm]
         cluster.points = new_cluster_points
         if verbose:
-            print(f'Cluster.load update_sub     : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load update_sub     : {time() - start:0.5f}s')
 
         # Selecting the subpoints with 'idx_sub' will not be
         # enough to maintain consistency with the current points. We
@@ -248,7 +248,7 @@ class Cluster(CSRData):
         start = time()
         sub_super = cluster.to_super_index()
         if verbose:
-            print(f'Cluster.load super_index    : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load super_index    : {time() - start:0.5f}s')
 
         return cluster, (idx_sub, sub_super)
 

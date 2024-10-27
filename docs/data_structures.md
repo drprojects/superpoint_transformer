@@ -48,7 +48,7 @@ Important specificities of our `Data` object are:
 `j` with `i<j`
 - `NAG.get_sampling()` produces indices for sampling the superpoints with 
 certain constraints
-- `NAG.save()` and `NAG.load()` allow optimized, memory-friedly I/O operations
+- `NAG.save()` and `NAG.load()` allow optimized, memory-friendly I/O operations
 - `NAG.select()` indexes the nodes of a specified partition level à la numpy 
 and updates the rest of the `NAG` structure accordingly
 - `NAG.show()` for interactive visualization (see 

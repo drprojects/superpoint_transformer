@@ -251,7 +251,7 @@ class CSRData:
 
         else:
             # Select the pointers and prepare the values indexing
-            pointers, val_idx = CSRData.index_select_pointers(
+            pointers, val_idx = self.__class__.index_select_pointers(
                 self.pointers, idx)
             out.pointers = pointers
             out.values = [v[val_idx] for v in self.values]
@@ -348,8 +348,8 @@ class CSRBatch(CSRData):
             if self.__sizes__ is not None else None
         return out
 
-    @staticmethod
-    def from_list(csr_list):
+    @classmethod
+    def from_list(cls, csr_list):
         assert isinstance(csr_list, list) and len(csr_list) > 0
         assert isinstance(csr_list[0], CSRData), \
             "All provided items must be CSRData objects."
@@ -392,7 +392,7 @@ class CSRBatch(CSRData):
         for i in range(num_values):
             val_list = [csr.values[i] for csr in csr_list]
             if isinstance(csr_list[0].values[i], CSRData):
-                val = CSRBatch.from_list(val_list)
+                val = cls.from_list(val_list)
             elif is_index_value[i]:
                 # "Index" values are stacked with updated indices.
                 # For Clusters, this implies all point indices are

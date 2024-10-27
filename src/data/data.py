@@ -616,11 +616,13 @@ class Data(PyGData):
             else:
                 raise NotImplementedError(f'Unsupported type={type(val)}')
 
-    @staticmethod
+    @classmethod
     def load(
-            f, idx=None, keys_idx=None, keys=None, update_sub=True,
+            cls, f, idx=None, keys_idx=None, keys=None, update_sub=True,
             verbose=False, rgb_to_float=False):
-        """Read an HDF5 file and return its content as a dictionary.
+        """Read an HDF5 file and return its content as a Data object.
+
+        NB: if relevant, a Batch object will be returned.
 
         :param f: h5 file path of h5py.File or h5py.Group
         :param idx: int, list, numpy.ndarray, torch.Tensor
@@ -644,17 +646,25 @@ class Data(PyGData):
         """
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
-                out = Data.load(
+                out = cls.load(
                     file, idx=idx, keys_idx=keys_idx, keys=keys,
                     update_sub=update_sub, verbose=verbose,
                     rgb_to_float=rgb_to_float)
             return out
 
+        # Check if the file actually corresponds to a Batch object
+        # rather than a simple Data object
+        if 'batch_item_0' in f.keys():
+            return Batch.load(
+                f, idx=idx, keys_idx=keys_idx, keys=keys,
+                update_sub=update_sub, verbose=verbose,
+                rgb_to_float=rgb_to_float)
+
         idx = tensor_idx(idx)
         if idx.shape[0] == 0:
             keys_idx = []
         elif keys_idx is None:
-            keys_idx = list(set(f.keys()) - set(Data._NOT_INDEXABLE))
+            keys_idx = list(set(f.keys()) - set(cls._NOT_INDEXABLE))
         if keys is None:
             all_keys = list(f.keys())
             for k in ['_csr_', '_cluster_', '_obj_']:
@@ -685,7 +695,7 @@ class Data(PyGData):
             elif k in keys:
                 d_dict[k] = load_tensor(f[k])
             if verbose and k in d_dict.keys():
-                print(f'Data.load {k:<22}: {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
 
         # Update the 'keys_idx' with newly-found 'csr_keys',
         # 'cluster_keys', and 'obj_keys'
@@ -703,7 +713,7 @@ class Data(PyGData):
             elif k in keys:
                 d_dict[k] = load_csr_to_dense(f['_csr_'][k], verbose=verbose)
             if verbose and k in d_dict.keys():
-                print(f'Data.load {k:<22}: {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
 
         # Special key '_cluster_' holds Cluster data
         for k in cluster_keys:
@@ -717,7 +727,7 @@ class Data(PyGData):
                     f['_cluster_'][k], update_sub=update_sub,
                     verbose=verbose)[0]
             if verbose and k in d_dict.keys():
-                print(f'Data.load {k:<22}: {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
 
         # Special key '_obj_' holds InstanceData data
         for k in obj_keys:
@@ -728,7 +738,7 @@ class Data(PyGData):
             elif k in keys:
                 d_dict[k] = InstanceData.load(f['_obj_'][k], verbose=verbose)
             if verbose and k in d_dict.keys():
-                print(f'Data.load {k:<22}: {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
 
         # In case RGB is among the keys and is in integer type, convert
         # to float
@@ -737,7 +747,7 @@ class Data(PyGData):
                 d_dict[k] = to_float_rgb(d_dict[k]) if rgb_to_float \
                     else to_byte_rgb(d_dict[k])
 
-        return Data(**d_dict)
+        return cls(**d_dict)
 
     def estimate_instance_centroid(self, mode='iou'):
         """Estimate the centroid position of each target instance
@@ -959,3 +969,99 @@ class Batch(PyGBatch):
             self.obj = obj_bckp
 
         return data
+
+    def save(
+            self,
+            f,
+            y_to_csr=True,
+            pos_dtype=torch.float,
+            fp_dtype=torch.float):
+        """Save Batch to HDF5 file.
+
+        :param f: h5 file path of h5py.File or h5py.Group
+        :param y_to_csr: bool
+            Convert 'y' to CSR format before saving. Only applies if
+            'y' is a 2D histogram
+        :param pos_dtype: torch dtype
+            Data type to which 'pos' should be cast before saving. The
+            reason for this separate treatment of 'pos' is that global
+            coordinates may be too large and casting to 'fp_dtype' may
+            result in hurtful precision loss
+        :param fp_dtype: torch dtype
+            Data type to which floating point tensors should be cast
+            before saving
+        :return:
+        """
+        # To facilitate Batch serialization, we store the Batch as a
+        # list of Data objects rather than a single Data object
+        data_list = self.to_data_list()
+
+        if not isinstance(f, (h5py.File, h5py.Group)):
+            with h5py.File(f, 'w') as file:
+                self.save(
+                    file,
+                    y_to_csr=y_to_csr,
+                    pos_dtype=pos_dtype,
+                    fp_dtype=fp_dtype)
+            return
+
+        assert isinstance(f, (h5py.File, h5py.Group))
+
+        # Save each individual Data object
+        for i, data in enumerate(data_list):
+            g = f.create_group(f'batch_item_{i}')
+            data.save(
+                g,
+                y_to_csr=y_to_csr,
+                pos_dtype=pos_dtype,
+                fp_dtype=fp_dtype)
+
+    @classmethod
+    def load(
+            cls, f, idx=None, keys_idx=None, keys=None, update_sub=True,
+            verbose=False, rgb_to_float=False):
+        """Read an HDF5 file and return its content as a Batch object.
+
+        :param f: h5 file path of h5py.File or h5py.Group
+        :param idx: int, list, numpy.ndarray, torch.Tensor
+            Used to select the elements in `keys_idx`. Supports fancy
+            indexing
+        :param keys_idx: List(str)
+            Keys on which the indexing should be applied
+        :param keys: List(str)
+            Keys should be loaded from the file, ignoring the rest
+        :param update_sub: bool
+            If True, the point (i.e. subpoint) indices will also be
+            updated to maintain dense indices. The output will then
+            contain '(idx_sub, sub_super)' which can help apply these
+            changes to maintain consistency with lower hierarchy levels
+            of a NAG.
+        :param verbose: bool
+        :param rgb_to_float: bool
+            If True and an integer 'rgb' or 'mean_rgb' attribute is
+            loaded, it will be cast to float
+        :return:
+        """
+        if not isinstance(f, (h5py.File, h5py.Group)):
+            with h5py.File(f, 'r') as file:
+                out = cls.load(
+                    file, idx=idx, keys_idx=keys_idx, keys=keys,
+                    update_sub=update_sub, verbose=verbose,
+                    rgb_to_float=rgb_to_float)
+            return out
+
+        # Recover each individual Data object making up the Batch object
+        data_list = []
+        num_batch_items = len(f)
+        for i in range(num_batch_items):
+            start = time()
+            data = Data.load(
+                f[f'batch_item_{i}'], idx=idx, keys_idx=keys_idx, keys=keys,
+                update_sub=update_sub, verbose=verbose,
+                rgb_to_float=rgb_to_float)
+            data_list.append(data)
+            if verbose:
+                print(f'{cls.__name__}.load item-{i:<15} : 'f'{time() - start:0.3f}s\n')
+
+        # Return a Batch object
+        return cls.from_data_list(data_list)

@@ -238,7 +238,7 @@ class InstanceData(CSRData):
 
         # Return a new object holding the merged data.
         # NB: specifying 'dense=True' will do all the merging for us
-        return InstanceData(
+        return self.__class__(
             merged_idx, self.obj, self.count, self.y, dense=True)
 
     def iou_and_size(self):
@@ -576,7 +576,7 @@ class InstanceData(CSRData):
         count = self.count[~is_pair_void]
         y = self.y[~is_pair_void]
         pair_cropped_count = pair_cropped_count[~is_pair_void]
-        instance_data = InstanceData(idx, obj, count, y, dense=True)
+        instance_data = self.__class__(idx, obj, count, y, dense=True)
 
         # Save the pair_cropped_count in the new InstanceData. This will
         # be used by `self.iou_and_size()` to cleanly account for the
@@ -617,8 +617,8 @@ class InstanceData(CSRData):
         save_tensor(self.count, f, 'count', fp_dtype=fp_dtype)
         save_tensor(self.y, f, 'y', fp_dtype=fp_dtype)
 
-    @staticmethod
-    def load(f, idx=None, verbose=False):
+    @classmethod
+    def load(cls, f, idx=None, verbose=False):
         """Load InstanceData from an HDF5 file. See `InstanceData.save`
         for writing such file. Options allow reading only part of the
         clusters.
@@ -633,7 +633,7 @@ class InstanceData(CSRData):
 
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
-                out = InstanceData.load(file, idx=idx, verbose=verbose)
+                out = cls.load(file, idx=idx, verbose=verbose)
             return out
 
         assert all(k in f.keys() for k in KEYS)
@@ -641,7 +641,7 @@ class InstanceData(CSRData):
         start = time()
         idx = tensor_idx(idx)
         if verbose:
-            print(f'InstanceData.load tensor_idx         : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load tensor_idx         : {time() - start:0.5f}s')
 
         if idx is None or idx.shape[0] == 0:
             start = time()
@@ -650,11 +650,11 @@ class InstanceData(CSRData):
             count = load_tensor(f['count'])
             y = load_tensor(f['y'])
             if verbose:
-                print(f'InstanceData.load read all           : {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load read all           : {time() - start:0.5f}s')
             start = time()
-            out = InstanceData(pointers, obj, count, y)
+            out = cls(pointers, obj, count, y)
             if verbose:
-                print(f'InstanceData.load init               : {time() - start:0.5f}s')
+                print(f'{cls.__name__}.load init               : {time() - start:0.5f}s')
             return out
 
         # Read only pointers start and end indices based on idx
@@ -662,7 +662,7 @@ class InstanceData(CSRData):
         ptr_start = load_tensor(f['pointers'], idx=idx)
         ptr_end = load_tensor(f['pointers'], idx=idx + 1)
         if verbose:
-            print(f'InstanceData.load read ptr       : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load read ptr       : {time() - start:0.5f}s')
 
         # Create the new pointers
         start = time()
@@ -670,7 +670,7 @@ class InstanceData(CSRData):
             torch.zeros(1, dtype=ptr_start.dtype),
             torch.cumsum(ptr_end - ptr_start, 0)])
         if verbose:
-            print(f'InstanceData.load new pointers   : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load new pointers   : {time() - start:0.5f}s')
 
         # Create the indexing tensor to select and order values.
         # Simply, we could have used a list of slices, but we want to
@@ -683,7 +683,7 @@ class InstanceData(CSRData):
             pointers[:-1]].repeat_interleave(sizes)
         val_idx += ptr_start.repeat_interleave(sizes)
         if verbose:
-            print(f'InstanceData.load val_idx        : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load val_idx        : {time() - start:0.5f}s')
 
         # Read the obj and count, now we have computed the val_idx
         start = time()
@@ -691,13 +691,13 @@ class InstanceData(CSRData):
         count = load_tensor(f['count'], idx=val_idx)
         y = load_tensor(f['y'], idx=val_idx)
         if verbose:
-            print(f'InstanceData.load read values    : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load read values    : {time() - start:0.5f}s')
 
         # Build the InstanceData object
         start = time()
-        out = InstanceData(pointers, obj, count, y)
+        out = cls(pointers, obj, count, y)
         if verbose:
-            print(f'InstanceData.load init           : {time() - start:0.5f}s')
+            print(f'{cls.__name__}.load init           : {time() - start:0.5f}s')
         return out
 
     def target_label_histogram(self, num_classes):

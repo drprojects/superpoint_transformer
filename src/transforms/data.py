@@ -19,7 +19,7 @@ class DataToNAG(Transform):
     _OUT_TYPE = NAG
 
     def _process(self, data):
-        return NAG([Data])
+        return NAG([data])
 
 
 class NAGToData(Transform):

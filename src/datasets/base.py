@@ -191,6 +191,16 @@ class BaseDataset(InMemoryDataset):
         self._segment_no_save_keys = segment_no_save_keys
         self._segment_load_keys = segment_load_keys
 
+        if in_memory:
+            log.warning(
+                "'in_memory' was set to True. This means the entire dataset "
+                "will be held in RAM. While this allows training and inference "
+                "speedups, this means that the `transform' will only be "
+                "applied once, upon loading the dataset to RAM. Hence, if you "
+                "need augmentations or any other stochastic operations to be "
+                "applied on your batches, make sure you moved them all to "
+                "'on_device_transform'.")
+
         # Prepare tiling arguments. Can either be XY tiling of PC
         # tiling but not both. XY tiling will apply a regular grid along
         # the XY axes to the data, regardless of its orientation, shape

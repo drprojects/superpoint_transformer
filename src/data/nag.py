@@ -148,7 +148,7 @@ class NAG:
         """
         if isinstance(idx, int):
             return self._list[idx]
-        return NAG(self._list[idx])
+        return self.__class__(self._list[idx])
 
     def select(self, i_level, idx):
         """Indexing mechanism on the NAG.
@@ -267,8 +267,9 @@ class NAG:
                     pos_dtype=pos_dtype,
                     fp_dtype=fp_dtype)
 
-    @staticmethod
+    @classmethod
     def load(
+            cls,
             path,
             low=0,
             high=-1,
@@ -281,6 +282,8 @@ class NAG:
             verbose=False):
         """Load NAG from an HDF5 file. See `NAG.save` for writing such
         file. Options allow reading only part of the data.
+
+        NB: if relevant, a NAGBatch object will be returned.
 
         :param path: str
             Path the file
@@ -335,7 +338,12 @@ class NAG:
                         verbose=verbose)
                 data_list.append(data)
                 if verbose:
-                    print(f'NAG.load lvl-{i:<12} : 'f'{time() - start:0.3f}s\n')
+                    print(f'{cls.__name__}.load lvl-{i:<13} : 'f'{time() - start:0.3f}s\n')
+
+        # Check if the returned actually corresponds to a NAGBatch
+        # object rather than a simple NAG object
+        if isinstance(data_list[0], Batch):
+            cls = NAGBatch
 
         # In the case where update_super is not required but the low
         # level was indexed, we cannot combine the leve-0 and level-1+
@@ -355,12 +363,12 @@ class NAG:
         # update_super=False in this situation and do the necessary
         # later on GPU
         if update_super:
-            return NAG.cat_select(data_list[0], data_list[1:], idx=idx)
+            return cls.cat_select(data_list[0], data_list[1:], idx=idx)
 
-        return NAG(data_list)
+        return cls(data_list)
 
-    @staticmethod
-    def cat_select(data, data_list, idx=None):
+    @classmethod
+    def cat_select(cls, data, data_list, idx=None):
         """Does part of what Data.select does but in an ugly way. This
         is mostly intended for the DataLoader to be able to load NAG and
         sample level-0 points on CPU in reasonable time and finish the
@@ -377,19 +385,19 @@ class NAG:
         assert isinstance(data_list, list)
 
         if idx is None and data_list is None or len(data_list) == 0:
-            return NAG([data])
+            return cls([data])
 
         if idx is None:
-            return NAG([data] + data_list)
+            return cls([data] + data_list)
 
         if data_list is None or len(data_list) == 0:
             data.super_index = consecutive_cluster(data.super_index)[0]
-            return NAG([data])
+            return cls([data])
 
         fake_super_index = data_list[0].sub.to_super_index()
         fake_x = torch.empty_like(fake_super_index)
         data_fake = Data(x=fake_x, super_index=fake_super_index)
-        nag = NAG([data_fake] + data_list)
+        nag = cls([data_fake] + data_list)
         nag = nag.select(0, idx)
         data.super_index = nag[0].super_index
         nag._list[0] = data
@@ -488,8 +496,13 @@ class NAG:
 class NAGBatch(NAG):
     """Wrapper for NAG batching."""
 
-    @staticmethod
-    def from_nag_list(nag_list):
+    def __init__(self, batch_list: List[Batch]):
+        assert all([isinstance(b, Batch) for b in batch_list]), \
+            f"Expected a list of Batch objects as input."
+        super().__init__(batch_list)
+
+    @classmethod
+    def from_nag_list(cls, nag_list):
         # TODO: seems sluggish, need to investigate. Might be due to too
         #  many level-0 points. The bottleneck is in the level-0
         #  Batch.from_data_list. the 'cat' operation seems to be
@@ -497,7 +510,7 @@ class NAGBatch(NAG):
         assert isinstance(nag_list, list)
         assert len(nag_list) > 0
         assert all(isinstance(x, NAG) for x in nag_list)
-        return NAGBatch([
+        return cls([
             Batch.from_data_list(l) for l in zip(*[n._list for n in nag_list])])
 
     def to_nag_list(self):
