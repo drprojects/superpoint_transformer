@@ -138,6 +138,14 @@ class SemanticSegmentationModule(LightningModule):
         # of steps
         self.gc_every_n_steps = int(gc_every_n_steps)
 
+        if self.trainer.check_val_every_n_epoch is not None:
+            assert (self.trainer.check_val_every_n_epoch
+                    % track_val_every_n_epoch == 0), \
+                (f"Expected 'track_val_every_n_epoch' to be a multiple of "
+                 f"'check_val_every_n_epoch', but received "
+                 f"{track_val_every_n_epoch} and "
+                 f"{self.trainer.check_val_every_n_epoch} instead.")
+
     def forward(self, nag):
         x = self.net(nag)
         logits = [head(x_) for head, x_ in zip(self.head, x)] \
@@ -531,6 +539,13 @@ class SemanticSegmentationModule(LightningModule):
         self.validation_step_update_metrics(loss, output)
         self.validation_step_log_metrics()
 
+        # Get the current epoch. For the validation set, we alter the
+        # epoch number so that `track_val_every_n_epoch` can align
+        # with `check_val_every_n_epoch`. Indeed, it seems the epoch
+        # number during the validation step is always one increment
+        # ahead
+        epoch = self.current_epoch + 1
+
         # Store features and predictions for a batch of interest
         # NB: the `batch_idx` produced by torch lightning here
         # corresponds to the `Dataloader`'s index wrt the current epoch
@@ -539,7 +554,7 @@ class SemanticSegmentationModule(LightningModule):
         # the same at each epoch. For this reason, if tracking the same
         # object across training is needed, the `Dataloader` and the
         # transforms should be free from any stochasticity
-        track_epoch = self.current_epoch % self.hparams.track_val_every_n_epoch == 0
+        track_epoch = epoch % self.hparams.track_val_every_n_epoch == 0
         track_batch = batch_idx == self.hparams.track_val_idx
         if track_epoch and track_batch:
             self.save_batch(batch, batch_idx, output)
