@@ -149,7 +149,7 @@ pre_transform:
         overwrite: False
     - transform: GroundElevation
       params:
-        threshold: ${datamodule.ground_threshold}
+        z_threshold: ${datamodule.ground_threshold}
         scale: ${datamodule.ground_scale}
     - transform: DataTo
       params:

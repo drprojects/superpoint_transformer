@@ -146,7 +146,7 @@ pre_transform:
         k_min_search: ${datamodule.knn_min_search}
     - transform: GroundElevation
       params:
-        threshold: ${datamodule.ground_threshold}
+        z_threshold: ${datamodule.ground_threshold}
         scale: ${datamodule.ground_scale}
     - transform: DataTo
       params:
