@@ -219,14 +219,6 @@ class SemanticSegmentationModule(LightningModule):
         # of steps
         self.gc_every_n_steps = int(gc_every_n_steps)
 
-        if self.trainer.check_val_every_n_epoch is not None:
-            assert (self.trainer.check_val_every_n_epoch
-                    % track_val_every_n_epoch == 0), \
-                (f"Expected 'track_val_every_n_epoch' to be a multiple of "
-                 f"'check_val_every_n_epoch', but received "
-                 f"{track_val_every_n_epoch} and "
-                 f"{self.trainer.check_val_every_n_epoch} instead.")
-
     def forward(self, nag):
         x = self.net(nag)
         logits = [head(x_) for head, x_ in zip(self.head, x)] \
@@ -268,6 +260,16 @@ class SemanticSegmentationModule(LightningModule):
         # Set class weights for the criterion
         weight = self.trainer.datamodule.train_dataset.get_class_weight()
         self.criterion.weight = weight.to(self.device)
+
+        # Check that the period of track_val_every_n_epoch` is a
+        # multiple of check_val_every_n_epoch
+        if self.trainer.check_val_every_n_epoch is not None:
+            assert (self.trainer.check_val_every_n_epoch
+                    % self.hparams.track_val_every_n_epoch == 0), \
+                (f"Expected 'track_val_every_n_epoch' to be a multiple of "
+                 f"'check_val_every_n_epoch', but received "
+                 f"{self.hparams.track_val_every_n_epoch} and "
+                 f"{self.trainer.check_val_every_n_epoch} instead.")
 
     def on_train_start(self):
         # By default, lightning executes validation step sanity checks
