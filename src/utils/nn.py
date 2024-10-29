@@ -58,7 +58,7 @@ def _linear_init(m, method='xavier_uniform', activation='leaky_relu'):
         nn.init.kaiming_uniform_(m.weight, nonlinearity=activation)
     elif method == 'kaiming_normal':
         nn.init.kaiming_normal_(m.weight, nonlinearity=activation)
-    elif method == "trunc_normal":
+    elif method == 'trunc_normal':
         nn.init.trunc_normal_(m.weight, std=0.02)
     else:
         raise NotImplementedError(f"Unknown initialization method: {method}")
@@ -70,7 +70,7 @@ def build_qk_scale_func(dim, num_heads, qk_scale):
         f(s), where `s` is the `edge_index[0]`
     even if it does not use it.
     """
-    # If qk_scale provided, the default behavior will be
+    # If qk_scale is not provided, the default behavior will be
     # 1/(sqrt(dim)*sqrt(num))
     if qk_scale is None:
         def f(s):

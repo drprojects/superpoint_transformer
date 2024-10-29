@@ -20,6 +20,147 @@ __all__ = ['PanopticSegmentationModule']
 
 class PanopticSegmentationModule(SemanticSegmentationModule):
     """A LightningModule for panoptic segmentation of point clouds.
+
+    :param net: torch.nn.Module
+        Backbone model. This can typically be an `SPT` object
+    :param edge_affinity_head: torch.nn.Module
+        Edge affinity prediction head for instance/panoptic graph
+        clustering. This is typically an MLP
+    :param partitioner: src.nn.instance.InstancePartitioner
+        Instance partition head, expects a fully-fledged
+        `InstancePartitioner` module as input. This module is only
+        called when the actual instance/panoptic segmentation is
+        required. At train time, it is not essential, since we do not
+        propagate gradient to its parameters. However, we may still tune
+        its parameters to maximize instance/panoptic metrics on the
+        train set. This tuning involves a simple grid-search on a small
+        range of parameters and needs to be called at least once at the
+        very end of training
+    :param criterion: torch.nn._Loss
+        Loss
+    :param optimizer: torch.optim.Optimizer
+        Optimizer
+    :param scheduler: torch.optim.lr_scheduler.LRScheduler
+        Learning rate scheduler
+    :param num_classes: int
+        Number of classes in the dataset
+    :param stuff_classes: List[int]
+        Indices of the classes to be treated as 'stuff', as opposed to
+        'thing'
+    :param class_names: List[str]
+        Name for each class
+    :param sampling_loss:  bool
+        If True, the target labels will be obtained from labels of
+        the points sampled in the batch at hand. This affects
+        training supervision where sampling augmentations may be
+        used for dropping some points or superpoints. If False, the
+        target labels will be based on exact superpoint-wise
+        histograms of labels computed at preprocessing time,
+        disregarding potential level-0 point down-sampling
+    :param loss_type: str
+        Type of loss applied.
+        'ce': cross-entropy (if `multi_stage_loss_lambdas` is used,
+        all 1+ levels will be supervised with cross-entropy).
+        'kl': Kullback-Leibler divergence (if `multi_stage_loss_lambdas`
+        is used, all 1+ levels will be supervised with cross-entropy).
+        'ce_kl': cross-entropy on level 1 and Kullback-Leibler for
+        all levels above
+        'wce': not documented for now
+        'wce_kl': not documented for now
+    :param weighted_loss: bool
+        If True, the loss will be weighted based on the class
+        frequencies computed on the train dataset. See
+        `BaseDataset.get_class_weight()` for more
+    :param init_linear: str
+        Initialization method for all linear layers. Supports
+        'xavier_uniform', 'xavier_normal', 'kaiming_uniform',
+        'kaiming_normal', 'trunc_normal'
+    :param init_rpe: str
+        Initialization method for all linear layers producing
+        relative positional encodings. Supports 'xavier_uniform',
+        'xavier_normal', 'kaiming_uniform', 'kaiming_normal',
+        'trunc_normal'
+    :param transformer_lr_scale: float
+        Scaling parameter applied to the learning rate for the
+        `TransformerBlock` in each `Stage` and for the pooling block
+        in `DownNFuseStage` modules. Setting this to a value lower
+        than 1 mitigates exploding gradients in attentive blocks
+        during training
+    :param multi_stage_loss_lambdas: List[float]
+        List of weights for combining losses computed on the output
+        of each partition level. If not specified, the loss will
+        be computed on the level 1 outputs only
+    :param edge_affinity_criterion: torch.nn._Loss
+        Loss on the edges of the superpoint level 1 for affinity
+        prediction
+    :param edge_affinity_loss_weights: List[float, float, float, float]
+        Weights for insisting on certain cases in the edge affinity
+        loss:
+         - 0: same-class same-object edges
+         - 1: same-class different-object edges
+         - 2: different-class same-object edges
+         - 3: different-class different-object edges
+    :param edge_affinity_loss_lambda: float
+        Weight for combining the semantic segmentation loss with the
+        node offset and edge affinity losses. The final loss will be:
+        `L_node_classif + edge_affinity_loss_lambda * L_edge_affinity
+        + node_offset_loss_lambda * L_node_offset`
+    :param node_offset_criterion: torch.nn._Loss
+        Loss on the nodes of the superpoint level 1 for node offset
+        prediction
+    :param node_offset_loss_lambda: float
+        Weight for combining the semantic segmentation loss with the
+        node offset and edge affinity losses. The final loss will be:
+        `L_node_classif + edge_affinity_loss_lambda * L_edge_affinity
+        + node_offset_loss_lambda * L_node_offset`
+    :param gc_every_n_steps: int
+        Explicitly call the garbage collector after a certain number
+        of steps. May involve a computation overhead. Mostly hear
+        for debugging purposes when observing suspicious GPU memory
+        increase during training
+    :param track_val_every_n_epoch: int
+        If specified, the output for a validation batch of interest
+        specified with `track_val_idx` will be stored to disk every
+        `track_val_every_n_epoch` epochs. Must be a multiple of
+        `check_val_every_n_epoch`. See `save_batch()` for more
+    :param track_val_idx: int
+        If specified, the output for the `track_val_idx`th
+        validation batch will be saved to disk periodically based on
+        `track_val_every_n_epoch`. Importantly, this index is expected
+        to match the `Dataloader`'s index wrt the current epoch
+        and NOT an index wrt the `Dataset`. Said otherwise, if the
+        `Dataloader(shuffle=True)` then, the stored batch will not be
+        the same at each epoch. For this reason, if tracking the same
+        object across training is needed, the `Dataloader` and the
+        transforms should be free from any stochasticity
+    :param track_test_idx:
+        If specified, the output for the `track_test_idx`th
+        test batch will be saved to disk. If `track_test_idx=-1`,
+        predictions for the entire test set will be saved to disk
+    :param min_instance_size: int
+        Minimum target instance size to consider when computing the
+        metrics. If a target is smaller, it will be ignored, as well
+        as its matched prediction, if any. See `MeanAveragePrecision3D`
+    :param partition_every_n_epoch: int
+        Since we do not need to compute the actual panoptic/instance
+        segmentation to train the model, we can simply do so once in a
+        while to track the training and validation metrics. This
+        parameter rules the frequency at which the panoptic/instance
+        partition and metrics are computed during training
+    :param no_instance_metrics: bool
+        Whether instance segmentation metrics should be computed. These
+        may incur an overhead. Besides, the SuperCluster formulation is
+        mainly targeted for panoptic segmentation, as the model is not
+        specifically trained to maximize instance metrics, which, among
+        other things, involve predicting an instance confidence score
+    :param no_instance_metrics_on_train_set: bool
+        Same as `no_instance_metrics` but specifically for the train
+        set. This is in case we still want the instance metrics every
+        partition_every_n_epoch` on the validation set, but want to
+        avoid the compute overhead of computing the instance partition
+        and metrics at every single training epoch
+    :param kwargs: Dict
+        Kwargs will be passed to `_load_from_checkpoint()`
     """
 
     _IGNORED_HYPERPARAMETERS = [
@@ -54,6 +195,9 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             node_offset_criterion=None,
             node_offset_loss_lambda=1,
             gc_every_n_steps=0,
+            track_val_every_n_epoch=1,
+            track_val_idx=None,
+            track_test_idx=None,
             min_instance_size=100,
             partition_every_n_epoch=50,
             no_instance_metrics=True,
@@ -74,6 +218,9 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             transformer_lr_scale=transformer_lr_scale,
             multi_stage_loss_lambdas=multi_stage_loss_lambdas,
             gc_every_n_steps=gc_every_n_steps,
+            track_val_every_n_epoch=track_val_every_n_epoch,
+            track_val_idx=track_val_idx,
+            track_test_idx=track_test_idx,
             **kwargs)
 
         # Instance partition head, expects a fully-fledged

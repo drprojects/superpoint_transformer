@@ -250,14 +250,14 @@ class S3DIS(BaseDataset):
         By default, S3DIS does not have any stuff class. If `with_stuff`
         is True, the 'ceiling', 'wall', and 'floor' classes will be
         treated as stuff
-    stage : {'train', 'val', 'test', 'trainval'}, optional
-    transform : `callable`, optional
+    stage : {'train', 'val', 'test', 'trainval'}
+    transform : `callable`
         transform function operating on data.
-    pre_transform : `callable`, optional
+    pre_transform : `callable`
         pre_transform function operating on data.
-    pre_filter : `callable`, optional
+    pre_filter : `callable`
         pre_filter function operating on data.
-    on_device_transform: `callable`, optional
+    on_device_transform: `callable`
         on_device_transform function operating on data, in the
         'on_after_batch_transfer' hook. This is where GPU-based
         augmentations should be, as well as any Transform you do not

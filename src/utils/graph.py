@@ -396,9 +396,9 @@ def to_trimmed(edge_index, edge_attr=None, reduce='mean'):
 
     :param edge_index: 2xE LongTensor
         Edges in `torch_geometric` format
-    :param edge_attr: ExC Tensor, optional
+    :param edge_attr: ExC Tensor
         Edge attributes
-    :param reduce: str, optional
+    :param reduce: str
         Reduction modes supported by `torch_geometric.utils.coalesce`
     :return:
     """

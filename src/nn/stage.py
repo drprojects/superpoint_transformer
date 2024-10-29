@@ -13,49 +13,77 @@ class Stage(nn.Module):
     """A Stage has the following structure:
 
          x  -- PosInjection -- in_MLP -- TransformerBlock -- out_MLP -->
-                   |         (optional)   (* num_blocks)   (optional)
-        pos -- SphereNorm
+                     |       (optional)   (* num_blocks)   (optional)
+        pos -- UnitSphereNorm
     (optional)
 
     :param dim: int
-        Number of channels for the TransformerBlock
+        Number of channels for the `TransformerBlock`
     :param num_blocks: int
-        Number of TransformerBlocks in the Stage
+        Number of `TransformerBlocks` in the `Stage`
     :param num_heads: int
-        Number of heads in the TransformerBlocks
-    :param in_mlp: List, optional
+        Number of attention heads in the `TransformerBlocks`
+    :param in_mlp: List[int]
         Channels for the input MLP. The last channel must match
         `dim`
-    :param out_mlp: List, optional
+    :param out_mlp: List[int]
         Channels for the output MLP. The first channel must match
         `dim`
     :param mlp_activation: nn.Module
         Activation function for the input and output MLPs
     :param mlp_norm: nn.Module
-        Normalization for the input and output MLPs
-    :param mlp_drop: float, optional
+        Normalization function for the input and output MLPs
+    :param mlp_drop: float
         Dropout rate for the last layer of the input and output MLPs
     :param use_pos: bool
-        Whether the node's normalized position should be concatenated to
-        the features before in_mlp
+        Whether the node's position (normalized with `UnitSphereNorm`)
+        should be concatenated to the features before `in_MLP`
     :param use_diameter: bool
         Whether the node's diameter should be concatenated to the
-        features before in_mlp (assumes diameter to be passed in the
+        features before `in_MLP` (assumes diameter to be passed in the
         forward)
     :param use_diameter_parent: bool
         Whether the node's parent diameter should be concatenated to the
-        features before in_mlp (only if pos is passed in the forward)
-    :param qk_dim:
-    :param k_rpe:
-    :param q_rpe:
-    :param k_delta_rpe:
-    :param q_delta_rpe:
-    :param qk_share_rpe:
-    :param q_on_minus_rpe:
-    :param blocks_share_rpe:
-    :param heads_share_rpe:
-    :param transformer_kwargs:
-        Keyword arguments for the TransformerBlock
+        features before `in_MLP` (only if pos is passed in the forward)
+    :param qk_dim: int
+        Dimension of the queries and keys. See `SelfAttentionBlock`
+    :param k_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param q_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param v_rpe: bool
+        Whether values should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param k_delta_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param q_delta_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param qk_share_rpe: bool
+        Whether queries and keys should use the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param q_on_minus_rpe: bool
+        Whether relative positional encodings for queries should be
+        computed on the opposite of features used for keys. This allows,
+        for instance, to break the symmetry when `qk_share_rpe` but we
+        want relative positional encodings to capture different meanings
+        for keys and queries. See `SelfAttentionBlock`
+    :param blocks_share_rpe: bool
+        Whether all the `TransformerBlock` in the `Stage` should share
+        the same parameters for building relative positional encodings
+    :param heads_share_rpe: bool
+        whether attention heads should share the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param transformer_kwargs: Dict
+        All remaining keyword arguments will be passed to the
+        `TransformerBlock`
     """
 
     def __init__(
@@ -281,6 +309,80 @@ class DownNFuseStage(Stage):
         x1 ------- Fusion -- Stage -->
                      |
         x2 -- Pool --
+
+    :param dim: int
+        Number of channels for the `TransformerBlock`
+    :param pool: str, nn.Module
+        Pooling mechanism. Supports 'max', 'min', 'mean', 'sum' for
+        string arguments. See `pool_factory()` for more
+    :param fusion: str
+        Fusion mechanism. Supports 'cat', 'residual', 'first', 'second'.
+        See `fusion_factory()` for more
+    :param num_blocks: int
+        Number of `TransformerBlocks` in the `Stage`
+    :param num_heads: int
+        Number of heads in the `TransformerBlocks`
+    :param in_mlp: List[int]
+        Channels for the input MLP. The last channel must match
+        `dim`
+    :param out_mlp: List[int]
+        Channels for the output MLP. The first channel must match
+        `dim`
+    :param mlp_activation: nn.Module
+        Activation function for the input and output MLPs
+    :param mlp_norm: nn.Module
+        Normalization function for the input and output MLPs
+    :param mlp_drop: float
+        Dropout rate for the last layer of the input and output MLPs
+    :param use_pos: bool
+        Whether the node's position (normalized with `UnitSphereNorm`)
+        should be concatenated to the features before `in_MLP`
+    :param use_diameter: bool
+        Whether the node's diameter should be concatenated to the
+        features before `in_MLP` (assumes diameter to be passed in the
+        forward)
+    :param use_diameter_parent: bool
+        Whether the node's parent diameter should be concatenated to the
+        features before `in_MLP` (only if pos is passed in the forward)
+    :param qk_dim: int
+        Dimension of the queries and keys. See `SelfAttentionBlock`
+    :param k_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param q_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param v_rpe: bool
+        Whether values should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param k_delta_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param q_delta_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param qk_share_rpe: bool
+        Whether queries and keys should use the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param q_on_minus_rpe: bool
+        Whether relative positional encodings for queries should be
+        computed on the opposite of features used for keys. This allows,
+        for instance, to break the symmetry when `qk_share_rpe` but we
+        want relative positional encodings to capture different meanings
+        for keys and queries. See `SelfAttentionBlock`
+    :param blocks_share_rpe: bool
+        Whether all the `TransformerBlock` in the `Stage` should share
+        the same parameters for building relative positional encodings
+    :param heads_share_rpe: bool
+        whether attention heads should share the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param transformer_kwargs: Dict
+        All remaining keyword arguments will be passed to the
+        `TransformerBlock`
     """
 
     def __init__(self, *args, pool='max', fusion='cat', **kwargs):
@@ -340,6 +442,79 @@ class UpNFuseStage(Stage):
         x2 -- Unpool --
 
     The UpNFuseStage is typically used in a UNet-like decoder.
+
+    :param dim: int
+        Number of channels for the `TransformerBlock`
+    :param unpool: str
+        Unpooling mechanism. Only supports 'index' for now
+    :param fusion: str
+        Fusion mechanism. Supports 'cat', 'residual', 'first', 'second'.
+        See `fusion_factory()` for more
+    :param num_blocks: int
+        Number of `TransformerBlocks` in the `Stage`
+    :param num_heads: int
+        Number of heads in the `TransformerBlocks`
+    :param in_mlp: List[int]
+        Channels for the input MLP. The last channel must match
+        `dim`
+    :param out_mlp: List[int]
+        Channels for the output MLP. The first channel must match
+        `dim`
+    :param mlp_activation: nn.Module
+        Activation function for the input and output MLPs
+    :param mlp_norm: nn.Module
+        Normalization function for the input and output MLPs
+    :param mlp_drop: float
+        Dropout rate for the last layer of the input and output MLPs
+    :param use_pos: bool
+        Whether the node's position (normalized with `UnitSphereNorm`)
+        should be concatenated to the features before `in_MLP`
+    :param use_diameter: bool
+        Whether the node's diameter should be concatenated to the
+        features before `in_MLP` (assumes diameter to be passed in the
+        forward)
+    :param use_diameter_parent: bool
+        Whether the node's parent diameter should be concatenated to the
+        features before `in_MLP` (only if pos is passed in the forward)
+    :param qk_dim: int
+        Dimension of the queries and keys. See `SelfAttentionBlock`
+    :param k_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param q_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param v_rpe: bool
+        Whether values should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param k_delta_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param q_delta_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param qk_share_rpe: bool
+        Whether queries and keys should use the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param q_on_minus_rpe: bool
+        Whether relative positional encodings for queries should be
+        computed on the opposite of features used for keys. This allows,
+        for instance, to break the symmetry when `qk_share_rpe` but we
+        want relative positional encodings to capture different meanings
+        for keys and queries. See `SelfAttentionBlock`
+    :param blocks_share_rpe: bool
+        Whether all the `TransformerBlock` in the `Stage` should share
+        the same parameters for building relative positional encodings
+    :param heads_share_rpe: bool
+        whether attention heads should share the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param transformer_kwargs: Dict
+        All remaining keyword arguments will be passed to the
+        `TransformerBlock`
     """
 
     def __init__(self, *args, unpool='index', fusion='cat', **kwargs):
@@ -389,25 +564,24 @@ class PointStage(Stage):
     segments. A PointStage has the following structure:
 
          x  -- PosInjection -- in_MLP -->
-                   |         (optional)
-        pos -- SphereNorm
+                     |       (optional)
+        pos -- UnitSphereNorm
     (optional)
 
-    :param in_mlp: List, optional
-        Channels for the input MLP. The last channel must match
-        `dim`
+    :param in_mlp: List[int]
+        Channels for the input MLP
     :param mlp_activation: nn.Module
         Activation function for the input and output MLPs
     :param mlp_norm: nn.Module
-        Normalization for the input and output MLPs
-    :param mlp_drop: float, optional
+        Normalization function for the input and output MLPs
+    :param mlp_drop: float
         Dropout rate for the last layer of the input and output MLPs
     :param use_pos: bool
-        Whether the node's normalized position should be concatenated to
-        the features before in_mlp
+        Whether the node's position (normalized with `UnitSphereNorm`)
+        should be concatenated to the features before `in_MLP`
     :param use_diameter_parent: bool
         Whether the node's parent diameter should be concatenated to the
-        features before in_mlp (only if pos is passed in the forward)
+        features before `in_MLP` (only if pos is passed in the forward)
     """
 
     def __init__(

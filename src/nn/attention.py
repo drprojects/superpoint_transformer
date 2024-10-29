@@ -14,24 +14,70 @@ class SelfAttentionBlock(nn.Module):
 
     Inspired by: https://github.com/microsoft/Swin-Transformer
 
-    :param dim:
-    :param num_heads:
-    :param in_dim:
-    :param out_dim:
-    :param qkv_bias:
-    :param qk_dim:
-    :param qk_scale:
-    :param attn_drop:
-    :param drop:
-    :param in_rpe_dim:
-    :param k_rpe:
-    :param q_rpe:
-    :param v_rpe:
-    :param k_delta_rpe:
-    :param q_delta_rpe:
-    :param qk_share_rpe:
-    :param q_on_minus_rpe:
-    :param heads_share_rpe:
+    :param dim: int
+        Dimension of the features space on which the attention block
+        operates
+    :param num_heads: int
+        Number of attention heads
+    :param in_dim: int
+        Dimension of the input features. If specified, the features will
+        be mapped from `in_dim` to `dim` with a linear projection
+    :param out_dim: int
+        Dimension of the output features. If specified, the features
+        will be mapped from `dim` to `out_dim` with a linear projection
+    :param qkv_bias: bool
+        Whether the linear layers producing queries, keys, and
+        values should have a bias
+    :param qk_dim: int
+        Dimension of the queries and keys
+    :param qk_scale: str
+        Scaling applied to the query*key product before the softmax.
+        More specifically, one may want to normalize the query-key
+        compatibilities based on the number of dimensions (referred
+        to as 'd' here) as in a vanilla Transformer implementation,
+        or based on the number of neighbors each node has in the
+        attention graph (referred to as 'g' here). If nothing is
+        specified the scaling will be `1 / (sqrt(d) * sqrt(g))`,
+        which is equivalent to passing `'d.g'`. Passing `'d+g'` will
+        yield `1 / (sqrt(d) + sqrt(g))`. Meanwhile, passing 'd' will
+        yield `1 / sqrt(d)`, and passing `'g'` will yield
+        `1 / sqrt(g)`
+    :param attn_drop: float
+        Dropout on the attention weights
+    :param drop: float
+        Dropout on the output features
+    :param in_rpe_dim: int
+        Dimension of the features passed as input for relative
+        positional encoding computation (i.e. edge features)
+    :param k_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from edge features
+    :param q_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from edge features
+    :param v_rpe: bool
+        Whether values should receive relative positional encodings
+        computed from edge features
+    :param k_delta_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from the difference between source and target node
+        features
+    :param q_delta_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from the difference between source and target node
+        features
+    :param qk_share_rpe: bool
+        Whether queries and keys should use the same parameters for
+        building relative positional encodings
+    :param q_on_minus_rpe: bool
+        Whether relative positional encodings for queries should be
+        computed on the opposite of features used for keys. This allows,
+        for instance, to break the symmetry when `qk_share_rpe` but we
+        want relative positional encodings to capture different meanings
+        for keys and queries
+    :param heads_share_rpe: bool
+        whether attention heads should share the same parameters for
+        building relative positional encodings
     """
 
     def __init__(
@@ -174,6 +220,8 @@ class SelfAttentionBlock(nn.Module):
         #  - with/out edge attributes
         #  - mlp (L-LN-A-L), learnable lookup table (see Stratified Transformer)
         #  - scalar rpe, vector rpe (see Stratified Transformer)
+
+        # Relative positional encoding from edge features for keys
         if self.k_rpe is not None and edge_attr is not None:
             rpe = self.k_rpe(edge_attr)
 
@@ -183,6 +231,7 @@ class SelfAttentionBlock(nn.Module):
 
             k = k + rpe.view(E, H, -1)
 
+        # Relative positional encoding from edge features for queries
         if self.q_rpe is not None and edge_attr is not None:
             if self.q_on_minus_rpe:
                 rpe = self.q_rpe(-edge_attr)
@@ -206,6 +255,7 @@ class SelfAttentionBlock(nn.Module):
 
             q = q + rpe.view(E, H, -1)
 
+        # Relative positional encoding from node delta features for keys
         if self.k_delta_rpe is not None:
             rpe = self.k_delta_rpe(x[edge_index[1]] - x[edge_index[0]])
 
@@ -215,6 +265,8 @@ class SelfAttentionBlock(nn.Module):
 
             k = k + rpe.view(E, H, -1)
 
+        # Relative positional encoding from node delta features for
+        # queries
         if self.q_delta_rpe is not None:
             if self.q_on_minus_rpe:
                 rpe = self.q_delta_rpe(x[edge_index[0]] - x[edge_index[1]])
@@ -238,6 +290,7 @@ class SelfAttentionBlock(nn.Module):
 
             q = q + rpe.view(E, H, -1)
 
+        # Relative positional encoding from edge features for values
         if self.v_rpe is not None and edge_attr is not None:
             rpe = self.v_rpe(edge_attr)
 

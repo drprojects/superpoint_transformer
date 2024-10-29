@@ -23,6 +23,87 @@ class TransformerBlock(nn.Module):
         - FFN: Feed-Forward Network
 
     Inspired by: https://github.com/microsoft/Swin-Transformer
+
+    :param dim: int
+        Dimension of the features space on which the transformer
+        block operates
+    :param num_heads: int
+        Number of attention heads
+    :param qkv_bias: bool
+        Whether the linear layers producing queries, keys, and
+        values should have a bias
+    :param qk_dim: int
+        Dimension of the queries and keys
+    :param qk_scale: str
+        Scaling applied to the query*key product before the softmax.
+        More specifically, one may want to normalize the query-key
+        compatibilities based on the number of dimensions (referred
+        to as 'd' here) as in a vanilla Transformer implementation,
+        or based on the number of neighbors each node has in the
+        attention graph (referred to as 'g' here). If nothing is
+        specified the scaling will be `1 / (sqrt(d) * sqrt(g))`,
+        which is equivalent to passing `'d.g'`. Passing `'d+g'` will
+        yield `1 / (sqrt(d) + sqrt(g))`. Meanwhile, passing 'd' will
+        yield `1 / sqrt(d)`, and passing `'g'` will yield
+        `1 / sqrt(g)`
+    :param in_rpe_dim: int
+        Dimension of the features passed as input for relative
+        positional encoding computation (i.e. edge features)
+    :param ffn_ratio: int
+        Multiplicative factor for computing the dimension of the
+        `FFN` inverted bottleneck: `ffn_ratio * dim`
+    :param attn_drop: float
+        Dropout on the attention weights of the `SelfAttentionBlock`
+    :param residual_drop: float
+        Dropout on the output features of the `SelfAttentionBlock`
+    :param drop_path: float
+        Dropout on the `SelfAttentionBlock` and `FFN` paths. Contrary
+        to other dropout parameters, here we either keep all or none
+        features. This allows training with stochastic depth
+    :param activation: nn.Module
+        Activation function for the `FFN` module
+    :param norm: nn.Module
+        Normalization function for the `FFN` module
+    :param pre_norm: bool
+        Whether the normalization should be applied before or after
+        the `SelfAttentionBlock` and `FFN` in the residual branches
+    :param no_sa: bool
+        Whether a self-attention residual branch should be used at
+        all
+    :param no_ffn: bool
+        Whether a feed-forward residual branch should be used at
+        all
+    :param k_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param q_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param v_rpe: bool
+        Whether values should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param k_delta_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param q_delta_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param qk_share_rpe: bool
+        Whether queries and keys should use the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param q_on_minus_rpe: bool
+        Whether relative positional encodings for queries should be
+        computed on the opposite of features used for keys. This allows,
+        for instance, to break the symmetry when `qk_share_rpe` but we
+        want relative positional encodings to capture different meanings
+        for keys and queries. See `SelfAttentionBlock`
+    :param heads_share_rpe: bool
+        whether attention heads should share the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
     """
 
     def __init__(
@@ -34,8 +115,8 @@ class TransformerBlock(nn.Module):
             qk_scale=None,
             in_rpe_dim=18,
             ffn_ratio=4,
-            residual_drop=None,
             attn_drop=None,
+            residual_drop=None,
             drop_path=None,
             activation=nn.LeakyReLU(),
             norm=LayerNorm,

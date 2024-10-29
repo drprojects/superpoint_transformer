@@ -10,6 +10,247 @@ __all__ = ['SPT']
 
 class SPT(nn.Module):
     """Superpoint Transformer. A UNet-like architecture processing NAG.
+
+    The architecture can be (roughly) summarized as:
+
+    p_0, x_0 --------- PointStage
+                           \
+    p_1, x_1, e_1 -- DownNFuseStage_1 ------- UpNFuseStage_1 --> out_1
+                            \                       |
+    p_2, x_2, e_2 -- DownNFuseStage_2 ------- UpNFuseStage_2 --> out_2
+                            \                       |
+                           ...                     ...
+
+    Where:
+    - p_0: point positions
+    - x_0: input point features (handcrafted)
+    - p_i: node positions (i.e. superpoint centroid) at level i
+    - x_i: input node features (handcrafted superpoint features) at
+      level i
+    - e_i: input edge features (handcrafted horizontal superpoint graph
+      edge features) at level i
+    - out_i: node-wise output features at level i
+
+
+    :param point_mlp: List[int]
+        Channels for the input MLP of the `PointStage`
+    :param point_drop: float
+        Dropout rate for the last layer of the input and output MLPs
+        in `PointStage`
+
+    :param nano: bool
+        If True, the `PointStage` will be removed and the model will
+        only operate on superpoints, without extracting features
+        from the points. This lightweight model saves compute and
+        memory, at the potential expense of high-resolution
+        reasoning
+
+    :param down_dim: List[int], int
+        Feature dimension for each `DownNFuseStage` (i.e. not
+        including the `PointStage` when `nano=False`)
+    :param down_pool_dim: List[str], str
+        Pooling mechanism used for the down-pooling in each
+        `DownNFuseStage`. Supports 'max', 'min', 'mean', and 'sum'.
+        See `pool_factory()` for more
+    :param down_in_mlp: List[List[int]], List[int]
+        Channels for the input MLP of each `DownNFuseStage`
+    :param down_out_mlp: List[List[int]], List[int]
+        Channels for the output MLP of each `DownNFuseStage`. The
+        first channel for each stage must match with what is passed
+        in `down_dim`
+    :param down_mlp_drop: List[float], float
+        Dropout rate for the last layer of the input and output MLPs
+        of each `DownNFuseStage`
+    :param down_num_heads: List[int], int
+        Number of self-attention heads for each `DownNFuseStage
+    :param down_num_blocks: List[int], int
+        Number of self-attention blocks for each `DownNFuseStage
+    :param down_ffn_ratio: List[float], float
+        Multiplicative factor for computing the dimension of the
+        `FFN` inverted bottleneck, for each `DownNFuseStage. See
+        `TransformerBlock`
+    :param down_residual_drop: List[float], float
+        Dropout on the output self-attention features for each
+        `DownNFuseStage`. See `TransformerBlock`
+    :param down_attn_drop: List[float], float
+        Dropout on the self-attention weights for each
+        `DownNFuseStage`. See `TransformerBlock`
+    :param down_drop_path: List[float], float
+        Dropout on the residual paths for each `DownNFuseStage`. See
+        `TransformerBlock`
+
+    :param up_dim: List[int], int
+        Feature dimension for each `UpNFuseStage`
+    :param up_in_mlp: List[List[int]], List[int]
+        Channels for the input MLP of each `UpNFuseStage`
+    :param up_out_mlp: List[List[int]], List[int]
+        Channels for the output MLP of each `UpNFuseStage`. The
+        first channel for each stage must match with what is passed
+        in `up_dim`
+    :param up_mlp_drop: List[float], float
+        Dropout rate for the last layer of the input and output MLPs
+        of each `UpNFuseStage`
+    :param up_num_heads: List[int], int
+        Number of self-attention heads for each `UpNFuseStage
+    :param up_num_blocks: List[int], int
+        Number of self-attention blocks for each `UpNFuseStage
+    :param up_ffn_ratio: List[float], float
+        Multiplicative factor for computing the dimension of the
+        `FFN` inverted bottleneck, for each `UpNFuseStage. See
+        `TransformerBlock`
+    :param up_residual_drop: List[float], float
+        Dropout on the output self-attention features for each
+        `UpNFuseStage`. See `TransformerBlock`
+    :param up_attn_drop: List[float], float
+        Dropout on the self-attention weights for each
+        `UpNFuseStage`. See `TransformerBlock`
+    :param up_drop_path: List[float], float
+        Dropout on the residual paths for each `UpNFuseStage`. See
+        `TransformerBlock`
+
+    :param node_mlp: List[int]
+        Channels for the MLPs that will encode handcrafted node
+        (i.e. segment, superpoint) features. These will be called
+        before each `DownNFuseStage` and their output will be
+        concatenated to any already-existing features and passed
+        to `DownNFuseStage` and `UpNFuseStage`. For the special case
+        the `nano=True` model, the first MLP will be run before the
+        first `Stage` too
+    :param h_edge_mlp: List[int]
+        Channels for the MLPs that will encode handcrafted
+        horizontal edge (i.e. edges in the superpoint adjacency
+        graph at each partition level) features. These will be
+        called before each `DownNFuseStage` and their output will be
+        passed as `edge_attr` to `DownNFuseStage` and `UpNFuseStage`
+    :param v_edge_mlp: List[int]
+        Channels for the MLPs that will encode handcrafted
+        vertical edge (i.e. edges connecting nodes to their parent
+        in the above partition level) features. These will be
+        called before each `DownNFuseStage` and their output will be
+        passed as `v_edge_attr` to `DownNFuseStage` and
+        `UpNFuseStage`
+    :param mlp_activation: nn.Module
+        Activation function used for all MLPs throughout the
+        architecture
+    :param mlp_norm: n.Module
+        Normalization function for all MLPs throughout the
+        architecture
+    :param qk_dim: int
+        Dimension of the queries and keys. See `SelfAttentionBlock`
+    :param qkv_bias: bool
+        Whether the linear layers producing queries, keys, and
+        values should have a bias. See `SelfAttentionBlock`
+    :param qk_scale: str
+        Scaling applied to the query*key product before the softmax.
+        More specifically, one may want to normalize the query-key
+        compatibilities based on the number of dimensions (referred
+        to as 'd' here) as in a vanilla Transformer implementation,
+        or based on the number of neighbors each node has in the
+        attention graph (referred to as 'g' here). If nothing is
+        specified the scaling will be `1 / (sqrt(d) * sqrt(g))`,
+        which is equivalent to passing `'d.g'`. Passing `'d+g'` will
+        yield `1 / (sqrt(d) + sqrt(g))`. Meanwhile, passing 'd' will
+        yield `1 / sqrt(d)`, and passing `'g'` will yield
+        `1 / sqrt(g)`. See `SelfAttentionBlock`
+    :param in_rpe_dim:
+    :param activation: nn.Module
+        Activation function used in the `FFN` modules. See
+        `TransformerBlock`
+    :param norm: nn.Module
+        Normalization function for the `FFN` module. See
+        `TransformerBlock`
+    :param pre_norm: bool
+        Whether the normalization should be applied before or after
+        the `SelfAttentionBlock` and `FFN` in the residual branches.
+        See`TransformerBlock`
+    :param no_sa: bool
+        Whether a self-attention residual branch should be used at
+        all. See`TransformerBlock`
+    :param no_ffn: bool
+        Whether a feed-forward residual branch should be used at
+        all. See`TransformerBlock`
+    :param k_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param q_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param v_rpe: bool
+        Whether values should receive relative positional encodings
+        computed from edge features. See `SelfAttentionBlock`
+    :param k_delta_rpe: bool
+        Whether keys should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param q_delta_rpe: bool
+        Whether queries should receive relative positional encodings
+        computed from the difference between source and target node
+        features. See `SelfAttentionBlock`
+    :param qk_share_rpe: bool
+        Whether queries and keys should use the same parameters for
+        building relative positional encodings. See
+        `SelfAttentionBlock`
+    :param q_on_minus_rpe: bool
+        Whether relative positional encodings for queries should be
+        computed on the opposite of features used for keys. This allows,
+        for instance, to break the symmetry when `qk_share_rpe` but we
+        want relative positional encodings to capture different meanings
+        for keys and queries. See `SelfAttentionBlock`
+    :param share_hf_mlps: bool
+        Whether stages should share the MLPs for encoding
+        handcrafted node, horizontal edge, and vertical edge
+        features
+    :param stages_share_rpe: bool
+        Whether all `Stage`s should share the same parameters for
+        building relative positional encodings
+    :param blocks_share_rpe: bool
+        Whether all the `TransformerBlock` in the same `Stage`
+        should share the same parameters for building relative
+        positional encodings
+    :param heads_share_rpe: bool
+        Whether attention heads should share the same parameters for
+        building relative positional encodings
+
+    :param use_pos: bool
+        Whether the node's position (normalized with `UnitSphereNorm`)
+        should be concatenated to the features. See `Stage`
+    :param use_node_hf: bool
+        Whether handcrafted node (i.e. segment, superpoint) features
+        should be used at all. If False, `node_mlp` will be ignored
+    :param use_diameter: bool
+        Whether the node's diameter (currently estimated with
+        `UnitSphereNorm`) should be concatenated to the node features.
+        See `Stage`
+    :param use_diameter_parent: bool
+        Whether the node's parent diameter (currently estimated with
+        `UnitSphereNorm`) should be concatenated to the node features.
+        See `Stage`
+    :param pool: str, nn.Module
+        Pooling mechanism for `DownNFuseStage`s. Supports 'max',
+        'min', 'mean', 'sum' for string arguments.
+        See `pool_factory()` for more
+    :param unpool: str
+        Unpooling mechanism for `UpNFuseStage`s. Only supports
+        'index' for now
+    :param fusion: str
+        Fusion mechanism used in `DownNFuseStage` and `UpNFuseStage`
+        to merge node features from different branches. Supports
+        'cat', 'residual', 'first', 'second'. See `fusion_factory()`
+        for more
+    :param norm_mode: str
+        Indexing mode used for feature normalization. This will be
+        passed to `Data.norm_index()`. 'graph' will normalize
+        features per graph (i.e. per cloud, i.e. per batch item).
+        'node' will normalize per node (i.e. per point). 'segment'
+        will normalize per segment (i.e.  per cluster)
+    :param output_stage_wise: bool
+        If True, the output contain the features for each node of
+        each partition 1+ level. IF False, only the features for the
+        partition level 1 will be returned. Note we do not compute
+        the features for level 0, since the entire goal of this
+        superpoint-based reasoning is to mitigate compute and memory
+        by circumventing the need to manipulate such full-resolution
+        objects
     """
 
     def __init__(
@@ -78,7 +319,6 @@ class SPT(nn.Module):
             fusion='cat',
             norm_mode='graph',
             output_stage_wise=False):
-
         super().__init__()
 
         self.nano = nano

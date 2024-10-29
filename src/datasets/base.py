@@ -85,37 +85,37 @@ class BaseDataset(InMemoryDataset):
     ----------
     root : `str`
         Root directory where the dataset should be saved.
-    stage : {'train', 'val', 'test', 'trainval'}, optional
-    transform : `callable`, optional
+    stage : {'train', 'val', 'test', 'trainval'}
+    transform : `callable`
         transform function operating on data.
-    pre_transform : `callable`, optional
+    pre_transform : `callable`
         pre_transform function operating on data.
-    pre_filter : `callable`, optional
+    pre_filter : `callable`
         pre_filter function operating on data.
-    on_device_transform: `callable`, optional
+    on_device_transform: `callable`
         on_device_transform function operating on data, in the
         'on_after_batch_transfer' hook. This is where GPU-based
         augmentations should be, as well as any Transform you do not
         want to run in CPU-based DataLoaders
-    val_mixed_in_train: bool, optional
+    val_mixed_in_train: bool
         whether the 'val' stage data is saved in the same clouds as the
         'train' stage. This may happen when the stage splits are
         performed inside the clouds. In this case, an
         `on_device_transform` will be automatically created to separate
         stage-specific data upon reading
-    test_mixed_in_val: bool, optional
+    test_mixed_in_val: bool
         whether the 'test' stage data is saved in the same clouds as the
         'val' stage. This may happen when the stage splits are
         performed inside the clouds. In this case, an
         `on_device_transform` will be automatically created to separate
         stage-specific data upon reading
-    custom_hash: str, optional
+    custom_hash: str
         A user-chosen hash to be used for the dataset data directory.
         This will bypass the default behavior where the pre_transforms
         are used to generate a hash. It can be used, for instance, when
         one wants to instantiate a dataset with already-processed data,
         without knowing the exact config that was used to generate it
-    in_memory: bool, optional
+    in_memory: bool
         If True, the processed dataset will be entirely loaded in RAM
         upon instantiation. This will accelerate training and inference
         but requires large memory. WARNING: __getitem__ directly
@@ -123,24 +123,24 @@ class BaseDataset(InMemoryDataset):
         object will affect the `in_memory_data` too. Be careful to clone
         the object before modifying it. Besides, the `transform` are
         pre-applied to the in_memory data
-    point_save_keys: list[str], optional
+    point_save_keys: list[str]
         List of point (ie level-0) attribute keys to save to disk at 
         the end of preprocessing. Leaving to `None` will save all 
         attributes by default
-    point_no_save_keys: list[str], optional
+    point_no_save_keys: list[str]
         List of point (ie level-0) attribute keys to NOT save to disk at
         the end of preprocessing
-    point_load_keys: list[str], optional
+    point_load_keys: list[str]
         List of point (ie level-0) attribute keys to load when reading 
         data from disk
-    segment_save_keys: list[str], optional
+    segment_save_keys: list[str]
         List of segment (ie level-1+) attribute keys to save to disk 
         at the end of preprocessing. Leaving to `None` will save all 
         attributes by default
-    segment_no_save_keys: list[str], optional
+    segment_no_save_keys: list[str]
         List of segment (ie level-1+) attribute keys to NOT save to disk 
         at the end of preprocessing
-    segment_load_keys: list[str], optional
+    segment_load_keys: list[str]
         List of segment (ie level-1+) attribute keys to load when 
         reading data from disk 
     """

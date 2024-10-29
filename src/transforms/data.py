@@ -184,9 +184,9 @@ class AddKeysTo(Transform):
     :param to: str
         Destination attribute where the features in 'keys' will be
         concatenated
-    :param strict: bool, optional
+    :param strict: bool
         Whether we want to raise an error if a key is not found
-    :param delete_after: bool, optional
+    :param delete_after: bool
         Whether the Data attributes should be removed once added to 'to'
     """
 
@@ -260,9 +260,9 @@ class NAGAddKeysTo(Transform):
     :param to: str
         Destination attribute where the features in 'keys' will be
         concatenated
-    :param strict: bool, optional
+    :param strict: bool
         Whether we want to raise an error if a key is not found
-    :param delete_after: bool, optional
+    :param delete_after: bool
         Whether the Data attributes should be removed once added to 'to'
     """
 
@@ -320,10 +320,10 @@ class NAGSelectByKey(Transform):
         NAG level based on which to operate the selection
     :param negation: bool
         Whether the mask or its complementary should be used
-    :param strict: bool, optional
+    :param strict: bool
         Whether we want to raise an error if the key is not found or if
         it does not carry a 1D boolean mask
-    :param delete_after: bool, optional
+    :param delete_after: bool
         Whether the `key` attribute should be removed after selection
     """
 

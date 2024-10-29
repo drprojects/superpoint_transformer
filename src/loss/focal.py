@@ -33,12 +33,12 @@ class WeightedFocalLoss(nn.Module):
             ignore_index: int = -100):
         """Constructor.
         Args:
-            weight (Tensor, optional): Weights for each class. Defaults to None.
-            gamma (float, optional): A constant, as described in the paper.
+            weight (Tensor): Weights for each class. Defaults to None.
+            gamma (float): A constant, as described in the paper.
                 Defaults to 0.
-            reduction (str, optional): 'mean' or 'none'.
+            reduction (str): 'mean' or 'none'.
                 Defaults to 'mean'.
-            ignore_index (int, optional): class label to ignore.
+            ignore_index (int): class label to ignore.
                 Defaults to -100.
         """
         if reduction not in ('mean', 'none'):
@@ -139,16 +139,16 @@ def weighted_focal_loss(
         dtype=torch.float32) -> WeightedFocalLoss:
     """Factory function for WeightedFocalLoss.
     Args:
-        weight (Sequence, optional): Weights for each class. Will be converted
+        weight (Sequence): Weights for each class. Will be converted
             to a Tensor if not None. Defaults to None.
-        gamma (float, optional): A constant, as described in the paper.
+        gamma (float): A constant, as described in the paper.
             Defaults to 0.
-        reduction (str, optional): 'mean' or 'none'.
+        reduction (str): 'mean' or 'none'.
             Defaults to 'mean'.
-        ignore_index (int, optional): class label to ignore.
+        ignore_index (int): class label to ignore.
             Defaults to -100.
-        device (str, optional): Device to move weight to. Defaults to 'cpu'.
-        dtype (torch.dtype, optional): dtype to cast weight to.
+        device (str): Device to move weight to. Defaults to 'cpu'.
+        dtype (torch.dtype): dtype to cast weight to.
             Defaults to torch.float32.
     Returns:
         A WeightedFocalLoss object

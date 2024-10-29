@@ -28,7 +28,88 @@ __all__ = ['SemanticSegmentationModule']
 
 
 class SemanticSegmentationModule(LightningModule):
-    """A LightningModule for semantic segmentation of point clouds."""
+    """A LightningModule for semantic segmentation of point clouds.
+
+    :param net: torch.nn.Module
+        Backbone model. This can typically be an `SPT` object
+    :param criterion: torch.nn._Loss
+        Loss
+    :param optimizer: torch.optim.Optimizer
+        Optimizer
+    :param scheduler: torch.optim.lr_scheduler.LRScheduler
+        Learning rate scheduler
+    :param num_classes: int
+        Number of classes in the dataset
+    :param class_names: List[str]
+        Name for each class
+    :param sampling_loss:  bool
+        If True, the target labels will be obtained from labels of
+        the points sampled in the batch at hand. This affects
+        training supervision where sampling augmentations may be
+        used for dropping some points or superpoints. If False, the
+        target labels will be based on exact superpoint-wise
+        histograms of labels computed at preprocessing time,
+        disregarding potential level-0 point down-sampling
+    :param loss_type: str
+        Type of loss applied.
+        'ce': cross-entropy (if `multi_stage_loss_lambdas` is used,
+        all 1+ levels will be supervised with cross-entropy).
+        'kl': Kullback-Leibler divergence (if `multi_stage_loss_lambdas`
+        is used, all 1+ levels will be supervised with cross-entropy).
+        'ce_kl': cross-entropy on level 1 and Kullback-Leibler for
+        all levels above
+        'wce': not documented for now
+        'wce_kl': not documented for now
+    :param weighted_loss: bool
+        If True, the loss will be weighted based on the class
+        frequencies computed on the train dataset. See
+        `BaseDataset.get_class_weight()` for more
+    :param init_linear: str
+        Initialization method for all linear layers. Supports
+        'xavier_uniform', 'xavier_normal', 'kaiming_uniform',
+        'kaiming_normal', 'trunc_normal'
+    :param init_rpe: str
+        Initialization method for all linear layers producing
+        relative positional encodings. Supports 'xavier_uniform',
+        'xavier_normal', 'kaiming_uniform', 'kaiming_normal',
+        'trunc_normal'
+    :param transformer_lr_scale: float
+        Scaling parameter applied to the learning rate for the
+        `TransformerBlock` in each `Stage` and for the pooling block
+        in `DownNFuseStage` modules. Setting this to a value lower
+        than 1 mitigates exploding gradients in attentive blocks
+        during training
+    :param multi_stage_loss_lambdas: List[float]
+        List of weights for combining losses computed on the output
+        of each partition level. If not specified, the loss will
+        be computed on the level 1 outputs only
+    :param gc_every_n_steps: int
+        Explicitly call the garbage collector after a certain number
+        of steps. May involve a computation overhead. Mostly hear
+        for debugging purposes when observing suspicious GPU memory
+        increase during training
+    :param track_val_every_n_epoch: int
+        If specified, the output for a validation batch of interest
+        specified with `track_val_idx` will be stored to disk every
+        `track_val_every_n_epoch` epochs. Must be a multiple of
+        `check_val_every_n_epoch`. See `save_batch()` for more
+    :param track_val_idx: int
+        If specified, the output for the `track_val_idx`th
+        validation batch will be saved to disk periodically based on
+        `track_val_every_n_epoch`. Importantly, this index is expected
+        to match the `Dataloader`'s index wrt the current epoch
+        and NOT an index wrt the `Dataset`. Said otherwise, if the
+        `Dataloader(shuffle=True)` then, the stored batch will not be
+        the same at each epoch. For this reason, if tracking the same
+        object across training is needed, the `Dataloader` and the
+        transforms should be free from any stochasticity
+    :param track_test_idx:
+        If specified, the output for the `track_test_idx`th
+        test batch will be saved to disk. If `track_test_idx=-1`,
+        predictions for the entire test set will be saved to disk
+    :param kwargs: Dict
+        Kwargs will be passed to `_load_from_checkpoint()`
+    """
 
     _IGNORED_HYPERPARAMETERS = ['net', 'criterion']
 

@@ -70,14 +70,14 @@ between superpoints at multiple scales.
 
 <div align="center">
 
-| ✨ SPT in numbers ✨ |
-| :---: |
-| 📊 **SOTA on S3DIS 6-Fold** (76.0 mIoU) |
-| 📊 **SOTA on KITTI-360 Val** (63.5 mIoU) |
-| 📊 **Near SOTA on DALES** (79.6 mIoU) | 
-| 🦋 **212k parameters** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 200, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 40) | 
+|                                                                                   ✨ SPT in numbers ✨                                                                                      |
+|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
+|                                                                          📊 **S3DIS 6-Fold** (76.0 mIoU)                                                                          |
+|                                                                         📊 **KITTI-360 Val** (63.5 mIoU)                                                                          |
+|                                                                           📊 **DALES** (79.6 mIoU)                                                                           | 
+|      🦋 **212k parameters** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 200, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 40)       | 
 | ⚡ S3DIS training in **3h on 1 GPU** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 7, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 70) | 
-| ⚡ **Preprocessing x7 faster than [SPG](https://github.com/loicland/superpoint_graph)** |
+|                                                  ⚡ **Preprocessing x7 faster than [SPG](https://github.com/loicland/superpoint_graph)**                                                   |
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-dales)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-dales?p=efficient-3d-semantic-segmentation-with-1)
@@ -102,12 +102,12 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 
 |                               ✨ SuperCluster in numbers ✨                                |
 |:----------------------------------------------------------------------------------------:|
-|                          📊 **SOTA on S3DIS 6-Fold** (55.9 PQ)                           |
-|                          📊 **SOTA on S3DIS Area 5** (50.1 PQ)                           |
-|                           📊 **SOTA on ScanNet Val** (58.7 PQ)                           |
-|                         📊 **FIRST on KITTI-360 Val** (48.3 PQ)                          |
-|                             📊 **FIRST on DALES** (61.2 PQ)                              |
-| 🦋 **212k parameters** ([PointGroup](https://github.com/dvlab-research/PointGroup) ÷ 37) | 
+|                              📊 **S3DIS 6-Fold** (55.9 PQ)                               |
+|                              📊 **S3DIS Area 5** (50.1 PQ)                               |
+|                               📊 **ScanNet Val** (58.7 PQ)                               |
+|                              📊 **KITTI-360 Val** (48.3 PQ)                              |
+|                                  📊 **DALES** (61.2 PQ)                                  |
+| 🦋 **212k parameters** ([PointGroup](https://github.com/dvlab-research/PointGroup) ÷ 37) |
 |                           ⚡ S3DIS training in **4h on 1 GPU**                            | 
 |              ⚡ **7.8km²** tile of **18M** points in **10.1s** on **1 GPU**               |
 
@@ -285,7 +285,7 @@ python src/eval.py experiment=panoptic/dales ckpt_path=/path/to/your/checkpoint.
 > [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
 > 
 > The pretrained weights of the **SuperCluster** models for 
->**S3DIS 6-Fold**, **S3DIS 6-Fold with stuff**, **ScanNet Val**,, **KITTI-360 Val**, and **DALES** are available at:
+>**S3DIS 6-Fold**, **S3DIS 6-Fold with stuff**, **ScanNet Val**, **KITTI-360 Val**, and **DALES** are available at:
 >
 > [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10689037.svg)](https://doi.org/10.5281/zenodo.10689037)
 
@@ -569,7 +569,7 @@ with to mitigate GPU memory use, based on when the error occurs.
 
 ## 💳  Credits
 - This project was built using [Lightning-Hydra template](https://github.com/ashleve/lightning-hydra-template).
-- The main data structures of this work rely on [PyToch Geometric](https://github.com/pyg-team/pytorch_geometric)
+- The main data structures of this work rely on [PyTorch Geometric](https://github.com/pyg-team/pytorch_geometric)
 - Some point cloud operations were inspired from the [Torch-Points3D framework](https://github.com/nicolas-chaulet/torch-points3d), although not merged with the official project at this point. 
 - For the KITTI-360 dataset, some code from the official [KITTI-360](https://github.com/autonomousvision/kitti360Scripts) was used.
 - Some superpoint-graph-related operations were inspired from [Superpoint Graph](https://github.com/loicland/superpoint_graph)

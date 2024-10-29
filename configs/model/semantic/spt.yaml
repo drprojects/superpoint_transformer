@@ -20,10 +20,10 @@ net:
     _target_: src.nn.GraphNorm
     _partial_: True
 
-  use_pos: True  # whether features should include (sphere-normalized) position
+  use_pos: True  # whether features should include position (with unit-sphere normalization wrt siblings)
   use_node_hf: True  # whether features should include node handcrafted features (after optional node_mlp, if features are actually loaded by the datamodule)
-  use_diameter: False  # whether features should include the superpoint's diameter (from sphere-normalization)
-  use_diameter_parent: True  # whether features should include diameter of the superpoint's parent (from sphere-normalization)
+  use_diameter: False  # whether features should include the superpoint's diameter (from unit-sphere normalization wrt siblings)
+  use_diameter_parent: True  # whether features should include diameter of the superpoint's parent (from unit-sphere normalization wrt siblings)
   pool: 'max'  # pooling across the cluster, supports 'max', 'mean', 'min'
   unpool: 'index'
   fusion: 'cat'
