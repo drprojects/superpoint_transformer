@@ -1,68 +1,105 @@
-name: Report a Bug
-description: Create a new ticket for a bug.	
-title: "Summarize the bug"
-labels: [bug]
+name: "🐛 Bug Report"
+description: Submit a report to help us reproduce and fix the bug
+title: Title of your bug report
+labels: ["bug"]
 
 body:
 
-- type: checkboxes
-  attributes:
-    label: "Checklist"
-    options:
-      - label: "I have searched for [similar issues](https://github.com/drprojects/superpoint_transformer/issues)."
-        required: true
-      - label: " I have tested with the lastest available version."
-        required: true
-      - label: "I have checked the [introduction page](https://github.com/drprojects/superpoint_transformer/blob/master/README.md ) and the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs) "
-        required: true
-      - label: " I have check that this bug is a SuperPoint Transformers bug and is not in fact a sub-dependency issue (ex: pytorch installation issue, pytorch geometric not installed with GPU support... )."
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to fill out this bug report 🙏 !
 
-- type: textarea
-  attributes:
-    label: "Describe the issue"
-    description: >
-      Provide the *detailed* description of the issue you are facing. Include
-      references to any documentation or issues you referred.
+  - type: checkboxes
+    attributes:
+      label: ✅ Code of conduct checklist
+      description: >
+        Before submitting a bug, please make sure you went through the following 
+        steps.
+      options:
+        - label: "🌱 I am using the **_latest version_** of the [code](https://github.com/drprojects/superpoint_transformer/tree/master)."
+          required: true
+        - label: "👩‍💻 I made sure the bug concerns the official [project's codebase](https://github.com/drprojects/superpoint_transformer/tree/master) and not something I coded myself on top of it. (We only provide support for code we wrote and released ourselves)."
+          required: true
+        - label: "🔎 I took appropriate **_time_** to investigate the problem before filing an issue, but am unable to solve it myself."
+          required: true
+        - label: "📙 I **_thoroughly_** went through the [README](https://github.com/drprojects/superpoint_transformer/blob/master/README.md), but could not find the solution there."
+          required: true
+        - label: "📘 I **_thoroughly_** went through the tutorial [slides](media/superpoint_transformer_tutorial.pdf), [notebook](notebooks/superpoint_transformer_tutorial.ipynb), and [video](https://www.youtube.com/watch?v=2qKhpQs9gJw), but could not find the solution there."
+          required: true
+        - label: "📗 I **_thoroughly_** went through the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs), but could not find the solution there."
+          required: true
+        - label: "📜 I went through the **_docstrings_** and **_comments_** in the [source code](https://github.com/drprojects/superpoint_transformer/tree/master) parts relevant to my problem, but could not find the solution there."
+          required: true
+        - label: "👩‍🔧 I searched for [**_similar issues_**](https://github.com/drprojects/superpoint_transformer/issues), but could not find the solution there."
+          required: true
+        - label: "🔎 I made sure my bug is related to the [project's codebase](https://github.com/drprojects/superpoint_transformer/tree/master) and is not in fact a sub-dependency issue (e.g.: FRNN installation issue, PyTorch installation issue, PyTorch Geometric not installed with GPU support, ...)."
+          required: true
+        - label: "⭐ Since I am showing interest in the project, I took the time to give the [repo](https://github.com/drprojects/superpoint_transformer/tree/master) a ⭐ to show support. **Please do, it means a lot to us !**"
+          required: true
 
-  validations:
-    required: true
+  - type: textarea
+    attributes:
+      label: 🐛 Describe the bug
+      description: >
+        Please provide a _**clear and concise**_ description of the issue you
+        are facing. If the code does not behave as anticipated, please describe
+        the expected behavior. Include references to any relevant documentation
+        or related issues.
+    validations:
+      required: true
 
-- type: textarea
-  attributes:
-    label: "Steps to reproduce the bug"
-    description: >
-      Please provide step-by-step instructions and full source code to reproduce
-      the bug. The instructions shall be self-contained.
-    placeholder: |
-      << your code here >>
-      import numpy as np
+  - type: textarea
+    id: logs
+    attributes:
+      label: 📜 Log output
+      description: >
+        If relevant, please copy and paste any useful log output. If copying an 
+        error message, make sure you provide the _**full traceback**_. This will
+        be automatically rendered as shell code, so no need for backticks.
+      placeholder: |
+        << Full error message >>
+      render: shell
 
+  - type: textarea
+    attributes:
+      label: 🤖 Steps to reproduce the bug
+      description: >
+        Please provide a _**minimal reproducible example**_ to help us 
+        investigate the bug.
+      placeholder: |
+        A step-by-step recipe for reproducing your bug. Use backticks as shown 
+        below to write and render code snippets. 
 
-    render: python
-  validations:
-    required: true
+        ```python
+        # Some python code to reproduce the problem
+        ```
 
-- type: textarea
-  attributes:
-    label: "Error message"
-    description: >
-      Please include the *full* error message, if any. You may submit/attach
-      the entire terminal output with the error message.
-    placeholder: |
-      << Full error message >>
-  validations:
-    required: false
+        ```
+        Some error message you got, with the full traceback.
+        ```
+    validations:
+      required: true
 
-- type: textarea
-  attributes:
-    label: "Expected behavior"
-    description: >
-      A clear and concise description of what you expected to happen.
+  - type: textarea
+    attributes:
+      label: 📚 Additional information
+      description: >
+        Please add any additional information that could help us diagnose the
+        problem better. Provide screenshots if applicable. You may attach
+        log files, generated wheel, or any other file that could be helpful.
 
-- type: textarea
-  attributes:
-    label: "Additional information"
-    description: >
-      Please add any additional information that could help us diagnose the
-      problem better. Provide screenshots if applicable. You may attach
-      log files, generated wheel, or any other files, that could be helpful.
+  - type: textarea
+    attributes:
+      label: 🖥️ Environment
+      description: |
+        Please run the following and paste the output here. This will let us know more about your environment.
+        ```sh
+        curl -OL https://raw.githubusercontent.com/pytorch/pytorch/main/torch/utils/collect_env.py
+        # For security purposes, please check the contents of collect_env.py before running it.
+        python3 collect_env.py
+        ```
+      render: shell
+      placeholder: |
+        << Copy the output of `collect_env.py` here >>
+    validations:
+      required: true
