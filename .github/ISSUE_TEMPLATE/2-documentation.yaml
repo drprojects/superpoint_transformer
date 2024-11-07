@@ -1,0 +1,46 @@
+name: "📚 Typos and Documentation Fixes"
+description: Tell us about how we can improve our documentation
+title: Title of your documentation/typo fix/request
+labels: ["documentation"]
+
+body:
+
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to fill out this documentation report 🙏 !
+
+  - type: checkboxes
+    attributes:
+      label: ✅ Code of conduct checklist
+      description: >
+        Before submitting a bug, please make sure you went through the following 
+        steps.
+      options:
+        - label: "🌱 I am using the **_latest version_** of the [code](https://github.com/drprojects/superpoint_transformer/tree/master)."
+          required: true
+        - label: "📙 I went through the [README](https://github.com/drprojects/superpoint_transformer/blob/master/README.md), but could not find the appropriate documentation there."
+          required: true
+        - label: "📘 I went through the tutorial [slides](media/superpoint_transformer_tutorial.pdf), [notebook](notebooks/superpoint_transformer_tutorial.ipynb), and [video](https://www.youtube.com/watch?v=2qKhpQs9gJw), but could not find the appropriate documentation there."
+          required: true
+        - label: "📗 I went through the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs), but could not find the appropriate documentation there."
+          required: true
+        - label: "📜 I went through the **_docstrings_** and **_comments_** in the [source code](https://github.com/drprojects/superpoint_transformer/tree/master) parts relevant to my problem, but could not find the appropriate documentation there."
+          required: true
+        - label: "👩‍🔧 I searched for [**_similar issues_**](https://github.com/drprojects/superpoint_transformer/issues), but could not find the appropriate documentation there."
+          required: true
+        - label: "⭐ Since I am showing interest in the project, I took the time to give the [repo](https://github.com/drprojects/superpoint_transformer/tree/master) a ⭐ to show support. **Please do, it means a lot to us !**"
+          required: true
+
+  - type: textarea
+    attributes:
+      label: 📚 Describe the documentation issue
+      description: |
+        A clear and concise description of the issue.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Suggest a potential alternative/fix
+      description: |
+        Tell us how we could improve the documentation in this regard.
