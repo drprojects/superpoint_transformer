@@ -1,35 +1,57 @@
-name: Feature Request
-description: New feature request. Request to add some new functionality or improve the existing ones.
-title: "Summarize your request."
-labels: [feature request]
+name: "🚀 Feature Request"
+description: Propose a new feature
+title: Title of your feature request
+labels: ["feature"]
 
 body:
 
-- type: checkboxes
-  attributes:
-    label: "Checklist"
-    options:
-      - label: "I have searched for [similar issues](https://github.com/drprojects/superpoint_transformer/issues)."
-        required: true
-      - label: " I have tested with the lastest available version."
-        required: true
-      - label: "I have checked the [introduction page](https://github.com/drprojects/superpoint_transformer/blob/master/README.md ) and the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs) "
-        required: true
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to fill out this feature request report 🙏 !
 
-- type: textarea
-  attributes:
-    description: >
-        Describe what feature you'd like to have in SuperPoint Transformers.
-    label: "Proposed new feature or change"
-  validations:
-    required: true
+  - type: checkboxes
+    attributes:
+      label: ✅ Code of conduct checklist
+      description: >
+        Before submitting a feature request, please make sure you went through 
+        the following steps.
+      options:
+        - label: "🌱 I am using the **_latest version_** of the [code](https://github.com/drprojects/superpoint_transformer/tree/master)."
+          required: true
+        - label: "📙 I **_thoroughly_** went through the [README](https://github.com/drprojects/superpoint_transformer/blob/master/README.md), but could not find the feature I need there."
+          required: true
+        - label: "📘 I **_thoroughly_** went through the tutorial [slides](media/superpoint_transformer_tutorial.pdf), [notebook](notebooks/superpoint_transformer_tutorial.ipynb), and [video](https://www.youtube.com/watch?v=2qKhpQs9gJw), but could not find the feature I need there."
+          required: true
+        - label: "📗 I **_thoroughly_** went through the [documentation](https://github.com/drprojects/superpoint_transformer/tree/master/docs), but could not find the feature I need there."
+          required: true
+        - label: "📜 I went through the **_docstrings_** and **_comments_** in the [source code](https://github.com/drprojects/superpoint_transformer/tree/master) parts relevant to my problem, but could not find the feature I need there."
+          required: true
+        - label: "👩‍🔧 I searched for [**_similar issues_**](https://github.com/drprojects/superpoint_transformer/issues), but could not find the feature I need there."
+          required: true
+        - label: "⭐ Since I am showing interest in the project, I took the time to give the [repo](https://github.com/drprojects/superpoint_transformer/tree/master) a ⭐ to show support. **Please do, it means a lot to us !**"
+          required: true
 
-- type: textarea
-  attributes:
-    label: "References"
-    description: Please share some references that can help us know more about this feature and try to implement the same. For ex. research paper, open-source codes, stackoverflow, etc.
+  - type: textarea
+    attributes:
+      label: 🚀 The feature, motivation and pitch
+      description: >
+        A clear and concise description of the feature proposal. Please outline
+        the motivation for the proposal. Is your feature request related to a
+        specific problem ? e.g., *"I'm working on X and would like Y to be 
+        possible"*. If this is related to another GitHub issue, please link here
+        too.
+    validations:
+      required: true
 
-- type: textarea
-  attributes:
-    label: "Additional information"
-    description: Add any other context or screenshots about the feature request here.
+  - type: textarea
+    attributes:
+      label: 🔀 Alternatives
+      description: >
+        A description of any alternative solutions or features you've 
+        considered, if any.
+
+  - type: textarea
+    attributes:
+      label: 📚 Additional context
+      description: >
+        Add any other context or screenshots about the feature request.
