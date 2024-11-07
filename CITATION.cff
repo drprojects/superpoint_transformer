@@ -1,0 +1,30 @@
+---
+cff-version: 1.2.0
+message: "Please cite our papers if you use this code in your own work."
+title: "Superpoint Transformer"
+authors:
+- family-names: "Robert"
+  given-names: "Damien"
+- family-names: "Raguet"
+  given-names: "Hugo"
+- family-names: "Landrieu"
+  given-names: "Loic"
+date-released: 2023-06-15
+license: MIT
+url: "https://github.com/drprojects/superpoint_transformer"
+preferred-citation:
+  type: conference-paper
+  authors:
+  - family-names: "Robert"
+    given-names: "Damien"
+    orcid: https://orcid.org/0000-0003-0983-7053
+  - family-names: "Raguet"
+    given-names: "Hugo"
+    orcid: https://orcid.org/0000-0002-4598-6710
+  - family-names: "Landrieu"
+    given-names: "Loic"
+    orcid: https://orcid.org/0000-0002-7738-8141
+  conference:
+  - name: "ICCV"
+  title: "Efficient 3D Semantic Segmentation with Superpoint Transformer"
+  year: 2023

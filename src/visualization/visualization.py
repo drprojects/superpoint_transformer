@@ -443,7 +443,8 @@ def visualize_3d(
             # labels
             pred[is_void] = y_gt[is_void]
 
-        colors = class_colors[pred] if class_colors is not None else None
+        colors = class_colors[pred] if class_colors is not None \
+            else int_to_plotly_rgb(torch.LongTensor(pred))
         data_0.pred_colors = colors
         if class_names is None:
             text = np.array([f"Class {i}" for i in range(pred.max() + 1)])

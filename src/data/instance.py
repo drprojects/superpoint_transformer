@@ -1,12 +1,12 @@
-import h5py
 import torch
-from time import time
+import numpy as np
 from torch.nn.functional import one_hot
-from src.data.csr import CSRData, CSRBatch
-from src.utils import tensor_idx, is_dense, save_tensor, load_tensor, \
-    has_duplicates, to_trimmed
-from torch_scatter import scatter_max, scatter_sum
+from typing import List, Tuple, Union
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
+from torch_scatter import scatter_max, scatter_sum
+
+from src.data.csr import CSRData, CSRBatch
+from src.utils import tensor_idx, is_dense, has_duplicates, to_trimmed
 
 
 __all__ = ['InstanceData', 'InstanceBatch']
@@ -57,7 +57,17 @@ class InstanceData(CSRData):
         Other kwargs will be ignored.
     """
 
-    def __init__(self, pointers, obj, count, y, dense=False, **kwargs):
+    __value_keys__ = ['obj', 'count', 'y']
+    __is_index_value_serialization_key__ = None
+
+    def __init__(
+            self,
+            pointers: torch.Tensor,
+            obj: torch.Tensor,
+            count: torch.Tensor,
+            y: torch.Tensor,
+            dense: bool = False,
+            **kwargs):
         # If the input data is passed in 'dense' format, we merge the
         # potential duplicate cluster-obj pairs before anything else.
         # NB: if dense=True, 'pointers' are not actual pointers but
@@ -84,17 +94,26 @@ class InstanceData(CSRData):
             pointers, obj, count, y, dense=dense,
             is_index_value=[True, False, False])
 
-    @staticmethod
-    def get_batch_type():
-        """Required by CSRBatch.from_list."""
+    @classmethod
+    def get_base_class(cls) -> type:
+        """Helps `self.from_list()` and `self.to_list()` identify which
+        classes to use for batch collation and un-collation.
+        """
+        return InstanceData
+
+    @classmethod
+    def get_batch_class(cls) -> type:
+        """Helps `self.from_list()` and `self.to_list()` identify which
+        classes to use for batch collation and un-collation.
+        """
         return InstanceBatch
 
     @property
-    def obj(self):
+    def obj(self) -> torch.Tensor:
         return self.values[0]
 
     @obj.setter
-    def obj(self, obj):
+    def obj(self, obj: torch.Tensor):
         assert obj.device == self.device, \
             f"obj is on {obj.device} while self is on {self.device}"
         self.values[0] = obj
@@ -102,11 +121,11 @@ class InstanceData(CSRData):
         #     self.debug()
 
     @property
-    def count(self):
+    def count(self) -> torch.Tensor:
         return self.values[1]
 
     @count.setter
-    def count(self, count):
+    def count(self, count: torch.Tensor):
         assert count.device == self.device, \
             f"count is on {count.device} while self is on {self.device}"
         self.values[1] = count
@@ -114,11 +133,11 @@ class InstanceData(CSRData):
         #     self.debug()
 
     @property
-    def y(self):
+    def y(self) -> torch.Tensor:
         return self.values[2]
 
     @y.setter
-    def y(self, y):
+    def y(self, y: torch.Tensor):
         assert y.device == self.device, \
             f"y is on {y.device} while self is on {self.device}"
         self.values[2] = y
@@ -137,7 +156,10 @@ class InstanceData(CSRData):
     def num_obj(self):
         return self.obj.unique().numel()
 
-    def major(self, num_classes=None):
+    def major(
+            self,
+            num_classes: int = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Return the obj, count, and y of the majority instance in each
         cluster (i.e. the object with which it has the highest overlap).
 
@@ -199,24 +221,10 @@ class InstanceData(CSRData):
 
         return obj, count, y
 
-    def select(self, idx):
-        """Returns a new InstanceData which indexes `self` using entries
-        in `idx`. Supports torch and numpy fancy indexing.
-
-        NB: since we store global object ids in `obj`, as opposed to
-        maintaining contiguous indices for the instances, we do not need
-        to update the `obj` when indexing and can simply use CSRData
-        indexing.
-
-        :parameter
-        idx: int or 1D torch.LongTensor or numpy.NDArray
-            Cluster indices to select from 'self'. Must NOT contain
-            duplicates
-        """
-        # Normal CSRData indexing, creates a new object in memory
-        return self[idx]
-
-    def merge(self, idx):
+    def merge(
+            self,
+            idx: Union[int, List[int], torch.Tensor, np.ndarray]
+    ) -> 'InstanceData':
         """Merge clusters based on `idx` and return the result in a new
         InstanceData object.
 
@@ -241,7 +249,7 @@ class InstanceData(CSRData):
         return self.__class__(
             merged_idx, self.obj, self.count, self.y, dense=True)
 
-    def iou_and_size(self):
+    def iou_and_size(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the Intersection over Union (IoU) and the individual
         size for each cluster-object pair in the data. This is typically
         needed for computing the Average Precision.
@@ -273,7 +281,11 @@ class InstanceData(CSRData):
 
         return iou, a_size, b_size
 
-    def estimate_centroid(self, cluster_pos, mode='iou'):
+    def estimate_centroid(
+            self,
+            cluster_pos: torch.Tensor,
+            mode: str = 'iou'
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Estimate the centroid position of each object, based on the
         position of the clusters.
 
@@ -336,7 +348,12 @@ class InstanceData(CSRData):
 
         return obj_pos, obj_idx
 
-    def instance_graph(self, edge_index, num_classes=None, smooth_affinity=True):
+    def instance_graph(
+            self,
+            edge_index: torch.Tensor,
+            num_classes: int = None,
+            smooth_affinity: bool = True
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute instance graph and per-edge affinity scores.
 
         :param edge_index: Tensor of size [2, num_edges]
@@ -439,7 +456,10 @@ class InstanceData(CSRData):
 
         return obj_edge_index, affinity
 
-    def search_void(self, num_classes):
+    def search_void(
+            self,
+            num_classes: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Search for clusters and objects with 'void' semantic labels.
 
         IMPORTANT:
@@ -524,7 +544,10 @@ class InstanceData(CSRData):
 
         return is_a_void, is_pair_void, pair_cropped_count
 
-    def remove_void(self, num_classes):
+    def remove_void(
+            self,
+            num_classes: int
+    ) -> Tuple['InstanceData', torch.Tensor]:
         """Return a new InstanceData with void clusters, objects and
         pairs removed.
 
@@ -598,109 +621,7 @@ class InstanceData(CSRData):
             for key in ['num_clusters', 'num_overlaps', 'num_obj', 'device']]
         return f"{self.__class__.__name__}({', '.join(info)})"
 
-    def save(self, f, fp_dtype=torch.float):
-        """Save InstanceData to HDF5 file.
-
-        :param f: h5 file path of h5py.File or h5py.Group
-        :param fp_dtype: torch dtype
-            Data type to which floating point tensors will be cast
-            before saving
-        :return:
-        """
-        if not isinstance(f, (h5py.File, h5py.Group)):
-            with h5py.File(f, 'w') as file:
-                self.save(file, fp_dtype=fp_dtype)
-            return
-
-        save_tensor(self.pointers, f, 'pointers', fp_dtype=fp_dtype)
-        save_tensor(self.obj, f, 'obj', fp_dtype=fp_dtype)
-        save_tensor(self.count, f, 'count', fp_dtype=fp_dtype)
-        save_tensor(self.y, f, 'y', fp_dtype=fp_dtype)
-
-    @classmethod
-    def load(cls, f, idx=None, verbose=False):
-        """Load InstanceData from an HDF5 file. See `InstanceData.save`
-        for writing such file. Options allow reading only part of the
-        clusters.
-
-        :param f: h5 file path of h5py.File or h5py.Group
-        :param idx: int, list, numpy.ndarray, torch.Tensor
-            Used to select clusters when reading. Supports fancy
-            indexing
-        :param verbose: bool
-        """
-        KEYS = ['pointers', 'obj', 'count', 'y']
-
-        if not isinstance(f, (h5py.File, h5py.Group)):
-            with h5py.File(f, 'r') as file:
-                out = cls.load(file, idx=idx, verbose=verbose)
-            return out
-
-        assert all(k in f.keys() for k in KEYS)
-
-        start = time()
-        idx = tensor_idx(idx)
-        if verbose:
-            print(f'{cls.__name__}.load tensor_idx         : {time() - start:0.5f}s')
-
-        if idx is None or idx.shape[0] == 0:
-            start = time()
-            pointers = load_tensor(f['pointers'])
-            obj = load_tensor(f['obj'])
-            count = load_tensor(f['count'])
-            y = load_tensor(f['y'])
-            if verbose:
-                print(f'{cls.__name__}.load read all           : {time() - start:0.5f}s')
-            start = time()
-            out = cls(pointers, obj, count, y)
-            if verbose:
-                print(f'{cls.__name__}.load init               : {time() - start:0.5f}s')
-            return out
-
-        # Read only pointers start and end indices based on idx
-        start = time()
-        ptr_start = load_tensor(f['pointers'], idx=idx)
-        ptr_end = load_tensor(f['pointers'], idx=idx + 1)
-        if verbose:
-            print(f'{cls.__name__}.load read ptr       : {time() - start:0.5f}s')
-
-        # Create the new pointers
-        start = time()
-        pointers = torch.cat([
-            torch.zeros(1, dtype=ptr_start.dtype),
-            torch.cumsum(ptr_end - ptr_start, 0)])
-        if verbose:
-            print(f'{cls.__name__}.load new pointers   : {time() - start:0.5f}s')
-
-        # Create the indexing tensor to select and order values.
-        # Simply, we could have used a list of slices, but we want to
-        # avoid for loops and list concatenations to benefit from torch
-        # capabilities.
-        start = time()
-        sizes = pointers[1:] - pointers[:-1]
-        val_idx = torch.arange(pointers[-1])
-        val_idx -= torch.arange(pointers[-1] + 1)[
-            pointers[:-1]].repeat_interleave(sizes)
-        val_idx += ptr_start.repeat_interleave(sizes)
-        if verbose:
-            print(f'{cls.__name__}.load val_idx        : {time() - start:0.5f}s')
-
-        # Read the obj and count, now we have computed the val_idx
-        start = time()
-        obj = load_tensor(f['obj'], idx=val_idx)
-        count = load_tensor(f['count'], idx=val_idx)
-        y = load_tensor(f['y'], idx=val_idx)
-        if verbose:
-            print(f'{cls.__name__}.load read values    : {time() - start:0.5f}s')
-
-        # Build the InstanceData object
-        start = time()
-        out = cls(pointers, obj, count, y)
-        if verbose:
-            print(f'{cls.__name__}.load init           : {time() - start:0.5f}s')
-        return out
-
-    def target_label_histogram(self, num_classes):
+    def target_label_histogram(self, num_classes: int) -> torch.Tensor:
         """Compute the target histogram for semantic segmentation. That
         is, for each cluster, the histogram of pointwise labels of its
         overlaps. When joined with cluster-wise semantic predictions,
@@ -722,7 +643,11 @@ class InstanceData(CSRData):
         return scatter_sum(y_hist, self.indices, dim=0)
 
     def semantic_segmentation_oracle(
-            self, num_classes, *metric_args, **metric_kwargs):
+            self,
+            num_classes: int,
+            *metric_args,
+            **metric_kwargs
+    ) -> 'SemanticMetricResults':
         """Compute the oracle performance for semantic segmentation,
         when all clusters predict the dominant label among their points.
         This corresponds to the highest achievable performance with the
@@ -737,7 +662,7 @@ class InstanceData(CSRData):
         :param metric_kwargs:
             Kwargs for the metrics computation
 
-        :return: mIoU, pre-class IoU, OA, mAcc
+        :return: SemanticMetricResults
         """
         # Compute the label histogram for each cluster
         y_hist = self.target_label_histogram(num_classes)
@@ -758,7 +683,10 @@ class InstanceData(CSRData):
 
         return metrics
 
-    def oracle(self, num_classes):
+    def oracle(
+            self,
+            num_classes: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute the oracle predictions for instance and panoptic
         segmentation. This is a proxy for the highest achievable
         performance with the cluster partition at hand. The output data
@@ -805,7 +733,11 @@ class InstanceData(CSRData):
 
         return oracle_scores, oracle_y, oracle
 
-    def instance_segmentation_oracle(self, num_classes, **metric_kwargs):
+    def instance_segmentation_oracle(
+            self,
+            num_classes: int,
+            **metric_kwargs
+    ) -> 'InstanceMetricResults':
         """Compute the oracle performance for instance segmentation.
         This is a proxy for the highest achievable performance with the
         cluster partition at hand.
@@ -838,7 +770,11 @@ class InstanceData(CSRData):
 
         return results
 
-    def panoptic_segmentation_oracle(self, num_classes, **metric_kwargs):
+    def panoptic_segmentation_oracle(
+            self,
+            num_classes: int,
+            **metric_kwargs
+    ) -> 'PanopticMetricResults':
         """Compute the oracle performance for panoptic segmentation.
         This is a proxy for the highest achievable performance with the
         cluster partition at hand.
@@ -875,4 +811,3 @@ class InstanceBatch(InstanceData, CSRBatch):
     instance labels in 'obj' will be updated to avoid collisions between
     the different batch items.
     """
-    __csr_type__ = InstanceData

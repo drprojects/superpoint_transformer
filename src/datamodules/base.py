@@ -1,6 +1,8 @@
 import torch
 import logging
 from pytorch_lightning import LightningDataModule
+from typing import Any, Dict, List, Tuple, Union
+
 from src.transforms import *
 from src.loader import DataLoader
 from src.data import NAGBatch
@@ -71,12 +73,23 @@ class BaseDataModule(LightningDataModule):
     _MINIDATASET_CLASS = None
 
     def __init__(
-            self, data_dir='', pre_transform=None, train_transform=None,
-            val_transform=None, test_transform=None,
-            on_device_train_transform=None, on_device_val_transform=None,
-            on_device_test_transform=None, dataloader=None, mini=False,
-            trainval=False, val_on_test=False, tta_runs=None, tta_val=False,
-            submit=False, **kwargs):
+            self,
+            data_dir: str = '',
+            pre_transform: Transform = None,
+            train_transform: Transform = None,
+            val_transform: Transform = None,
+            test_transform: Transform = None,
+            on_device_train_transform: Transform = None,
+            on_device_val_transform: Transform = None,
+            on_device_test_transform: Transform = None,
+            dataloader: DataLoader = None,
+            mini: bool = False,
+            trainval: bool = False,
+            val_on_test: bool = False,
+            tta_runs: int = None,
+            tta_val: bool = False,
+            submit: bool = False,
+            **kwargs):
         super().__init__()
 
         # This line allows to access init params with 'self.hparams'
@@ -113,7 +126,7 @@ class BaseDataModule(LightningDataModule):
         self.check_submission_conflicts()
 
     @property
-    def dataset_class(self):
+    def dataset_class(self) -> type:
         """Return the LightningDataModule's Dataset class.
         """
         if self.hparams.mini:
@@ -121,20 +134,20 @@ class BaseDataModule(LightningDataModule):
         return self._DATASET_CLASS
 
     @property
-    def train_stage(self):
+    def train_stage(self) -> str:
         """Return either 'train' or 'trainval' depending on how
         `self.hparams.trainval` is configured.
         """
         return 'trainval' if self.hparams.trainval else 'train'
 
     @property
-    def val_stage(self):
+    def val_stage(self) -> str:
         """Return either 'val' or 'test' depending on how
         `self.hparams.val_on_test` is configured.
         """
         return 'test' if self.hparams.val_on_test else 'val'
 
-    def prepare_data(self):
+    def prepare_data(self) -> None:
         """Download and heavy preprocessing of data should be triggered
         here.
 
@@ -156,7 +169,7 @@ class BaseDataModule(LightningDataModule):
             transform=self.test_transform, pre_transform=self.pre_transform,
             on_device_transform=self.on_device_test_transform, **self.kwargs)
 
-    def setup(self, stage=None):
+    def setup(self, stage=None) -> None:
         """Load data. Set variables: `self.train_dataset`,
         `self.val_dataset`, `self.test_dataset`.
 
@@ -179,7 +192,7 @@ class BaseDataModule(LightningDataModule):
             transform=self.test_transform, pre_transform=self.pre_transform,
             on_device_transform=self.on_device_test_transform, **self.kwargs)
 
-    def set_transforms(self):
+    def set_transforms(self) -> None:
         """Parse in self.hparams in search for '*transform*' keys and
         instantiate the corresponding transforms.
         """
@@ -187,7 +200,7 @@ class BaseDataModule(LightningDataModule):
         for key, transform in t_dict.items():
             setattr(self, key, transform)
 
-    def check_tta_conflicts(self):
+    def check_tta_conflicts(self) -> None:
         """Make sure the transforms are Test-Time Augmentation-friendly
         """
         # Skip if not TTA
@@ -206,7 +219,7 @@ class BaseDataModule(LightningDataModule):
                     f"Cannot use {t} with test-time augmentation. The "
                     f"following transforms are not supported: {_TTA_CONFLICTS}")
 
-    def check_submission_conflicts(self):
+    def check_submission_conflicts(self) -> None:
         """Make sure the transforms and other parameters do not prevent
         test prediction submission.
         """
@@ -239,7 +252,7 @@ class BaseDataModule(LightningDataModule):
                     f"following transforms are not supported: "
                     f"{_SUBMISSION_CONFLICTS}")
 
-    def train_dataloader(self):
+    def train_dataloader(self) -> DataLoader:
         return DataLoader(
             dataset=self.train_dataset,
             batch_size=self.hparams.dataloader.batch_size,
@@ -248,7 +261,7 @@ class BaseDataModule(LightningDataModule):
             persistent_workers=self.hparams.dataloader.persistent_workers,
             shuffle=True)
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> DataLoader:
         return DataLoader(
             dataset=self.val_dataset,
             batch_size=self.hparams.dataloader.batch_size,
@@ -257,7 +270,7 @@ class BaseDataModule(LightningDataModule):
             persistent_workers=self.hparams.dataloader.persistent_workers,
             shuffle=False)
 
-    def test_dataloader(self):
+    def test_dataloader(self) -> DataLoader:
         return DataLoader(
             dataset=self.test_dataset,
             batch_size=self.hparams.dataloader.batch_size,
@@ -266,26 +279,30 @@ class BaseDataModule(LightningDataModule):
             persistent_workers=self.hparams.dataloader.persistent_workers,
             shuffle=False)
 
-    def predict_dataloader(self):
+    def predict_dataloader(self) -> DataLoader:
         """By default, each DataModule uses its test dataset for predict
         behavior.
         """
         return self.test_dataloader()
 
-    def teardown(self, stage=None):
+    def teardown(self, stage: str = None) -> None:
         """Clean up after fit or test."""
         pass
 
-    def state_dict(self):
+    def state_dict(self) -> Dict:
         """Extra things to save to checkpoint."""
         return {}
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """Things to do when loading checkpoint."""
         pass
 
     @torch.no_grad()
-    def on_after_batch_transfer(self, nag_list, dataloader_idx):
+    def on_after_batch_transfer(
+            self,
+            nag_list: List['NAG'],
+            dataloader_idx: int,
+    ) -> Union['NAG', Tuple['NAG', Transform, int]]:
         """Intended to call on-device operations. Typically,
         NAGBatch.from_nag_list and some Transforms like SampleSubNodes
         and SampleSegments are faster on GPU, and we may prefer

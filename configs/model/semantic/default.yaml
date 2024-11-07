@@ -17,7 +17,7 @@ gc_every_n_steps: 0
 # dataloader is non-stochastic. Additionally, the model may store to
 # disk predictions for some or all the test batches.
 track_val_every_n_epoch: 10  # trigger the tracking every N epoch
-track_val_idx: null  # index of the validation batch to track
+track_val_idx: null  # index of the validation batch to track. If -1, all the validation batches will be tracked, at every `track_val_every_n_epoch` epoch
 track_test_idx: null  # index of the test batch to track. If -1, all the test batches will be tracked
 
 optimizer:

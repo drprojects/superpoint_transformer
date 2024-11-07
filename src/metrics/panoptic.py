@@ -12,7 +12,7 @@ from src.metrics.mean_average_precision import BaseMetricResults
 log = logging.getLogger(__name__)
 
 
-__all__ = ['PanopticQuality3D']
+__all__ = ['PanopticQuality3D', 'PanopticMetricResults']
 
 
 class PanopticMetricResults(BaseMetricResults):

@@ -14,7 +14,9 @@ from src.utils import arange_interleave, sizes_to_pointers
 log = logging.getLogger(__name__)
 
 
-__all__ = ['MeanAveragePrecision3D']
+__all__ = [
+    'MeanAveragePrecision3D', 'MAPMetricResults', 'MARMetricResults',
+    'InstanceMetricResults']
 
 
 class BaseMetricResults(dict):

@@ -1,12 +1,14 @@
 import h5py
 import torch
+import numpy as np
 from time import time
-from typing import List
+from typing import Dict, List, Tuple, Union, Any
+from torch_geometric.nn.pool.consecutive import consecutive_cluster
+from torch_scatter import scatter_sum
+
 import src
 from src.data import Data, Batch
 from src.utils import tensor_idx, has_duplicates, sparse_sample
-from torch_geometric.nn.pool.consecutive import consecutive_cluster
-from torch_scatter import scatter_sum
 
 
 __all__ = ['NAG', 'NAGBatch']
@@ -29,7 +31,12 @@ class NAG:
         for i in range(self.num_levels):
             yield self[i]
 
-    def get_sub_size(self, high, low=0, use_level_zero_node_size=True):
+    def get_sub_size(
+            self,
+            high: int,
+            low: int = 0,
+            use_level_zero_node_size: bool = True
+    ) -> List[torch.Tensor]:
         """Compute the number of points of level 'low' contained in
         each superpoint of level 'high'.
 
@@ -56,7 +63,11 @@ class NAG:
             sub_sizes = scatter_sum(sub_sizes, self[i].super_index, dim=0)
         return sub_sizes
 
-    def get_super_index(self, high, low=0):
+    def get_super_index(
+            self,
+            high: int,
+            low: int = 0
+    ) -> List[torch.Tensor]:
         """Compute the super_index linking the points at level 'low'
         with superpoints at level 'high'.
 
@@ -89,7 +100,7 @@ class NAG:
         return [d.num_points for d in self] if self.num_levels > 0 else 0
 
     @property
-    def level_ratios(self):
+    def level_ratios(self) -> Dict:
         """Ratios of number of nodes between consecutive partition
         levels. This can be useful for investigating how much each
         partition level 'compresses' the previous one.
@@ -98,34 +109,34 @@ class NAG:
             f"|P_{i}| / |P_{i+1}|": self.num_points[i] / self.num_points[i + 1]
             for i in range(self.num_levels - 1)}
 
-    def to_list(self):
+    def to_list(self) -> List['Data']:
         """Return the Data list"""
         return self._list
 
-    def clone(self):
+    def clone(self) -> 'NAG':
         """Return a new NAG instance containing the Data clones."""
         return self.__class__([d.clone() for d in self])
 
-    def detach(self):
+    def detach(self) -> 'NAG':
         """Detach all tensors in the NAG."""
         self._list = [d.detach() for d in self]
         return self
 
-    def to(self, device, **kwargs):
+    def to(self, device, **kwargs) -> 'NAG':
         """Move the NAG with all Data in it to device."""
         self._list = [d.to(device, **kwargs) for d in self]
         return self
 
-    def cpu(self, **kwargs):
+    def cpu(self, **kwargs) -> 'NAG':
         """Move the NAG with all Data in it to CPU."""
         return self.to('cpu', **kwargs)
 
-    def cuda(self, **kwargs):
+    def cuda(self, **kwargs) -> 'NAG':
         """Move the NAG with all Data in it to CUDA."""
         return self.to('cuda', **kwargs)
 
     @property
-    def device(self):
+    def device(self) -> torch.device:
         """Return device of first Data in NAG."""
         return self[0].device if self.num_levels > 0 \
             else torch.tensor([]).device
@@ -138,7 +149,7 @@ class NAG:
                 return True
         return False
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: Union[int, slice]) -> Union['NAG', 'Data']:
         """Return a Data object from the hierarchy.
 
         Parameters
@@ -150,7 +161,11 @@ class NAG:
             return self._list[idx]
         return self.__class__(self._list[idx])
 
-    def select(self, i_level, idx):
+    def select(
+            self,
+            i_level: int,
+            idx: Union[int, List[int], torch.Tensor, np.ndarray]
+    ) -> 'NAG':
         """Indexing mechanism on the NAG.
 
         Returns a new copy of the indexed NAG, with updated clusters.
@@ -227,22 +242,23 @@ class NAG:
         # will still keep track of potentially removed level-0 points.
         # To this end, we recompute the instance labels with a bottom-up
         # approach
-        if self[0].obj is not None:
-            for i in range(self.num_levels - 1):
-                data_list[i + 1].obj = data_list[i].obj.merge(
-                    data_list[i].super_index)
+        for k in ['obj', 'obj_pred']:
+            if k in self[0].keys and self[0][k] is not None:
+                for i in range(self.num_levels - 1):
+                    data_list[i + 1][k] = data_list[i][k].merge(
+                        data_list[i].super_index)
 
         # Create a new NAG with the list of indexed Data
-        nag = self.__class__(data_list)
+        nag = NAG(data_list)
 
         return nag
 
     def save(
             self,
-            path,
-            y_to_csr=True,
-            pos_dtype=torch.float,
-            fp_dtype=torch.float):
+            path: str,
+            y_to_csr: bool = True,
+            pos_dtype: torch.dtype = torch.float,
+            fp_dtype: torch.dtype = torch.float):
         """Save NAG to HDF5 file.
 
         :param path:
@@ -270,16 +286,17 @@ class NAG:
     @classmethod
     def load(
             cls,
-            path,
-            low=0,
-            high=-1,
-            idx=None,
-            keys_idx=None,
-            keys_low=None,
-            keys=None,
-            update_super=True,
-            update_sub=True,
-            verbose=False):
+            path: str,
+            low: int = 0,
+            high: int = -1,
+            idx: Union[int, List, np.ndarray, torch.Tensor] = None,
+            keys_idx: List[str] = None,
+            keys_low: List[str] = None,
+            keys: List[str] = None,
+            update_super: bool = True,
+            update_sub: bool = True,
+            verbose: bool = False
+    ) -> 'NAG':
         """Load NAG from an HDF5 file. See `NAG.save` for writing such
         file. Options allow reading only part of the data.
 
@@ -340,11 +357,6 @@ class NAG:
                 if verbose:
                     print(f'{cls.__name__}.load lvl-{i:<13} : 'f'{time() - start:0.3f}s\n')
 
-        # Check if the returned actually corresponds to a NAGBatch
-        # object rather than a simple NAG object
-        if isinstance(data_list[0], Batch):
-            cls = NAGBatch
-
         # In the case where update_super is not required but the low
         # level was indexed, we cannot combine the leve-0 and level-1+
         # Data into a NAG, because the indexing might have broken index
@@ -352,6 +364,13 @@ class NAG:
         # NAG.cat_select-friendly way, for later update
         if not update_super and idx is not None:
             return data_list[0], data_list[1:], idx
+
+        # Check if the returned actually corresponds to a NAGBatch
+        # object rather than a simple NAG object
+        if isinstance(data_list[0], Batch) and idx is None:
+            cls = NAGBatch
+        else:
+            cls = NAG
 
         # In case the lowest level was indexed, we need to update the
         # above level too. Unfortunately, this is probably because we do
@@ -368,17 +387,23 @@ class NAG:
         return cls(data_list)
 
     @classmethod
-    def cat_select(cls, data, data_list, idx=None):
-        """Does part of what Data.select does but in an ugly way. This
-        is mostly intended for the DataLoader to be able to load NAG and
-        sample level-0 points on CPU in reasonable time and finish the
-        update_sub, update_super work on GPU later on if need be...
+    def cat_select(
+            cls,
+            data: 'Data',
+            data_list: List['Data'],
+            idx: Union[int, List, np.ndarray, torch.Tensor] = None
+    ) -> 'NAG':
+        """Does part of what `Data.select()` does but in an ugly way.
+        This is mostly intended for the `DataLoader` to be able to load
+        `NAG` and sample level-0 points on CPU in reasonable time and
+        finish the `update_sub`, `update_super` work on GPU later on if
+        need be...
 
         :param data: Data object for level-0 points
         :param data_list: list of Data objects for level-1+ points
         :param idx: optional, indexing that has been applied on level-0
-            data and guides higher levels updating (see NAG.select and
-            Data.select with update_super=True)
+            data and guides higher levels updating (see `NAG.select()`
+            and `Data.select()` with `update_super=True`)
         :return:
         """
         assert isinstance(data, Data)
@@ -419,12 +444,13 @@ class NAG:
 
     def get_sampling(
             self,
-            high=1,
-            low=0,
-            n_max=32,
-            n_min=1,
-            mask=None,
-            return_pointers=False):
+            high: int = 1,
+            low: int = 0,
+            n_max: int = 32,
+            n_min: int = 1,
+            mask: Union[int, List, np.ndarray, torch.Tensor] = None,
+            return_pointers: bool = False
+    ) -> Union['torch.Tensor', Tuple['torch.Tensor', 'torch.Tensor']]:
         """Compute indices to sample elements at `low`-level, based on
         which segment they belong to at `high`-level.
 
@@ -470,7 +496,7 @@ class NAG:
             for key in ['num_levels', 'num_points', 'device']]
         return f"{self.__class__.__name__}({', '.join(info)})"
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(other, self.__class__):
             if src.is_debug_enabled():
                 print(f'{self.__class__.__name__}.__eq__: classes differ')
@@ -502,10 +528,10 @@ class NAGBatch(NAG):
         super().__init__(batch_list)
 
     @classmethod
-    def from_nag_list(cls, nag_list):
+    def from_nag_list(cls, nag_list: List['NAG']) -> 'NAGBatch':
         # TODO: seems sluggish, need to investigate. Might be due to too
         #  many level-0 points. The bottleneck is in the level-0
-        #  Batch.from_data_list. the 'cat' operation seems to be
+        #  Batch.from_data_list, the 'cat' operation seems to be
         #  dominating
         assert isinstance(nag_list, list)
         assert len(nag_list) > 0
@@ -513,5 +539,6 @@ class NAGBatch(NAG):
         return cls([
             Batch.from_data_list(l) for l in zip(*[n._list for n in nag_list])])
 
-    def to_nag_list(self):
-        return [NAG(l) for l in zip(*[b.to_data_list() for b in self])]
+    def to_nag_list(self, strict: bool = False) -> List['NAG']:
+        return [
+            NAG(l) for l in zip(*[b.to_data_list(strict=strict) for b in self])]

@@ -11,7 +11,8 @@ from src.utils.sparse import dense_to_csr, csr_to_dense
 
 __all__ = [
     'date_time_string', 'dated_dir', 'host_data_root', 'save_tensor',
-    'load_tensor', 'save_dense_to_csr', 'load_csr_to_dense']
+    'load_tensor', 'save_tensor_dict', 'load_tensor_dict', 'save_dense_to_csr',
+    'load_csr_to_dense']
 
 
 def date_time_string():
@@ -115,6 +116,47 @@ def load_tensor(f, key=None, idx=None):
         x = x.long()
 
     return x
+
+
+def save_tensor_dict(d, f, key, fp_dtype=torch.float):
+    """Save torch.Tensor to HDF5 file.
+
+    :param d: dictionary of 2D torch.Tensors
+    :param f: h5 file path of h5py.File or h5py.Group
+    :param key: str
+        h5py.Dataset key under which to save the tensor dictionary
+    :param fp_dtype: torch dtype
+        Data type to which floating point tensors should be cast before
+        saving
+    :return:
+    """
+    if not isinstance(f, (h5py.File, h5py.Group)):
+        with h5py.File(f, 'w') as file:
+            save_tensor_dict(d, file, key, fp_dtype=fp_dtype)
+        return
+
+    g = f.create_group(key)
+    for k, v in d.items():
+        if not isinstance(v, torch.Tensor):
+            continue
+        save_tensor(v, g, k, fp_dtype=fp_dtype)
+
+
+def load_tensor_dict(f, idx=None):
+    """Load a dictionary of torch.Tensor from an HDF5 file.
+
+    :param f: h5 file path of h5py.File or h5py.Group or h5py.Dataset
+    :param idx: int, list, numpy.ndarray, torch.Tensor
+        Used to select and read only some rows of the dense tensor.
+        Supports fancy indexing
+    :return:
+    """
+    if not isinstance(f, (h5py.File, h5py.Group)):
+        with h5py.File(f, 'w') as file:
+            load_tensor_dict(file)
+        return
+
+    return {k: load_tensor(f[k], key=None, idx=idx) for k in f.keys()}
 
 
 def save_dense_to_csr(x, f, fp_dtype=torch.float):

@@ -450,7 +450,7 @@ def cluster_radius_nn_graph(
     # avoids removing neighbors too aggressively before the next step
     # TODO: for some reason, this trimming does not remove as many
     #  neighbors as I'd thought, so I need to call
-    #  `scatter_nearest_neighbor` afterwards. There must be something
+    #  `scatter_nearest_neighbor` afterward. There must be something
     #  wrong in the `r_max_edge` or the `distances` here. Solving this
     #  is no priority but could maybe avoid the call to
     #  `scatter_nearest_neighbor`

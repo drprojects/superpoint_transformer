@@ -10,7 +10,7 @@ from src.metrics.mean_average_precision import BaseMetricResults
 log = logging.getLogger(__name__)
 
 
-__all__ = ['ConfusionMatrix']
+__all__ = ['ConfusionMatrix', 'SemanticMetricResults']
 
 
 class SemanticMetricResults(BaseMetricResults):

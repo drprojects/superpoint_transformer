@@ -79,10 +79,10 @@ between superpoints at multiple scales.
 | ⚡ S3DIS training in **3h on 1 GPU** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 7, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 70) | 
 |                                                  ⚡ **Preprocessing x7 faster than [SPG](https://github.com/loicland/superpoint_graph)**                                                   |
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-dales)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-dales?p=efficient-3d-semantic-segmentation-with-1)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-kitti-360)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-kitti-360?p=efficient-3d-semantic-segmentation-with-1)
-
 </div>
 
 ### SuperCluster
@@ -130,7 +130,6 @@ Check these out if you are getting started with the project !
 **🧑‍🏫 tutorial on Superpoint Transformer on 📅 27.06.2024 at 1pm CEST**. 
 Make sure to come if you want to gain some hands-on experience with the project !
 **[Registration here](https://www.linkedin.com/events/superpointtransformersfor3dpoin7209130538110963712)**. 
-- **14.06.2024** Added some documentation for our **[interactive visualization tool](docs/visualization.md)**.
 - **28.02.2024** Major code release for **panoptic segmentation**, implementing 
 **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704)**.
 This new version also implements long-awaited features such as lightning's

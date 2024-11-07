@@ -6,10 +6,12 @@ import shutil
 import logging
 import pandas as pd
 import os.path as osp
-from src.datasets import BaseDataset
-from src.data import Data, Batch, InstanceData
-from src.datasets.s3dis_config import *
+from typing import List
 from torch_geometric.data import extract_zip
+
+from src.datasets import BaseDataset
+from src.data import Data, Batch, InstanceData, CSRBatch
+from src.datasets.s3dis_config import *
 from src.utils import available_cpu_count, starmap_with_kwargs, \
     rodrigues_rotation_matrix, to_float_rgb
 from src.transforms import RoomPosition
@@ -27,8 +29,17 @@ __all__ = ['S3DIS', 'MiniS3DIS']
 ########################################################################
 
 def read_s3dis_area(
-        area_dir, xyz=True, rgb=True, semantic=True, instance=True,
-        xyz_room=False, align=False, is_val=True, verbose=False, processes=-1):
+        area_dir: str,
+        xyz: bool = True,
+        rgb: bool = True,
+        semantic: bool = True,
+        instance: bool = True,
+        xyz_room: bool = False,
+        align: bool = False,
+        is_val: bool = True,
+        verbose: bool = False,
+        processes: int = -1
+) -> Data:
     """Read all S3DIS object-wise annotations in a given Area directory.
     All room-wise data are accumulated into a single cloud.
 
@@ -75,18 +86,38 @@ def read_s3dis_area(
     batch = Batch.from_data_list(starmap_with_kwargs(
         read_s3dis_room, args_iter, kwargs_iter, processes=processes))
 
-    # Convert from Batch to Data
+    # Convert from Batch to Data. Little hacky. We do this because we do
+    # not want to store the Batch object but just a big Data object here
+    # Why not store the Batch ? Because some pretransforms (e.g.
+    # GridSampling3D) will want to treat the batch in a special way, but
+    # we want the preprocessing to be agnostic to the room subdivision
     data_dict = batch.to_dict()
-    del data_dict['batch']
-    del data_dict['ptr']
+    data_dict = {
+        k: v for k, v in data_dict.items()
+        if k not in ['batch', 'ptr', '_slice_dict', '_inc_dict', '_num_graphs']}
+    for k, v in data_dict.items():
+        if isinstance(v, CSRBatch):
+            data_dict[k] = v.get_base_class()(
+                v.pointers,
+                *v.values,
+                dense=False,
+                is_index_value=v.is_index_value)
     data = Data(**data_dict)
 
     return data
 
 
 def read_s3dis_room(
-        room_dir, xyz=True, rgb=True, semantic=True, instance=True,
-        xyz_room=False, align=False, is_val=True, verbose=False):
+        room_dir: str,
+        xyz: bool = True,
+        rgb: bool = True,
+        semantic: bool = True,
+        instance: bool = True,
+        xyz_room: bool = False,
+        align: bool = False,
+        is_val: bool = True,
+        verbose: bool = False
+) -> Data:
     """Read all S3DIS object-wise annotations in a given room directory.
 
     :param room_dir: str
@@ -269,13 +300,18 @@ class S3DIS(BaseDataset):
     _aligned_zip_name = ALIGNED_ZIP_NAME
     _unzip_name = UNZIP_NAME
 
-    def __init__(self, *args, fold=5, with_stuff=False, **kwargs):
+    def __init__(
+            self,
+            *args,
+            fold: int = 5,
+            with_stuff: bool = False,
+            **kwargs):
         self.fold = fold
         self.with_stuff = with_stuff
         super().__init__(*args, val_mixed_in_train=True, **kwargs)
 
     @property
-    def pre_transform_hash(self):
+    def pre_transform_hash(self) -> str:
         """Produce a unique but stable hash based on the dataset's
         `pre_transform` attributes (as exposed by `_repr`).
 
@@ -286,7 +322,7 @@ class S3DIS(BaseDataset):
         return super().pre_transform_hash + suffix
 
     @property
-    def class_names(self):
+    def class_names(self) -> List[str]:
         """List of string names for dataset classes. This list must be
         one-item larger than `self.num_classes`, with the last label
         corresponding to 'void', 'unlabelled', 'ignored' classes,
@@ -295,7 +331,7 @@ class S3DIS(BaseDataset):
         return CLASS_NAMES
 
     @property
-    def num_classes(self):
+    def num_classes(self) -> int:
         """Number of classes in the dataset. Must be one-item smaller
         than `self.class_names`, to account for the last class name
         being used for 'void', 'unlabelled', 'ignored' classes,
@@ -304,7 +340,7 @@ class S3DIS(BaseDataset):
         return S3DIS_NUM_CLASSES
 
     @property
-    def stuff_classes(self):
+    def stuff_classes(self) -> List[int]:
         """List of 'stuff' labels for INSTANCE and PANOPTIC
         SEGMENTATION (setting this is NOT REQUIRED FOR SEMANTIC
         SEGMENTATION alone). By definition, 'stuff' labels are labels in
@@ -325,7 +361,7 @@ class S3DIS(BaseDataset):
         return STUFF_CLASSES_MODIFIED if self.with_stuff else STUFF_CLASSES
 
     @property
-    def class_colors(self):
+    def class_colors(self) -> List[List[int]]:
         """Colors for visualization, if not None, must have the same
         length as `self.num_classes`. If None, the visualizer will use
         the label values in the data to generate random colors.
@@ -333,7 +369,7 @@ class S3DIS(BaseDataset):
         return CLASS_COLORS
 
     @property
-    def all_base_cloud_ids(self):
+    def all_base_cloud_ids(self) -> List[str]:
         """Dictionary holding lists of clouds ids, for each
         stage.
 
@@ -345,7 +381,7 @@ class S3DIS(BaseDataset):
             'val': [f'Area_{i}' for i in range(1, 7) if i != self.fold],
             'test': [f'Area_{self.fold}']}
 
-    def download_dataset(self):
+    def download_dataset(self) -> None:
         """Download the S3DIS dataset.
         """
         # Manually download the dataset
@@ -372,7 +408,7 @@ class S3DIS(BaseDataset):
         shutil.rmtree(self.raw_dir)
         os.rename(osp.join(self.root, self._unzip_name), self.raw_dir)
 
-    def read_single_raw_cloud(self, raw_cloud_path):
+    def read_single_raw_cloud(self, raw_cloud_path: str) -> 'Data':
         """Read a single raw cloud and return a `Data` object, ready to
         be passed to `self.pre_transform`.
 
@@ -394,7 +430,7 @@ class S3DIS(BaseDataset):
             xyz_room=True, align=False, is_val=True, verbose=False)
 
     @property
-    def raw_file_structure(self):
+    def raw_file_structure(self) -> str:
         return f"""
     {self.root}/
         └── {self._zip_name}
@@ -405,14 +441,14 @@ class S3DIS(BaseDataset):
             """
 
     @property
-    def raw_file_names(self):
+    def raw_file_names(self) -> str:
         """The file paths to find in order to skip the download."""
         area_folders = super().raw_file_names
         alignment_files = [
             osp.join(a, f"{a}_alignmentAngle.txt") for a in area_folders]
         return area_folders + alignment_files
 
-    def id_to_relative_raw_path(self, id):
+    def id_to_relative_raw_path(self, id: str) -> str:
         """Given a cloud id as stored in `self.cloud_ids`, return the
         path (relative to `self.raw_dir`) of the corresponding raw
         cloud.
@@ -431,19 +467,19 @@ class MiniS3DIS(S3DIS):
     _NUM_MINI = 1
 
     @property
-    def all_cloud_ids(self):
+    def all_cloud_ids(self) -> List[str]:
         return {k: v[:self._NUM_MINI] for k, v in super().all_cloud_ids.items()}
 
     @property
-    def data_subdir_name(self):
+    def data_subdir_name(self) -> str:
         return self.__class__.__bases__[0].__name__.lower()
 
     # We have to include this method, otherwise the parent class skips
     # processing
-    def process(self):
+    def process(self) -> None:
         super().process()
 
     # We have to include this method, otherwise the parent class skips
     # processing
-    def download(self):
+    def download(self) -> None:
         super().download()

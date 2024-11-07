@@ -10,7 +10,7 @@ __all__ = [
     'sparse_sort', 'sparse_sort_along_direction', 'sparse_sample']
 
 
-def indices_to_pointers(indices: torch.LongTensor):
+def indices_to_pointers(indices: torch.Tensor):
     """Convert pre-sorted dense indices to CSR format."""
     device = indices.device
     assert len(indices.shape) == 1, "Only 1D indices are accepted."
@@ -31,7 +31,7 @@ def indices_to_pointers(indices: torch.LongTensor):
     return pointers, order
 
 
-def sizes_to_pointers(sizes: torch.LongTensor):
+def sizes_to_pointers(sizes: torch.Tensor):
     """Convert a tensor of sizes into the corresponding pointers. This
     is a trivial but often-required operation.
     """

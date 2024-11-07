@@ -42,7 +42,7 @@ def tensor_idx(idx, device=None):
     return idx
 
 
-def is_sorted(a: torch.LongTensor, increasing=True, strict=False):
+def is_sorted(a: torch.Tensor, increasing=True, strict=False):
     """Checks whether a 1D tensor of indices is sorted."""
     assert a.dim() == 1, "Only supports 1D tensors"
     assert not a.is_floating_point(), "Float tensors are not supported"
@@ -57,14 +57,14 @@ def is_sorted(a: torch.LongTensor, increasing=True, strict=False):
     return f(a[1:], a[:-1]).all()
 
 
-def has_duplicates(a: torch.LongTensor):
+def has_duplicates(a: torch.Tensor):
     """Checks whether a 1D tensor of indices contains duplicates."""
     assert a.dim() == 1, "Only supports 1D tensors"
     assert not a.is_floating_point(), "Float tensors are not supported"
     return a.unique().numel() != a.numel()
 
 
-def is_dense(a: torch.LongTensor):
+def is_dense(a: torch.Tensor):
     """Checks whether a 1D tensor of indices contains dense indices.
     That is to say all values in [0, a.max] appear at least once in a.
     """
@@ -75,7 +75,7 @@ def is_dense(a: torch.LongTensor):
     return a.min() == 0 and unique.size(0) == a.max().long() + 1
 
 
-def is_permutation(a: torch.LongTensor):
+def is_permutation(a: torch.Tensor):
     """Checks whether a 1D tensor of indices is a permutation."""
     assert a.dim() == 1, "Only supports 1D tensors"
     assert not a.is_floating_point(), "Float tensors are not supported"

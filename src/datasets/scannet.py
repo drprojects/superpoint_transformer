@@ -3,11 +3,13 @@ import sys
 import torch
 import logging
 import os.path as osp
+from typing import List
+from torch_geometric.nn.pool.consecutive import consecutive_cluster
+
 from src.data import Data, InstanceData
 from src.utils.scannet import read_one_scan, read_one_test_scan
 from src.datasets.scannet_config import *
 from src.datasets.base import BaseDataset
-from torch_geometric.nn.pool.consecutive import consecutive_cluster
 
 
 DIR = os.path.dirname(os.path.realpath(__file__))
@@ -28,13 +30,14 @@ __all__ = ['ScanNet', 'MiniScanNet']
 ########################################################################
 
 def read_scannet_scan(
-        scan_dir,
-        xyz=True,
-        rgb=True,
-        normal=True,
-        semantic=True,
-        instance=True,
-        remap=True):
+        scan_dir: str,
+        xyz: bool = True,
+        rgb: bool = True,
+        normal: bool = True,
+        semantic: bool = True,
+        instance: bool = True,
+        remap: bool = True
+) -> Data:
     """Read a ScanNet scan.
 
     Expects the data to be saved under the following structure:
@@ -158,7 +161,7 @@ class ScanNet(BaseDataset):
     _form_url = FORM_URL
 
     @property
-    def class_names(self):
+    def class_names(self) -> List[str]:
         """List of string names for dataset classes. This list must be
         one-item larger than `self.num_classes`, with the last label
         corresponding to 'void', 'unlabelled', 'ignored' classes,
@@ -167,7 +170,7 @@ class ScanNet(BaseDataset):
         return CLASS_NAMES
 
     @property
-    def num_classes(self):
+    def num_classes(self) -> int:
         """Number of classes in the dataset. Must be one-item smaller
         than `self.class_names`, to account for the last class name
         being used for 'void', 'unlabelled', 'ignored' classes,
@@ -176,7 +179,7 @@ class ScanNet(BaseDataset):
         return SCANNET_NUM_CLASSES
 
     @property
-    def stuff_classes(self):
+    def stuff_classes(self) -> List[int]:
         """List of 'stuff' labels for INSTANCE and PANOPTIC
         SEGMENTATION (setting this is NOT REQUIRED FOR SEMANTIC
         SEGMENTATION alone). By definition, 'stuff' labels are labels in
@@ -197,7 +200,7 @@ class ScanNet(BaseDataset):
         return STUFF_CLASSES
 
     @property
-    def class_colors(self):
+    def class_colors(self) -> List[List[int]]:
         """Colors for visualization, if not None, must have the same
         length as `self.num_classes`. If None, the visualizer will use
         the label values in the data to generate random colors.
@@ -205,7 +208,7 @@ class ScanNet(BaseDataset):
         return CLASS_COLORS
 
     @property
-    def all_base_cloud_ids(self):
+    def all_base_cloud_ids(self) -> List[str]:
         """Dictionary holding lists of paths to the clouds, for each
         stage.
 
@@ -214,7 +217,7 @@ class ScanNet(BaseDataset):
         """
         return SCANS
 
-    def download_dataset(self):
+    def download_dataset(self) -> None:
         """Download the ScanNet dataset.
         """
         log.error(
@@ -226,7 +229,7 @@ class ScanNet(BaseDataset):
             f"{self.raw_file_structure}\n")
         sys.exit(1)
 
-    def read_single_raw_cloud(self, raw_cloud_path):
+    def read_single_raw_cloud(self, raw_cloud_path: str) -> 'Data':
         """Read a single raw cloud and return a `Data` object, ready to
         be passed to `self.pre_transform`.
 
@@ -253,7 +256,7 @@ class ScanNet(BaseDataset):
             remap=True)
 
     @property
-    def raw_file_structure(self):
+    def raw_file_structure(self) -> str:
         return f"""
     {self.root}/
         └── raw/
@@ -269,14 +272,14 @@ class ScanNet(BaseDataset):
                     └── {{scan_name}}_vh_clean_2.ply
             """
 
-    def id_to_relative_raw_path(self, id):
+    def id_to_relative_raw_path(self, id: str) -> str:
         """Given a cloud id as stored in `self.cloud_ids`, return the
         path (relative to `self.raw_dir`) of the corresponding raw
         cloud.
         """
         return self.id_to_base_id(id)
 
-    def processed_to_raw_path(self, processed_path):
+    def processed_to_raw_path(self, processed_path: str) -> str:
         """Given a processed cloud path from `self.processed_paths`,
         return the absolute path to the corresponding raw cloud.
 
@@ -298,7 +301,7 @@ class ScanNet(BaseDataset):
         return raw_path
 
     @property
-    def raw_file_names(self):
+    def raw_file_names(self) -> str:
         """The file paths to find in order to skip the download."""
         area_folders = super().raw_file_names
         label_mapping_file = 'scannetv2-labels.combined.tsv'
@@ -316,19 +319,19 @@ class MiniScanNet(ScanNet):
     _NUM_MINI = 2
 
     @property
-    def all_cloud_ids(self):
+    def all_cloud_ids(self) -> List[str]:
         return {k: v[:self._NUM_MINI] for k, v in super().all_cloud_ids.items()}
 
     @property
-    def data_subdir_name(self):
+    def data_subdir_name(self) -> str:
         return self.__class__.__bases__[0].__name__.lower()
 
     # We have to include this method, otherwise the parent class skips
     # processing
-    def process(self):
+    def process(self) -> None:
         super().process()
 
     # We have to include this method, otherwise the parent class skips
     # processing
-    def download(self):
+    def download(self) -> None:
         super().download()

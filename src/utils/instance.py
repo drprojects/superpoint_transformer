@@ -829,7 +829,7 @@ def oracle_superpoint_clustering(
 
     # Recover the predicted instance score, semantic label and instance
     # partition
-    obj_score, obj_y, instance_data = output.panoptic_pred
+    obj_score, obj_y, instance_data = output.panoptic_pred()
 
     # Compute the metrics on the oracle partition
     panoptic_metrics.update(obj_y, instance_data.cpu())
@@ -1353,7 +1353,7 @@ def grid_search_panoptic_partition(
 
         output.obj_index_pred = obj_index_pred
 
-        obj_score, obj_y, instance_data = output.panoptic_pred
+        obj_score, obj_y, instance_data = output.panoptic_pred()
         obj_score = obj_score.detach().cpu()
         obj_y = obj_y.detach().cpu()
 

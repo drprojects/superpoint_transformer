@@ -6,13 +6,15 @@ import shutil
 import logging
 from zipfile import ZipFile
 from plyfile import PlyData
+from typing import List
 from torch_geometric.data.extract import extract_zip
+from torch_geometric.nn.pool.consecutive import consecutive_cluster
+
 from src.datasets import BaseDataset
 from src.data import Data, InstanceData
 from src.datasets.kitti360_config import *
 from src.utils.neighbors import knn_2
 from src.utils.color import to_float_rgb
-from torch_geometric.nn.pool.consecutive import consecutive_cluster
 
 
 DIR = os.path.dirname(os.path.realpath(__file__))
@@ -34,8 +36,13 @@ __all__ = ['KITTI360', 'MiniKITTI360']
 ########################################################################
 
 def read_kitti360_window(
-        filepath, xyz=True, rgb=True, semantic=True, instance=True,
-        remap=False):
+        filepath: str,
+        xyz: bool = True,
+        rgb: bool = True,
+        semantic: bool = True,
+        instance: bool = True,
+        remap: bool = False
+) -> Data:
     """Read a KITTI-360 window –i.e. a tile– saved as PLY.
 
     :param filepath: str
@@ -122,7 +129,7 @@ class KITTI360(BaseDataset):
     _unzip_name = UNZIP_NAME
 
     @property
-    def class_names(self):
+    def class_names(self) -> List[str]:
         """List of string names for dataset classes. This list must be
         one-item larger than `self.num_classes`, with the last label
         corresponding to 'void', 'unlabelled', 'ignored' classes,
@@ -131,7 +138,7 @@ class KITTI360(BaseDataset):
         return CLASS_NAMES
 
     @property
-    def num_classes(self):
+    def num_classes(self) -> int:
         """Number of classes in the dataset. Must be one-item smaller
         than `self.class_names`, to account for the last class name
         being used for 'void', 'unlabelled', 'ignored' classes,
@@ -140,7 +147,7 @@ class KITTI360(BaseDataset):
         return KITTI360_NUM_CLASSES
 
     @property
-    def stuff_classes(self):
+    def stuff_classes(self) -> List[int]:
         """List of 'stuff' labels for INSTANCE and PANOPTIC
         SEGMENTATION (setting this is NOT REQUIRED FOR SEMANTIC
         SEGMENTATION alone). By definition, 'stuff' labels are labels in
@@ -161,7 +168,7 @@ class KITTI360(BaseDataset):
         return STUFF_CLASSES
 
     @property
-    def class_colors(self):
+    def class_colors(self) -> List[List[int]]:
         """Colors for visualization, if not None, must have the same
         length as `self.num_classes`. If None, the visualizer will use
         the label values in the data to generate random colors.
@@ -169,7 +176,7 @@ class KITTI360(BaseDataset):
         return CLASS_COLORS
 
     @property
-    def all_base_cloud_ids(self):
+    def all_base_cloud_ids(self) -> List[str]:
         """Dictionary holding lists of paths to the clouds, for each
         stage.
 
@@ -178,7 +185,7 @@ class KITTI360(BaseDataset):
         """
         return WINDOWS
 
-    def download_dataset(self):
+    def download_dataset(self) -> None:
         """Download the KITTI-360 dataset.
         """
         # Name of the downloaded dataset zip
@@ -212,7 +219,7 @@ class KITTI360(BaseDataset):
             shutil.move(source, target)
         shutil.rmtree(osp.join(self.raw_dir, 'data_3d_semantics', stage))
 
-    def read_single_raw_cloud(self, raw_cloud_path):
+    def read_single_raw_cloud(self, raw_cloud_path: str) -> 'Data':
         """Read a single raw cloud and return a `Data` object, ready to
         be passed to `self.pre_transform`.
 
@@ -233,7 +240,7 @@ class KITTI360(BaseDataset):
             raw_cloud_path, semantic=True, instance=True, remap=True)
 
     @property
-    def raw_file_structure(self):
+    def raw_file_structure(self) -> str:
         return f"""
     {self.root}/
         └── raw/
@@ -243,7 +250,7 @@ class KITTI360(BaseDataset):
                         └── {{start_frame:0>10}}_{{end_frame:0>10}}.ply
             """
 
-    def id_to_relative_raw_path(self, id):
+    def id_to_relative_raw_path(self, id: str) -> str:
         """Given a cloud id as stored in `self.cloud_ids`, return the
         path (relative to `self.raw_dir`) of the corresponding raw
         cloud.
@@ -253,7 +260,7 @@ class KITTI360(BaseDataset):
             'data_3d_semantics', id.split(os.sep)[0], 'static',
             id.split(os.sep)[1] + '.ply')
 
-    def processed_to_raw_path(self, processed_path):
+    def processed_to_raw_path(self, processed_path: str) -> str:
         """Return the raw cloud path corresponding to the input
         processed path.
         """
@@ -271,7 +278,13 @@ class KITTI360(BaseDataset):
 
         return raw_path
 
-    def make_submission(self, idx, pred, pos, submission_dir=None):
+    def make_submission(
+            self,
+            idx: int,
+            pred: torch.Tensor,
+            pos: torch.Tensor,
+            submission_dir: str = None
+    ) -> None:
         """Prepare data for a sumbission to KITTI360 for 3D semantic
         Segmentation on the test set.
 
@@ -324,7 +337,7 @@ class KITTI360(BaseDataset):
         # Save the window submission
         np.save(osp.join(submission_dir, filename), pred_remapped)
 
-    def finalize_submission(self, submission_dir):
+    def finalize_submission(self, submission_dir: str) -> None:
         """This should be called once all window submission files have
         been saved using `self._make_submission`. This will zip them
         together as expected by the KITTI360 submission server.
@@ -346,19 +359,19 @@ class MiniKITTI360(KITTI360):
     _NUM_MINI = 2
 
     @property
-    def all_cloud_ids(self):
+    def all_cloud_ids(self) -> List[str]:
         return {k: v[:self._NUM_MINI] for k, v in super().all_cloud_ids.items()}
 
     @property
-    def data_subdir_name(self):
+    def data_subdir_name(self) -> str:
         return self.__class__.__bases__[0].__name__.lower()
 
     # We have to include this method, otherwise the parent class skips
     # processing
-    def process(self):
+    def process(self) -> None:
         super().process()
 
     # We have to include this method, otherwise the parent class skips
     # processing
-    def download(self):
+    def download(self) -> None:
         super().download()

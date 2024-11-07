@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+
 from src.nn import MLP, TransformerBlock, BatchNorm, UnitSphereNorm
 from src.nn.pool import pool_factory
 from src.nn.unpool import *

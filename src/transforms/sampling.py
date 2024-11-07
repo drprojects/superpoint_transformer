@@ -61,10 +61,13 @@ class GridSampling3D(Transform):
 
     By default, some special keys undergo dedicated grouping mechanisms.
     The `_VOTING_KEYS=['y', 'super_index', 'is_val']` keys are grouped
-    by their majority label. The `_INSTANCE_KEYS=['obj']` keys are
-    grouped into an InstanceData, which stores all values in CSR format.
-    The `_LAST_KEYS = ['batch', SaveNodeIndex.DEFAULT_KEY]` keys are by
-    default grouped following `mode='last'`.
+    by their majority label. The `_INSTANCE_KEYS=['obj', 'obj_pred']`
+    keys are grouped into an `InstanceData`, which stores all
+    instance/panoptic overlap data values in CSR format. The
+    `_CLUSTER_KEYS=['point_id']` keys are grouped into a `Cluster`
+    object, which stores indices of child elements for parent clusters
+    in CSR format. The `_LAST_KEYS=['batch', SaveNodeIndex.DEFAULT_KEY]`
+    keys are by default grouped following `mode='last'`.
 
     Besides, for keys where a more subtle histogram mechanism is needed,
     (e.g. for 'y'), the 'hist_key' and 'hist_size' arguments can be
@@ -182,13 +185,13 @@ def _group_data(
 
     By default, some special keys undergo dedicated grouping mechanisms.
     The `_VOTING_KEYS=['y', 'super_index', 'is_val']` keys are grouped
-    by their majority label. The `_INSTANCE_KEYS=['obj']` keys are
-    grouped into an `InstanceData`, which stores all instance/panoptic
-    overlap data values in CSR format. The `_CLUSTER_KEYS=['point_id']` 
-    keys are grouped into a `Cluster` object, which stores indices of 
-    child elements for parent clusters in CSR format. The 
-    `_LAST_KEYS = ['batch', SaveNodeIndex.DEFAULT_KEY]` keys are by
-    default grouped following `mode='last'`.
+    by their majority label. The `_INSTANCE_KEYS=['obj', 'obj_pred']`
+    keys are grouped into an `InstanceData`, which stores all
+    instance/panoptic overlap data values in CSR format. The
+    `_CLUSTER_KEYS=['point_id']` keys are grouped into a `Cluster`
+    object, which stores indices of child elements for parent clusters
+    in CSR format. The `_LAST_KEYS=['batch', SaveNodeIndex.DEFAULT_KEY]`
+    keys are by default grouped following `mode='last'`.
 
     Besides, for keys where a more subtle histogram mechanism is needed,
     (e.g. for 'y'), the 'bins' argument can be used.
@@ -220,11 +223,11 @@ def _group_data(
     skip_keys = sanitize_keys(skip_keys, default=[])
 
     # Keys for which voxel aggregation will be based on majority voting
-    _VOTING_KEYS = ['y', 'obj', 'super_index', 'is_val']
+    _VOTING_KEYS = ['y', 'super_index', 'is_val']
 
     # Keys for which voxel aggregation will use an InstanceData object,
     # which store all input information in CSR format
-    _INSTANCE_KEYS = ['obj']
+    _INSTANCE_KEYS = ['obj', 'obj_pred']
 
     # Keys for which voxel aggregation will use a Cluster object, which 
     # store all input information in CSR format

@@ -1,8 +1,10 @@
 import torch
 import logging
+from typing import Any, List, Tuple, Dict
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAccuracy, BinaryF1Score
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
+
 from src.utils import init_weights, PanopticSegmentationOutput, \
     PartitionParameterSearchStorage
 from src.metrics import MeanAveragePrecision3D, PanopticQuality3D, \
@@ -93,7 +95,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
     :param edge_affinity_criterion: torch.nn._Loss
         Loss on the edges of the superpoint level 1 for affinity
         prediction
-    :param edge_affinity_loss_weights: List[float, float, float, float]
+    :param edge_affinity_loss_weights: List[float]
         Weights for insisting on certain cases in the edge affinity
         loss:
          - 0: same-class same-object edges
@@ -122,7 +124,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         If specified, the output for a validation batch of interest
         specified with `track_val_idx` will be stored to disk every
         `track_val_every_n_epoch` epochs. Must be a multiple of
-        `check_val_every_n_epoch`. See `save_batch()` for more
+        `check_val_every_n_epoch`. See `track_batch()` for more
     :param track_val_idx: int
         If specified, the output for the `track_val_idx`th
         validation batch will be saved to disk periodically based on
@@ -173,35 +175,35 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
     def __init__(
             self,
-            net,
-            edge_affinity_head,
-            partitioner,
-            criterion,
-            optimizer,
-            scheduler,
-            num_classes,
-            stuff_classes,
-            class_names=None,
-            sampling_loss=False,
-            loss_type='ce_kl',
-            weighted_loss=True,
-            init_linear=None,
-            init_rpe=None,
-            transformer_lr_scale=1,
-            multi_stage_loss_lambdas=None,
-            edge_affinity_criterion=None,
-            edge_affinity_loss_weights=None,
-            edge_affinity_loss_lambda=1,
-            node_offset_criterion=None,
-            node_offset_loss_lambda=1,
-            gc_every_n_steps=0,
-            track_val_every_n_epoch=1,
-            track_val_idx=None,
-            track_test_idx=None,
-            min_instance_size=100,
-            partition_every_n_epoch=50,
-            no_instance_metrics=True,
-            no_instance_metrics_on_train_set=True,
+            net: torch.nn.Module,
+            edge_affinity_head: torch.nn.Module,
+            partitioner: 'InstancePartitioner',
+            criterion: 'torch.nn._Loss',
+            optimizer: torch.optim.Optimizer,
+            scheduler: torch.optim.lr_scheduler.LRScheduler,
+            num_classes: int,
+            stuff_classes: List[int],
+            class_names: List[str] = None,
+            sampling_loss: bool = False,
+            loss_type: str = 'ce_kl',
+            weighted_loss: bool = True,
+            init_linear: str = None,
+            init_rpe: str = None,
+            transformer_lr_scale: float = 1,
+            multi_stage_loss_lambdas: List[float] = None,
+            edge_affinity_criterion: 'torch.nn._Loss' = None,
+            edge_affinity_loss_weights: List[float] = None,
+            edge_affinity_loss_lambda: float = 1,
+            node_offset_criterion: 'torch.nn._Loss' = None,
+            node_offset_loss_lambda: float = 1,
+            gc_every_n_steps: int = 0,
+            track_val_every_n_epoch: int = 1,
+            track_val_idx: int = None,
+            track_test_idx: int = None,
+            min_instance_size: int = 100,
+            partition_every_n_epoch: int = 50,
+            no_instance_metrics: bool = True,
+            no_instance_metrics_on_train_set: bool = True,
             **kwargs):
         super().__init__(
             net,
@@ -370,7 +372,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         self.val_affinity_f1_best = MaxMetric()
 
     @property
-    def needs_partition(self):
+    def needs_partition(self) -> bool:
         """Whether the `self.partitioner` should be called to compute
         the actual panoptic segmentation. During training, the actual
         partition is not really needed, as we do not learn to partition,
@@ -420,7 +422,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         return True
 
     @property
-    def needs_instance(self):
+    def needs_instance(self) -> bool:
         """Returns True if the instance segmentation metrics need to be
         computed. In particular, since computing instance metrics can be
         computationally costly, we may want to skip it during training
@@ -438,7 +440,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return self.needs_partition
 
-    def forward(self, nag, grid=None) -> PanopticSegmentationOutput:
+    def forward(
+            self,
+            nag: NAG,
+            grid: Any = None
+    ) -> PanopticSegmentationOutput:
         # Extract features
         x = self.net(nag)
 
@@ -489,7 +495,13 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return output
 
-    def _forward_partition(self, nag, output, grid=None, force=False) -> PanopticSegmentationOutput:
+    def _forward_partition(
+            self,
+            nag: NAG,
+            output: PanopticSegmentationOutput,
+            grid: Any = None,
+            force: bool = False
+    ) -> PanopticSegmentationOutput:
         """Compute the panoptic partition based on the predicted node
         offsets, node semantic logits, and edge affinity logits.
 
@@ -513,7 +525,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         :return: output
         """
-        if not self.needs_partition:
+        if not self.needs_partition and not force:
             return output
 
         # Recover some useful information from the NAG and
@@ -544,7 +556,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return output
 
-    def on_fit_start(self):
+    def on_fit_start(self) -> None:
         super().on_fit_start()
 
         # Get the LightningDataModule stuff classes and make sure it
@@ -558,7 +570,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             f'{self.stuff_classes} while the LightningDataModule has ' \
             f'{stuff_classes}.'
 
-    def on_train_start(self):
+    def on_train_start(self) -> None:
         # By default, lightning executes validation step sanity checks
         # before training starts, so we need to make sure `*_best`
         # metrics do not store anything from these checks
@@ -588,7 +600,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         self.val_affinity_f1_best.reset()
         self.train_multi_partition_storage = []
 
-    def _create_empty_output(self, nag):
+    def _create_empty_output(self, nag: NAG) -> PanopticSegmentationOutput:
         """Local helper method to initialize an empty output for
         multi-run prediction.
         """
@@ -609,9 +621,14 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             node_size)
 
     @staticmethod
-    def _update_output_multi(output_multi, nag, output, nag_transformed, key):
+    def _update_output_multi(
+            output_multi: PanopticSegmentationOutput,
+            nag: NAG, output: PanopticSegmentationOutput,
+            nag_transformed: NAG,
+            key: str
+    ) -> PanopticSegmentationOutput:
         """Local helper method to accumulate multiple predictions on
-        the same -or part of the same- point cloud.
+        the same--or part of the same--point cloud.
         """
         raise NotImplementedError(
             "The current implementation does not properly support multi-run "
@@ -648,7 +665,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         return output_multi
 
     @staticmethod
-    def _propagate_output_to_unseen_neighbors(output, nag, seen, neighbors):
+    def _propagate_output_to_unseen_neighbors(
+            output: PanopticSegmentationOutput,
+            nag: NAG, seen: torch.Tensor,
+            neighbors: torch.Tensor
+    ) -> PanopticSegmentationOutput:
         """Local helper method to propagate predictions to unseen
         neighbors.
         """
@@ -671,7 +692,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return output
 
-    def get_target(self, nag, output):
+    def get_target(
+            self,
+            nag: NAG,
+            output: PanopticSegmentationOutput
+    ) -> PanopticSegmentationOutput:
         """Recover the target data for semantic and panoptic
         segmentation and store it in the `output` object.
 
@@ -698,7 +723,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return output
 
-    def _edge_affinity_weights(self, is_same_class, is_same_obj):
+    def _edge_affinity_weights(
+            self,
+            is_same_class: torch.Tensor,
+            is_same_obj: torch.Tensor
+    ) -> torch.Tensor:
         """Helper function to compute edge weights to be used by the
         edge affinity loss. Each edge may have a different weight, based
         on whether its source and target nodes have the same class or
@@ -728,7 +757,10 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         edge_weight[~is_same_class * ~is_same_obj] = w[3]
         return edge_weight
 
-    def model_step(self, batch):
+    def model_step(
+            self,
+            batch: NAG
+    ) -> Tuple[torch.Tensor, PanopticSegmentationOutput]:
         # Loss and predictions for semantic segmentation
         semantic_loss, output = super().model_step(batch)
 
@@ -742,7 +774,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         # Compute the edge affinity loss
         edge_affinity_pred, edge_affinity_target, is_same_class, is_same_obj = \
-            output.sanitized_edge_affinities
+            output.sanitized_edge_affinities()
         edge_weight = self._edge_affinity_weights(is_same_class, is_same_obj)
         edge_affinity_loss = self.edge_affinity_criterion(
             edge_affinity_pred, edge_affinity_target, edge_weight)
@@ -763,7 +795,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return loss, output
 
-    def train_step_update_metrics(self, loss, output: PanopticSegmentationOutput):
+    def train_step_update_metrics(
+            self,
+            loss: torch.Tensor,
+            output: PanopticSegmentationOutput
+    ) -> None:
         """Update train metrics with the content of the output object.
         """
         # Update semantic segmentation metrics
@@ -771,7 +807,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         # Update instance and panoptic metrics
         if self.needs_partition and not output.has_multi_instance_pred:
-            obj_score, obj_y, instance_data = output.panoptic_pred
+            obj_score, obj_y, instance_data = output.panoptic_pred()
             obj_score = obj_score.detach().cpu()
             obj_y = obj_y.detach()
             obj_hist = instance_data.target_label_histogram(self.num_classes)
@@ -807,13 +843,13 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         # Update edge affinity metrics
         ea_pred, ea_target, is_same_class, is_same_obj = \
-            output.sanitized_edge_affinities
+            output.sanitized_edge_affinities()
         ea_pred = ea_pred.detach()
         ea_target_binary = (ea_target.detach() > 0.5).long()
         self.train_affinity_oa(ea_pred, ea_target_binary)
         self.train_affinity_f1(ea_pred, ea_target_binary)
 
-    def train_step_log_metrics(self):
+    def train_step_log_metrics(self) -> None:
         """Log train metrics after a single step with the content of the
         output object.
         """
@@ -828,7 +864,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             "train/edge_affinity_loss", self.train_edge_affinity_loss, on_step=False,
             on_epoch=True, prog_bar=True)
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self) -> None:
         # Log semantic segmentation metrics and reset confusion matrix
         super().on_train_epoch_end()
 
@@ -907,7 +943,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         self.train_semantic.reset()
         self.train_instance.reset()
 
-    def _compute_best_partition_settings(self, monitor='pq', maximize=True):
+    def _compute_best_partition_settings(
+            self,
+            monitor: str = 'pq',
+            maximize: bool = True
+    ) -> Tuple[Dict, float]:
         """Compute the best partition settings from
         `self.train_multi_partition_storage`. This will have the
         following internal effects:
@@ -1004,7 +1044,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         return best_setting, best_metric
 
-    def validation_step_update_metrics(self, loss, output):
+    def validation_step_update_metrics(
+            self,
+            loss: torch.Tensor,
+            output: PanopticSegmentationOutput
+    ) -> None:
         """Update validation metrics with the content of the output
         object.
         """
@@ -1013,7 +1057,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         # Update instance and panoptic metrics
         if self.needs_partition:
-            obj_score, obj_y, instance_data = output.panoptic_pred
+            obj_score, obj_y, instance_data = output.panoptic_pred()
             obj_score = obj_score.detach().cpu()
             obj_y = obj_y.detach()
             obj_hist = instance_data.target_label_histogram(self.num_classes)
@@ -1039,13 +1083,13 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         # Update edge affinity metrics
         ea_pred, ea_target, is_same_class, is_same_obj = \
-            output.sanitized_edge_affinities
+            output.sanitized_edge_affinities()
         ea_pred = ea_pred.detach()
         ea_target_binary = (ea_target.detach() > 0.5).long()
         self.val_affinity_oa(ea_pred, ea_target_binary)
         self.val_affinity_f1(ea_pred, ea_target_binary)
 
-    def validation_step_log_metrics(self):
+    def validation_step_log_metrics(self) -> None:
         """Log validation metrics after a single step with the content
         of the output object.
         """
@@ -1060,7 +1104,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             "val/edge_affinity_loss", self.val_edge_affinity_loss, on_step=False,
             on_epoch=True, prog_bar=True)
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
         # Log semantic segmentation metrics and reset confusion matrix
         super().on_validation_epoch_end()
 
@@ -1183,7 +1227,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         self.val_semantic.reset()
         self.val_instance.reset()
 
-    def test_step_update_metrics(self, loss, output):
+    def test_step_update_metrics(
+            self,
+            loss: torch.Tensor,
+            output: PanopticSegmentationOutput
+    ) -> None:
         """Update test metrics with the content of the output object.
         """
         # Update semantic segmentation metrics
@@ -1196,7 +1244,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         # Update instance and panoptic metrics
         if self.needs_partition:
-            obj_score, obj_y, instance_data = output.panoptic_pred
+            obj_score, obj_y, instance_data = output.panoptic_pred()
             obj_score = obj_score.detach().cpu()
             obj_y = obj_y.detach()
             obj_hist = instance_data.target_label_histogram(self.num_classes)
@@ -1222,13 +1270,13 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
 
         # Update edge affinity metrics
         ea_pred, ea_target, is_same_class, is_same_obj = \
-            output.sanitized_edge_affinities
+            output.sanitized_edge_affinities()
         ea_pred = ea_pred.detach()
         ea_target_binary = (ea_target.detach() > 0.5).long()
         self.test_affinity_oa(ea_pred, ea_target_binary)
         self.test_affinity_f1(ea_pred, ea_target_binary)
 
-    def test_step_log_metrics(self):
+    def test_step_log_metrics(self) -> None:
         """Log test metrics after a single step with the content of the
         output object.
         """
@@ -1249,7 +1297,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             "test/edge_affinity_loss", self.test_edge_affinity_loss, on_step=False,
             on_epoch=True, prog_bar=True)
 
-    def on_test_epoch_end(self):
+    def on_test_epoch_end(self) -> None:
         # Log semantic segmentation metrics and reset confusion matrix
         super().on_test_epoch_end()
 
@@ -1332,7 +1380,13 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         self.test_semantic.reset()
         self.test_instance.reset()
 
-    def save_batch(self, batch, batch_idx, output, folder=None):
+    def track_batch(
+            self,
+            batch: NAG,
+            batch_idx: int,
+            output: PanopticSegmentationOutput,
+            folder: str = None
+    ) -> None:
         """Store a batch prediction to disk. The corresponding `NAG`
         object will be populated with panoptic segmentation predictions
         for:
@@ -1346,14 +1400,22 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         memory.
 
         If a `folder` is provided, the NAG will be saved there under:
-          <folder>/<epoch>/<batch_idx>.h5
+          <folder>/predictions/<stage>/<epoch>/batch_<batch_idx>.h5
         If not, the folder will be the logger's directory, if any.
         If not, the current working directory will be used.
 
-        :param batch:
-        :param batch_idx:
-        :param output:
-        :param folder:
+        :param batch: NAG
+            Object that will be stored to disk. Before that, the
+            model predictions will be added to the attributes of each
+            level, to facilitate downstream use of the stored `NAG`
+        :param batch_idx: int
+            Index of the batch to be stored
+        :param output: PanopticSegmentationOutput
+             Output of `self.model_step()`
+        :param folder: str
+            Path where to save the tracked batch. If not provided, the
+            logger's saving directory will be used as fallback. If not
+            logger is found, the current working directory will be used
         :return:
         """
         # Sanity check in case using multi-run inference
@@ -1367,22 +1429,25 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         if output.obj_index_pred is None:
             output = self._forward_partition(batch, output, force=True)
 
-        # Detach the batch object and move it to CPU before saving
-        batch = batch.detach().cpu()
-
         # Store the output predictions in conveniently-accessible
         # attributes in the NAG, for easy downstream use of the saved
         # object
-        vox_y, vox_index, vox_obj_pred = output.voxel_panoptic_pred(
-            super_index=batch[0].super_index)
-        batch[1].obj_pred = output.obj_index_pred.detach().cpu()
-        batch[0].obj_pred = vox_obj_pred.detach().cpu()
-        batch[1].edge_affinity_logits = output.edge_affinity_logits.detach().cpu()
+        sp_y_pred, sp_obj_index_pred, sp_obj_pred = (
+            output.superpoint_panoptic_pred())
+        vox_y_pred, vox_obj_index_pred, vox_obj_pred = (
+            output.voxel_panoptic_pred(super_index=batch[0].super_index))
+        batch[1].obj_y_pred = sp_y_pred
+        batch[1].obj_index_pred = sp_obj_index_pred
+        batch[1].obj_pred = sp_obj_pred
+        batch[0].obj_y_pred = vox_y_pred
+        batch[0].obj_index_pred = vox_obj_index_pred
+        batch[0].obj_pred = vox_obj_pred
+        batch[1].edge_affinity_logits = output.edge_affinity_logits
 
         # Parent behavior for saving semantic segmentation prediction
-        super().save_batch(batch, batch_idx, output, folder=folder)
+        super().track_batch(batch, batch_idx, output, folder=folder)
 
-    def load_state_dict(self, state_dict, strict=True):
+    def load_state_dict(self, state_dict: Dict, strict: bool = True) -> None:
         """Basic `load_state_dict` from `torch.nn.Module` with a bit of
         acrobatics due to `criterion.weight`.
 
@@ -1408,7 +1473,11 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             self.edge_affinity_criterion.pos_weight = pos_weight \
                 if pos_weight is not None else pos_weight_bckp
 
-    def _load_from_checkpoint(self, checkpoint_path, **kwargs):
+    def _load_from_checkpoint(
+            self,
+            checkpoint_path: str,
+            **kwargs
+    ) -> 'PanopticSegmentationModule':
         """Simpler version of `LightningModule.load_from_checkpoint()`
         for easier use: no need to explicitly pass `model.net`,
         `model.criterion`, etc.

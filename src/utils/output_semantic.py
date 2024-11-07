@@ -73,7 +73,6 @@ class SemanticSegmentationOutput:
         logits = self.logits[0] if self.multi_stage else self.logits
         return logits.shape[0]
 
-    @property
     def semantic_pred(self):
         """Semantic predictions on the level-1 superpoint.
 
@@ -135,7 +134,7 @@ class SemanticSegmentationOutput:
             super_index = sub.to_super_index()
         
         # Distribute the level-1 superpoint predictions to the voxels
-        return self.semantic_pred[super_index]
+        return self.semantic_pred()[super_index]
 
     def full_res_semantic_pred(
             self, 
@@ -179,4 +178,4 @@ class SemanticSegmentationOutput:
         
         # Distribute the level-1 superpoint predictions to the 
         # full-resolution points
-        return self.semantic_pred[super_index_level0_to_level1][super_index_raw_to_level0]
+        return self.semantic_pred()[super_index_level0_to_level1][super_index_raw_to_level0]

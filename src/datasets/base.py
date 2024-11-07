@@ -11,14 +11,16 @@ from tqdm import tqdm
 from datetime import datetime
 from itertools import product
 from tqdm.auto import tqdm as tq
+from typing import Any, List, Tuple, Union
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.data.dataset import files_exist
 from torch_geometric.data.makedirs import makedirs
 from torch_geometric.data.dataset import _repr
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
+
 from src.data import NAG
-from src.transforms import NAGSelectByKey, NAGRemoveKeys, SampleXYTiling, \
-    SampleRecursiveMainXYAxisTiling
+from src.transforms import Transform, NAGSelectByKey, NAGRemoveKeys, \
+    SampleXYTiling, SampleRecursiveMainXYAxisTiling
 from src.visualization import show
 
 DIR = os.path.dirname(os.path.realpath(__file__))
@@ -147,27 +149,27 @@ class BaseDataset(InMemoryDataset):
 
     def __init__(
             self,
-            root,
-            stage='train',
-            transform=None,
-            pre_transform=None,
-            pre_filter=None,
-            on_device_transform=None,
-            save_y_to_csr=True,
-            save_pos_dtype=torch.float,
-            save_fp_dtype=torch.half,
-            xy_tiling=None,
-            pc_tiling=None,
-            val_mixed_in_train=False,
-            test_mixed_in_val=False,
-            custom_hash=None,
-            in_memory=False,
-            point_save_keys=None,
-            point_no_save_keys=None,
-            point_load_keys=None,
-            segment_save_keys=None,
-            segment_no_save_keys=None,
-            segment_load_keys=None,
+            root: str,
+            stage: str = 'train',
+            transform: Transform = None,
+            pre_transform: Transform = None,
+            pre_filter: Transform = None,
+            on_device_transform: Transform = None,
+            save_y_to_csr: bool = True,
+            save_pos_dtype: torch.dtype = torch.float,
+            save_fp_dtype: torch.dtype = torch.half,
+            xy_tiling: int = None,
+            pc_tiling: int = None,
+            val_mixed_in_train: bool = False,
+            test_mixed_in_val: bool = False,
+            custom_hash: str = None,
+            in_memory: bool = False,
+            point_save_keys: List[str] = None,
+            point_no_save_keys: List[str] = None,
+            point_load_keys: List[str] = None,
+            segment_save_keys: List[str] = None,
+            segment_no_save_keys: List[str] = None,
+            segment_load_keys: List[str] = None,
             **kwargs):
 
         assert stage in ['train', 'val', 'trainval', 'test']
@@ -277,7 +279,7 @@ class BaseDataset(InMemoryDataset):
             self._in_memory_data = None
 
     @property
-    def class_names(self):
+    def class_names(self) -> List[str]:
         """List of string names for dataset classes. This list must be
         one-item larger than `self.num_classes`, with the last label
         corresponding to 'void', 'unlabelled', 'ignored' classes,
@@ -286,7 +288,7 @@ class BaseDataset(InMemoryDataset):
         raise NotImplementedError
 
     @property
-    def num_classes(self):
+    def num_classes(self) -> int:
         """Number of classes in the dataset. Must be one-item smaller
         than `self.class_names`, to account for the last class name
         being used for 'void', 'unlabelled', 'ignored' classes,
@@ -295,7 +297,7 @@ class BaseDataset(InMemoryDataset):
         raise NotImplementedError
 
     @property
-    def stuff_classes(self):
+    def stuff_classes(self) -> List[int]:
         """List of 'stuff' labels for INSTANCE and PANOPTIC
         SEGMENTATION (setting this is NOT REQUIRED FOR SEMANTIC
         SEGMENTATION alone). By definition, 'stuff' labels are labels in
@@ -316,7 +318,7 @@ class BaseDataset(InMemoryDataset):
         raise NotImplementedError
 
     @property
-    def thing_classes(self):
+    def thing_classes(self) -> List[int]:
         """List of 'thing' labels for instance and panoptic
         segmentation. By definition, 'thing' labels are labels in
         `[0, self.num_classes-1]` which are not 'stuff' labels.
@@ -329,7 +331,7 @@ class BaseDataset(InMemoryDataset):
         return [i for i in range(self.num_classes) if i not in self.stuff_classes]
 
     @property
-    def void_classes(self):
+    def void_classes(self) -> List[int]:
         """List containing the 'void' labels. By default, we group all
         void/ignored/unknown class labels into a single
         `[self.num_classes]` label for simplicity.
@@ -342,14 +344,14 @@ class BaseDataset(InMemoryDataset):
         return [self.num_classes]
 
     @property
-    def class_colors(self):
+    def class_colors(self) -> List[List[int]]:
         """Colors for visualization, if not None, must have the same
         length as `self.num_classes`. If None, the visualizer will use
         the label values in the data to generate random colors.
         """
         return
 
-    def print_classes(self):
+    def print_classes(self) -> None:
         """Show the class names, labels and type (thing, stuff, void).
         """
         for i, c in enumerate(self.class_names):
@@ -363,74 +365,74 @@ class BaseDataset(InMemoryDataset):
             print(f"{i:<3} {c:<20} {class_type}")
 
     @property
-    def data_subdir_name(self):
+    def data_subdir_name(self) -> str:
         return self.__class__.__name__.lower()
 
     @property
-    def stage(self):
+    def stage(self) -> str:
         """Dataset stage. Expected to be 'train', 'val', 'trainval',
         or 'test'
         """
         return self._stage
     
     @property
-    def save_y_to_csr(self):
+    def save_y_to_csr(self) -> bool:
         return self._save_y_to_csr
 
     @property
-    def save_pos_dtype(self):
+    def save_pos_dtype(self) -> bool:
         return self._save_pos_dtype
 
     @property
-    def save_fp_dtype(self):
+    def save_fp_dtype(self) -> bool:
         return self._save_fp_dtype
 
     @property
-    def on_device_transform(self):
+    def on_device_transform(self) -> Transform:
         return self._on_device_transform
 
     @property
-    def val_mixed_in_train(self):
+    def val_mixed_in_train(self) -> bool:
         return self._val_mixed_in_train
 
     @property
-    def test_mixed_in_val(self):
+    def test_mixed_in_val(self) -> bool:
         return self._test_mixed_in_val
 
     @property
-    def custom_hash(self):
+    def custom_hash(self) -> str:
         return self._custom_hash
 
     @property
-    def in_memory(self):
+    def in_memory(self) -> bool:
         return self._in_memory
 
     @property
-    def point_save_keys(self):
+    def point_save_keys(self) -> List[str]:
         return self._point_save_keys
 
     @property
-    def point_no_save_keys(self):
+    def point_no_save_keys(self) -> List[str]:
         return self._point_no_save_keys
 
     @property
-    def point_load_keys(self):
+    def point_load_keys(self) -> List[str]:
         return self._point_load_keys
 
     @property
-    def segment_save_keys(self):
+    def segment_save_keys(self) -> List[str]:
         return self._segment_save_keys
 
     @property
-    def segment_no_save_keys(self):
+    def segment_no_save_keys(self) -> List[str]:
         return self._segment_no_save_keys
 
     @property
-    def segment_load_keys(self):
+    def segment_load_keys(self) -> List[str]:
         return self._segment_load_keys
         
     @property
-    def all_base_cloud_ids(self):
+    def all_base_cloud_ids(self) -> List[str]:
         """Dictionary holding lists of clouds ids, for each
         stage.
 
@@ -440,7 +442,7 @@ class BaseDataset(InMemoryDataset):
         raise NotImplementedError
 
     @property
-    def all_cloud_ids(self):
+    def all_cloud_ids(self) -> List[str]:
         """Dictionary holding lists of clouds ids, for each
         stage. Unlike all_base_cloud_ids, these ids take into account
         the clouds tiling, if any.
@@ -467,7 +469,7 @@ class BaseDataset(InMemoryDataset):
         # If no tiling needed, return the all_base_cloud_ids
         return self.all_base_cloud_ids
 
-    def id_to_base_id(self, id):
+    def id_to_base_id(self, id: str) -> str:
         """Given an ID, remove the tiling indications, if any.
         """
         if self.xy_tiling is None and self.pc_tiling is None:
@@ -475,7 +477,7 @@ class BaseDataset(InMemoryDataset):
         return self.get_tile_from_path(id)[1]
 
     @property
-    def cloud_ids(self):
+    def cloud_ids(self) -> List[str]:
         """IDs of the dataset clouds, based on its `stage`.
         """
         if self.stage == 'trainval':
@@ -484,7 +486,7 @@ class BaseDataset(InMemoryDataset):
             ids = self.all_cloud_ids[self.stage]
         return sorted(list(set(ids)))
 
-    def check_cloud_ids(self):
+    def check_cloud_ids(self) -> None:
         """Make sure the `all_cloud_ids` are valid. More specifically,
         the cloud ids must be unique across all stages, unless
         `val_mixed_in_train=True` or `test_mixed_in_val=True`, in
@@ -502,19 +504,19 @@ class BaseDataset(InMemoryDataset):
             "stages, unless `test_mixed_in_val=True`"
 
     @property
-    def raw_file_structure(self):
+    def raw_file_structure(self) -> str:
         """String to describe to the user the file structure of your
         dataset, at download time.
         """
         return
 
     @property
-    def raw_file_names(self):
+    def raw_file_names(self) -> str:
         """The file paths to find in order to skip the download."""
         return self.raw_file_names_3d
 
     @property
-    def raw_file_names_3d(self):
+    def raw_file_names_3d(self) -> str:
         """Some file paths to find in order to skip the download.
         Those are not directly specified inside `self.raw_file_names`
         in case `self.raw_file_names` would need to be extended (e.g.
@@ -522,7 +524,7 @@ class BaseDataset(InMemoryDataset):
         """
         return [self.id_to_relative_raw_path(x) for x in self.cloud_ids]
 
-    def id_to_relative_raw_path(self, id):
+    def id_to_relative_raw_path(self, id: str) -> str:
         """Given a cloud id as stored in `self.cloud_ids`, return the
         path (relative to `self.raw_dir`) of the corresponding raw
         cloud.
@@ -530,7 +532,7 @@ class BaseDataset(InMemoryDataset):
         return self.id_to_base_id(id) + '.ply'
 
     @property
-    def pre_transform_hash(self):
+    def pre_transform_hash(self) -> str:
         """Produce a unique but stable hash based on the dataset's
         `pre_transform` attributes (as exposed by `_repr`).
         """
@@ -541,7 +543,7 @@ class BaseDataset(InMemoryDataset):
         return hashlib.md5(_repr(self.pre_transform).encode()).hexdigest()
 
     @property
-    def processed_file_names(self):
+    def processed_file_names(self) -> List[str]:
         """The name of the files to find in the `self.processed_dir`
         folder in order to skip the processing
         """
@@ -561,7 +563,7 @@ class BaseDataset(InMemoryDataset):
             osp.join(self.stage, self.pre_transform_hash, f'{w}.h5')
             for w in self.cloud_ids]
 
-    def processed_to_raw_path(self, processed_path):
+    def processed_to_raw_path(self, processed_path: str) -> str:
         """Given a processed cloud path from `self.processed_paths`,
         return the absolute path to the corresponding raw cloud.
 
@@ -582,14 +584,14 @@ class BaseDataset(InMemoryDataset):
         return raw_path
 
     @property
-    def in_memory_data(self):
+    def in_memory_data(self) -> Any:
         """If the `self.in_memory`, this will return all processed data,
         loaded in memory. Returns None otherwise.
         """
         return self._in_memory_data
 
     @property
-    def submission_dir(self):
+    def submission_dir(self) -> str:
         """Submissions are saved in the `submissions` folder, in the
         same hierarchy as `raw` and `processed` directories. Each
         submission has a subdirectory of its own, named based on the
@@ -606,17 +608,17 @@ class BaseDataset(InMemoryDataset):
         path = osp.join(submissions_dir, submission_name)
         return path
 
-    def download(self):
+    def download(self) -> None:
         self.download_warning()
         self.download_dataset()
 
-    def download_dataset(self):
+    def download_dataset(self) -> None:
         """Download the dataset data. Modify this method to implement
         your own `BaseDataset` child class.
         """
         raise NotImplementedError
 
-    def download_warning(self, interactive=False):
+    def download_warning(self, interactive: bool = False) -> None:
         # Warning message for the user about to download
         log.info(
             f"WARNING: You must download the raw data for the "
@@ -630,10 +632,10 @@ class BaseDataset(InMemoryDataset):
             input("")
             log.info("")
 
-    def download_message(self, msg):
+    def download_message(self, msg: str) -> None:
         log.info(f'Downloading "{msg}" to {self.raw_dir}...')
 
-    def _process(self):
+    def _process(self) -> None:
         """Overwrites torch-geometric's Dataset._process. This simply
         removes the 'pre_transform.pt' file used for checking whether
         the pre-transforms have changed. This is possible thanks to our
@@ -662,7 +664,7 @@ class BaseDataset(InMemoryDataset):
         if self.log and 'pytest' not in sys.modules:
             print('Done!', file=sys.stderr)
 
-    def process(self):
+    def process(self) -> None:
         # If some stages have mixed clouds (they rely on the same cloud
         # files and the split is operated at reading time by
         # `on_device_transform`), we create symlinks between the
@@ -691,7 +693,7 @@ class BaseDataset(InMemoryDataset):
         for p in tq(self.processed_paths):
             self._process_single_cloud(p)
 
-    def _process_single_cloud(self, cloud_path):
+    def _process_single_cloud(self, cloud_path: str) -> None:
         """Internal method called by `self.process` to preprocess a
         single cloud of 3D points.
         """
@@ -731,7 +733,7 @@ class BaseDataset(InMemoryDataset):
             keys = set(nag[1].keys) - set(self.segment_save_keys)
             nag = NAGRemoveKeys(level='1+', keys=keys)(nag)
         elif self.segment_no_save_keys is not None:
-            nag = NAGRemoveKeys(level=0, keys=self.segment_no_save_keys)(nag)
+            nag = NAGRemoveKeys(level='1+', keys=self.segment_no_save_keys)(nag)
 
         # Save pre_transformed data to the processed dir/<path>
         # TODO: is you do not throw away level-0 neighbors, make sure
@@ -746,7 +748,7 @@ class BaseDataset(InMemoryDataset):
         del nag
 
     @staticmethod
-    def get_tile_from_path(path):
+    def get_tile_from_path(path: str) -> Tuple[Tuple, str, str]:
         # Search the XY tiling suffix pattern
         out_reg = re.search('__TILE_(\d+)-(\d+)_OF_(\d+)-(\d+)', path)
         if out_reg is not None:
@@ -766,7 +768,7 @@ class BaseDataset(InMemoryDataset):
 
         return
 
-    def read_single_raw_cloud(self, raw_cloud_path):
+    def read_single_raw_cloud(self, raw_cloud_path: str) -> 'Data':
         """Read a single raw cloud and return a `Data` object, ready to
         be passed to `self.pre_transform`.
 
@@ -785,7 +787,7 @@ class BaseDataset(InMemoryDataset):
         """
         raise NotImplementedError
 
-    def sanitized_read_single_raw_cloud(self, raw_cloud_path):
+    def sanitized_read_single_raw_cloud(self, raw_cloud_path: str) -> 'Data':
         """Wrapper around the actual `self.read_single_raw_cloud`. This
         function ensures that the semantic and instance segmentation
         labels returned by the reader are sanitized.
@@ -831,7 +833,7 @@ class BaseDataset(InMemoryDataset):
 
         return data
 
-    def debug_instance_data(self, level=1):
+    def debug_instance_data(self, level: int = 1) -> None:
         """Sanity check to make sure at most 1 instance of each stuff
         class per scene/cloud.
 
@@ -852,7 +854,7 @@ class BaseDataset(InMemoryDataset):
             f"The following clouds have more than 1 instance of for a stuff " \
             f"or void class:\n{problematic_clouds}"
 
-    def get_class_weight(self, smooth='sqrt'):
+    def get_class_weight(self, smooth: str='sqrt') -> torch.Tensor:
         """Compute class weights based on the labels distribution in the
         dataset. Optionally a 'smooth' function may be passed to
         smoothen the weights' statistics.
@@ -892,11 +894,11 @@ class BaseDataset(InMemoryDataset):
 
         return weights
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Number of clouds in the dataset."""
         return len(self.cloud_ids)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Union['NAG', 'Data']:
         """Load a preprocessed NAG from disk and apply `self.transform`
         if any. Optionally, one may pass a tuple (idx, bool) where the
         boolean indicates whether the data should be loaded from disk, if
@@ -929,14 +931,20 @@ class BaseDataset(InMemoryDataset):
 
         return nag
 
-    def make_submission(self, idx, pred, pos, submission_dir=None):
+    def make_submission(
+            self,
+            idx: int,
+            pred: torch.Tensor,
+            pos: torch.Tensor,
+            submission_dir: str = None
+    ) -> None:
         """Implement this if your dataset needs to produce data in a
         given format for submission. This is typically needed for
         datasets with held-out test sets.
         """
         raise NotImplementedError
 
-    def finalize_submission(self, submission_dir):
+    def finalize_submission(self, submission_dir: str) -> None:
         """Implement this if your dataset needs to produce data in a
         given format for submission. This is typically needed for
         datasets with held-out test sets.
@@ -944,7 +952,13 @@ class BaseDataset(InMemoryDataset):
         raise NotImplementedError
 
     def show_examples(
-            self, label, radius=4, max_examples=5, shuffle=True, **kwargs):
+            self,
+            label: int,
+            radius: float = 4,
+            max_examples: int = 5,
+            shuffle: bool = True,
+            **kwargs
+    ) -> None:
         """Interactive plots of some examples centered on points of the
         provided `label`. At most one example per cloud/tile/scene in
         the dataset will be shown.
