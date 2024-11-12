@@ -1005,29 +1005,27 @@ class SemanticSegmentationModule(LightningModule):
         `load_state_dict` to crash. More precisely, `criterion.weight`
         is holding the per-class weights for classification losses.
         """
-        # Special treatment for MultiLoss
-        if self.multi_stage_loss:
-            class_weight_bckp = self.criterion.weight
-            self.criterion.weight = None
+        # Special treatment `criterion.weight`
+        class_weight_bckp = self.criterion.weight
+        self.criterion.weight = None
 
-            # Recover the class weights from any 'criterion.weight' or
-            # 'criterion.*.weight' key and remove those keys from the
-            # state_dict
-            keys = []
-            for key in state_dict.keys():
-                if key.startswith('criterion.') and key.endswith('.weight'):
-                    keys.append(key)
-            class_weight = state_dict[keys[0]] if len(keys) > 0 else None
-            for key in keys:
-                state_dict.pop(key)
+        # Recover the class weights from any `criterion.weight' or
+        # 'criterion.*.weight' key and remove those keys from the
+        # state_dict
+        keys = []
+        for key in state_dict.keys():
+            if key.startswith('criterion.') and key.endswith('.weight'):
+                keys.append(key)
+        class_weight = state_dict[keys[0]] if len(keys) > 0 else None
+        for key in keys:
+            state_dict.pop(key)
 
         # Load the state_dict
         super().load_state_dict(state_dict, strict=strict)
 
         # If need be, assign the class weights to the criterion
-        if self.multi_stage_loss:
-            self.criterion.weight = class_weight if class_weight is not None \
-                else class_weight_bckp
+        self.criterion.weight = class_weight if class_weight is not None \
+            else class_weight_bckp
 
     def _load_from_checkpoint(
             self,
