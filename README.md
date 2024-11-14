@@ -1,4 +1,4 @@
-<div align="center">
+from torch.utils.data import DataLoader<div align="center">
 
 # Superpoint Transformer
 
@@ -386,8 +386,8 @@ from src.models.semantic import SemanticSegmentationModule
 from src.datamodules.s3dis import S3DISDataModule
 from pytorch_lightning import Trainer
 
-# Predict behavior for semantic segmentation on S3DIS
-dataloader = S3DISDataModule(...)
+# Predict behavior for semantic segmentation from a torch DataLoader
+dataloader = DataLoader(...)
 model = SemanticSegmentationModule(...)
 trainer = Trainer(...)
 batch, output = trainer.predict(model=model, dataloaders=dataloader)
