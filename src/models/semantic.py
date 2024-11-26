@@ -638,10 +638,9 @@ class SemanticSegmentationModule(LightningModule):
 
         if self.trainer.num_devices > 1:
             epoch_cm = torch.sum(self.all_gather(self.train_cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
         else:
             epoch_cm = self.train_cm
-
-        epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
 
         # Log metrics
         self.log("train/miou", epoch_cm.miou(), prog_bar=True, rank_zero_only=True)
@@ -651,9 +650,9 @@ class SemanticSegmentationModule(LightningModule):
             if seen:
                 self.log(f"train/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
 
-        del epoch_cm
         # Reset metrics accumulated over the last epoch
         self.train_cm.reset()
+        epoch_cm.reset()
 
     def validation_step(
             self,
@@ -709,14 +708,13 @@ class SemanticSegmentationModule(LightningModule):
             "val/loss", self.val_loss, on_step=False, on_epoch=True,
             prog_bar=True)
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
 
         if self.trainer.num_devices > 1:
             epoch_cm = torch.sum(self.all_gather(self.val_cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
         else:
             epoch_cm = self.val_cm
-
-        epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
 
         miou = epoch_cm.miou()
         oa = epoch_cm.oa()
@@ -742,9 +740,9 @@ class SemanticSegmentationModule(LightningModule):
         self.log("val/oa_best", self.val_oa_best.compute(), prog_bar=True, rank_zero_only=True)
         self.log("val/macc_best", self.val_macc_best.compute(), prog_bar=True, rank_zero_only=True)
 
-        del epoch_cm
         # Reset metrics accumulated over the last epoch
         self.val_cm.reset()
+        epoch_cm.reset()
 
     def on_test_start(self) -> None:
         # Initialize the submission directory based on the time of the
@@ -824,7 +822,7 @@ class SemanticSegmentationModule(LightningModule):
             "test/loss", self.test_loss, on_step=False, on_epoch=True,
             prog_bar=True)
 
-    def on_test_epoch_end(self):
+    def on_test_epoch_end(self) -> None:
         # Finalize the submission
         if self.trainer.datamodule.hparams.submit:
             self.trainer.datamodule.test_dataset.finalize_submission(
@@ -837,10 +835,9 @@ class SemanticSegmentationModule(LightningModule):
 
         if self.trainer.num_devices > 1:
             epoch_cm = torch.sum(self.all_gather(self.test_cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
         else:
             epoch_cm = self.test_cm
-
-        epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
 
         # Log metrics
         self.log("test/miou", epoch_cm.miou(), prog_bar=True, rank_zero_only=True)
@@ -856,9 +853,9 @@ class SemanticSegmentationModule(LightningModule):
                 "test/cm": wandb_confusion_matrix(
                     epoch_cm.confmat, class_names=self.class_names)})
 
-        del epoch_cm
         # Reset metrics accumulated over the last epoch
         self.test_cm.reset()
+        epoch_cm.reset()
 
     def predict_step(
             self,
