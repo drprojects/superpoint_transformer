@@ -641,9 +641,6 @@ class SemanticSegmentationModule(LightningModule):
         else:
             epoch_cm = self.train_cm
 
-        # Reset metrics accumulated over the last epoch
-        self.train_cm.reset()
-
         epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
 
         # Log metrics
@@ -655,6 +652,8 @@ class SemanticSegmentationModule(LightningModule):
                 self.log(f"train/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
 
         del epoch_cm
+        # Reset metrics accumulated over the last epoch
+        self.train_cm.reset()
 
     def validation_step(
             self,
@@ -716,8 +715,6 @@ class SemanticSegmentationModule(LightningModule):
             epoch_cm = torch.sum(self.all_gather(self.val_cm.confmat), dim=0)
         else:
             epoch_cm = self.val_cm
-        # Reset metrics accumulated over the last epoch
-        self.val_cm.reset()
 
         epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
 
@@ -746,6 +743,8 @@ class SemanticSegmentationModule(LightningModule):
         self.log("val/macc_best", self.val_macc_best.compute(), prog_bar=True, rank_zero_only=True)
 
         del epoch_cm
+        # Reset metrics accumulated over the last epoch
+        self.val_cm.reset()
 
     def on_test_start(self) -> None:
         # Initialize the submission directory based on the time of the
@@ -840,8 +839,6 @@ class SemanticSegmentationModule(LightningModule):
             epoch_cm = torch.sum(self.all_gather(self.test_cm.confmat), dim=0)
         else:
             epoch_cm = self.test_cm
-        # Reset metrics accumulated over the last epoch
-        self.test_cm.reset()
 
         epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
 
@@ -860,6 +857,8 @@ class SemanticSegmentationModule(LightningModule):
                     epoch_cm.confmat, class_names=self.class_names)})
 
         del epoch_cm
+        # Reset metrics accumulated over the last epoch
+        self.test_cm.reset()
 
     def predict_step(
             self,
