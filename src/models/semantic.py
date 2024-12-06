@@ -635,16 +635,24 @@ class SemanticSegmentationModule(LightningModule):
             prog_bar=True)
 
     def on_train_epoch_end(self) -> None:
+
+        if self.trainer.num_devices > 1:
+            epoch_cm = torch.sum(self.all_gather(self.train_cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
+        else:
+            epoch_cm = self.train_cm
+
         # Log metrics
-        self.log("train/miou", self.train_cm.miou(), prog_bar=True)
-        self.log("train/oa", self.train_cm.oa(), prog_bar=True)
-        self.log("train/macc", self.train_cm.macc(), prog_bar=True)
-        for iou, seen, name in zip(*self.train_cm.iou(), self.class_names):
+        self.log("train/miou", epoch_cm.miou(), prog_bar=True, rank_zero_only=True)
+        self.log("train/oa", epoch_cm.oa(), prog_bar=True, rank_zero_only=True)
+        self.log("train/macc", epoch_cm.macc(), prog_bar=True, rank_zero_only=True)
+        for iou, seen, name in zip(*epoch_cm.iou(), self.class_names):
             if seen:
-                self.log(f"train/iou_{name}", iou, prog_bar=True)
+                self.log(f"train/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
 
         # Reset metrics accumulated over the last epoch
         self.train_cm.reset()
+        epoch_cm.reset()
 
     def validation_step(
             self,
@@ -701,32 +709,40 @@ class SemanticSegmentationModule(LightningModule):
             prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
-        miou = self.val_cm.miou()
-        oa = self.val_cm.oa()
-        macc = self.val_cm.macc()
 
-        # Log metrics
-        self.log("val/miou", miou, prog_bar=True)
-        self.log("val/oa", oa, prog_bar=True)
-        self.log("val/macc", macc, prog_bar=True)
-        for iou, seen, name in zip(*self.val_cm.iou(), self.class_names):
-            if seen:
-                self.log(f"val/iou_{name}", iou, prog_bar=True)
+        if self.trainer.num_devices > 1:
+            epoch_cm = torch.sum(self.all_gather(self.val_cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
+        else:
+            epoch_cm = self.val_cm
+
+        miou = epoch_cm.miou()
+        oa = epoch_cm.oa()
+        macc = epoch_cm.macc()
 
         # Update best-so-far metrics
         self.val_miou_best(miou)
         self.val_oa_best(oa)
         self.val_macc_best(macc)
 
+        # Log metrics
+        self.log("val/miou", miou, prog_bar=True, rank_zero_only=True)
+        self.log("val/oa", oa, prog_bar=True, rank_zero_only=True)
+        self.log("val/macc", macc, prog_bar=True, rank_zero_only=True)
+        for iou, seen, name in zip(*epoch_cm.iou(), self.class_names):
+            if seen:
+                self.log(f"val/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
+
         # Log best-so-far metrics, using `.compute()` instead of passing
         # the whole torchmetrics object, because otherwise metric would
         # be reset by lightning after each epoch
-        self.log("val/miou_best", self.val_miou_best.compute(), prog_bar=True)
-        self.log("val/oa_best", self.val_oa_best.compute(), prog_bar=True)
-        self.log("val/macc_best", self.val_macc_best.compute(), prog_bar=True)
+        self.log("val/miou_best", self.val_miou_best.compute(), prog_bar=True, rank_zero_only=True)
+        self.log("val/oa_best", self.val_oa_best.compute(), prog_bar=True, rank_zero_only=True)
+        self.log("val/macc_best", self.val_macc_best.compute(), prog_bar=True, rank_zero_only=True)
 
         # Reset metrics accumulated over the last epoch
         self.val_cm.reset()
+        epoch_cm.reset()
 
     def on_test_start(self) -> None:
         # Initialize the submission directory based on the time of the
@@ -817,22 +833,29 @@ class SemanticSegmentationModule(LightningModule):
             self.test_cm.reset()
             return
 
+        if self.trainer.num_devices > 1:
+            epoch_cm = torch.sum(self.all_gather(self.test_cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
+        else:
+            epoch_cm = self.test_cm
+
         # Log metrics
-        self.log("test/miou", self.test_cm.miou(), prog_bar=True)
-        self.log("test/oa", self.test_cm.oa(), prog_bar=True)
-        self.log("test/macc", self.test_cm.macc(), prog_bar=True)
-        for iou, seen, name in zip(*self.test_cm.iou(), self.class_names):
+        self.log("test/miou", epoch_cm.miou(), prog_bar=True, rank_zero_only=True)
+        self.log("test/oa", epoch_cm.oa(), prog_bar=True, rank_zero_only=True)
+        self.log("test/macc", epoch_cm.macc(), prog_bar=True, rank_zero_only=True)
+        for iou, seen, name in zip(*epoch_cm.iou(), self.class_names):
             if seen:
-                self.log(f"test/iou_{name}", iou, prog_bar=True)
+                self.log(f"test/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
 
         # Log confusion matrix to wandb
         if isinstance(self.logger, WandbLogger):
             self.logger.experiment.log({
                 "test/cm": wandb_confusion_matrix(
-                    self.test_cm.confmat, class_names=self.class_names)})
+                    epoch_cm.confmat, class_names=self.class_names)})
 
         # Reset metrics accumulated over the last epoch
         self.test_cm.reset()
+        epoch_cm.reset()
 
     def predict_step(
             self,
