@@ -868,6 +868,12 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         # Log semantic segmentation metrics and reset confusion matrix
         super().on_train_epoch_end()
 
+        # TODO: support logging panoptic metrics for DDP
+        if self.trainer.num_devices > 1:
+            log.warning(
+                "Panoptic and instance segmentation metrics are not guaranteed "
+                "to be well-behaved on DDP yet.")
+
         if self.needs_partition:
             # If multiple partitions settings were tested during the
             # epoch, this will search for the best one, update the
@@ -1108,6 +1114,12 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         # Log semantic segmentation metrics and reset confusion matrix
         super().on_validation_epoch_end()
 
+        # TODO: support logging panoptic metrics for DDP
+        if self.trainer.num_devices > 1:
+            log.warning(
+                "Panoptic and instance segmentation metrics are not guaranteed "
+                "to be well-behaved on DDP yet.")
+
         if self.needs_partition:
             # Compute the instance and panoptic metrics
             panoptic_results = self.val_panoptic.compute()
@@ -1313,6 +1325,12 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             self.test_semantic.reset()
             self.test_instance.reset()
             return
+
+        # TODO: support logging panoptic metrics for DDP
+        if self.trainer.num_devices > 1:
+            log.warning(
+                "Panoptic and instance segmentation metrics are not guaranteed "
+                "to be well-behaved on DDP yet.")
 
         if self.needs_partition:
             # Compute the instance and panoptic metrics
