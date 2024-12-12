@@ -154,15 +154,20 @@ This project was tested with:
 <br>
 
 ## 🏗  Installation
-Simply run [`install.sh`](install.sh) to install all dependencies in a new conda environment 
+Simply run [`install.sh`](setup/install.sh) to install all dependencies in a new conda environment 
 named `spt`. 
 ```bash
 # Creates a conda env named 'spt' env and installs dependencies
-./install.sh
+setup/install.sh
 ```
-
 > **Note**: See the [Datasets page](docs/datasets.md) for setting up your dataset
 > path and file structure.
+
+> **Debug**: In case your CUDA version is not supported and you are facing some installation issue, you can check github issue and run [check_dependency.sh](setup/check_dependency.sh) to isolate the dependency issue. We do not provide explicit support for other CUDA versions than the one tested above. 
+> ```bash
+>#  check that some dependency are installed. 
+>setup/check_dependency.sh
+> ```
 
 <br>
 
