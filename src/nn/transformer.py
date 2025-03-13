@@ -216,6 +216,9 @@ class TransformerBlock(nn.Module):
             x = self.drop_path(x)
             x = self._forward_norm(self.sa_norm, shortcut + x, norm_index)
 
+        # Keep track of x for the residual connection
+        shortcut = x
+
         # Feed-Forward Network residual branch
         if not self.no_ffn and self.pre_norm:
             x = self._forward_norm(self.ffn_norm, x, norm_index)
