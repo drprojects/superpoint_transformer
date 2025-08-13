@@ -97,7 +97,7 @@ pip install pyrootutils
 pip install hydra-core --upgrade
 pip install hydra-colorlog
 pip install hydra-submitit-launcher
-pip install rich
+pip install "rich<=14.0"
 pip install torch_tb_profiler
 pip install wandb
 pip install open3d
