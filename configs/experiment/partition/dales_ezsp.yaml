@@ -1,0 +1,27 @@
+# @package _global_
+
+defaults:
+  - override /datamodule: partition/dales_ezsp.yaml
+  - override /model: partition/default_ezsp.yaml
+  - override /trainer: gpu.yaml
+
+optimized_metric: "val/omiou"
+
+trainer:
+  max_epochs: 200
+  check_val_every_n_epoch: 25
+
+model:
+  partition_criterion:
+    adaptive_sampling_ratio: 0.7
+
+  net:
+    point_cnn_kernel_size: [7, 3, 3]
+
+  optimizer:
+    lr: 5e-4
+
+logger:
+  wandb:
+    project: ezsp_dales
+    name: partition

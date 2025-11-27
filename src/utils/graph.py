@@ -1,19 +1,35 @@
 import torch
 import math
-from torch_scatter import scatter_min, scatter_max, scatter_mean
-from torch_geometric.utils import coalesce, remove_self_loops
+from time import time
+from torch_scatter import (
+    scatter_min,
+    scatter_max,
+    scatter_mean)
+from torch_geometric.utils import (
+    coalesce,
+    remove_self_loops)
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
+
+import src
 from src.utils.tensor import arange_interleave
 from src.utils.geometry import base_vectors_3d
-from src.utils.sparse import sizes_to_pointers, sparse_sort, \
-    sparse_sort_along_direction
-from src.utils.scatter import scatter_pca, scatter_nearest_neighbor, \
-    idx_preserving_mask
+from src.utils.sparse import (
+    sizes_to_pointers,
+    sparse_sort,
+    sparse_sort_along_direction)
+from src.utils.scatter import (
+    scatter_pca,
+    scatter_nearest_neighbor,
+    idx_preserving_mask)
 from src.utils.edge import edge_wise_points
 
 __all__ = [
-    'is_pyg_edge_format', 'isolated_nodes', 'edge_to_superedge', 'subedges',
-    'to_trimmed', 'is_trimmed']
+    'is_pyg_edge_format',
+    'isolated_nodes',
+    'edge_to_superedge',
+    'subedges',
+    'to_trimmed',
+    'is_trimmed']
 
 
 def is_pyg_edge_format(edge_index):
@@ -87,13 +103,14 @@ def subedges(
         ratio=0.2,
         k_min=20,
         cycles=3,
-        pca_on_cpu=True,
+        pca_on_cpu=False,
         margin=0.2,
         halfspace_filter=True,
         bbox_filter=True,
         target_pc_flip=True,
         source_pc_sort=False,
-        chunk_size=None):
+        chunk_size=None,
+        verbose=False):
     """Compute the subedges making up each edge between segments. These
     are needed for superedge features computation. This approach relies
     on heuristics to avoid the Delaunay triangulation or any other O(N²)
@@ -119,8 +136,8 @@ def subedges(
         Number of iterations for nearest neighbor search between
         segments
     :param pca_on_cpu:
-        Whether PCA should be computed on CPU if need be. Should be kept
-        as True
+        Whether PCA should be run on CPU even if the input is on GPU.
+        It is recommended to keep this to False
     :param margin:
         Tolerance margin used for selecting subedges points and
         excluding segment points from potential subedge candidates
@@ -172,7 +189,8 @@ def subedges(
                 bbox_filter=bbox_filter,
                 target_pc_flip=target_pc_flip,
                 source_pc_sort=source_pc_sort,
-                chunk_size=None))
+                chunk_size=None,
+                verbose=verbose))
 
         # Combine outputs
         device = points.device
@@ -187,18 +205,34 @@ def subedges(
     # Compute the nearest neighbors between superedge segments. This
     # pair of points will be crucial in finding the other level-0
     # points making up the superedge
+    # TODO: this is a bottleneck
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        start = time()
     _, edge_anchor_idx = scatter_nearest_neighbor(
         points, index, edge_index, cycles=cycles)
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | scatter_nearest_neighbor: {time() - start:0.3f} sec")
+        start = time()
 
     # Compute base vectors based on the anchor points source->target
     # direction
     s_anchor = points[edge_anchor_idx[0]]
     t_anchor = points[edge_anchor_idx[1]]
     anchor_base = base_vectors_3d(t_anchor - s_anchor)
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | base_vector_3d: {time() - start:0.3f} sec")
+        start = time()
 
     # Recover the number of points in source and target segments. 's_'
     # and 't_' indicate we are dealing with edge-wise values
     s_size, t_size = index.bincount(minlength=num_segments)[edge_index]
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | size: {time() - start:0.3f} sec")
+        start = time()
 
     # Expand the points to point-edge values. That is, the concatenation
     # of all the source --or target-- points for each edge. The
@@ -206,6 +240,10 @@ def subedges(
     # clarity
     (S_points, S_points_idx, S_uid), (T_points, T_points_idx, T_uid) = \
         edge_wise_points(points, index, edge_index)
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | edge_wise_point: {time() - start:0.3f} sec")
+        start = time()
 
     # Local helper function to convert absolute points coordinates to
     # their local edge coordinate system. This system is defined as
@@ -236,6 +274,10 @@ def subedges(
     S_points = to_anchor_base(source=True)
     T_points = to_anchor_base(source=False)
     del s_anchor, t_anchor, anchor_base
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | to_anchor_base: {time() - start:0.3f} sec")
+        start = time()
 
     # Select points that are in the half-space before their anchor.
     # Since subedge points (level-0 point pairs making up the superedge
@@ -257,6 +299,10 @@ def subedges(
         T_points_idx = T_points_idx[in_T_halfspace]
         T_uid = T_uid[in_T_halfspace]
         del in_T_halfspace
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | halfspace_filter: {time() - start:0.3f} sec")
+        start = time()
 
     # Compute the bbox intersection in the 2nd and 3rd coordinates
     # plane. This is a proxy for computing the intersection of the
@@ -264,6 +310,7 @@ def subedges(
     # plane. This operation prevents subedge points from lying too far
     # from the source segment's projection on the target segment along
     # the anchor direction (and conversely)
+    # TODO: this is a bottleneck
     if bbox_filter:
         s_min, _ = scatter_min(S_points[:, 1:], S_uid, dim=0)
         s_max, _ = scatter_max(S_points[:, 1:], S_uid, dim=0)
@@ -290,6 +337,10 @@ def subedges(
         # Select points inside the bbox intersection
         S_points, S_points_idx, S_uid = select_in_bbox(source=True)
         T_points, T_points_idx, T_uid = select_in_bbox(source=False)
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | bbox_filter: {time() - start:0.3f} sec")
+        start = time()
 
     # Sort points along the edge direction, the first point being the
     # anchor point and subsequent points farther and farther away from
@@ -304,6 +355,10 @@ def subedges(
     T_points_idx = T_points_idx[perm]
     T_uid = T_uid[perm]
     del perm
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | sparse_sort: {time() - start:0.3f} sec")
+        start = time()
 
     # Update the number of selected points in the source/target segments
     # and compute the number of points to keep for each edge. The
@@ -315,6 +370,10 @@ def subedges(
     t_k = (t_size * ratio).long().clamp(min=k_min).clamp(max=t_size)
     st_k = torch.min(s_k, t_k)
     del s_k, t_k
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | select: {time() - start:0.3f} sec")
+        start = time()
 
     # Select only the first k points for each edge
     S_k_idx = arange_interleave(st_k, start=sizes_to_pointers(s_size[:-1]))
@@ -327,6 +386,10 @@ def subedges(
     T_points_idx = T_points_idx[T_k_idx]
     T_uid = T_uid[T_k_idx]
     del T_k_idx
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | topk: {time() - start:0.3f} sec")
+        start = time()
 
     # Local helper to compute, for each edge, the first eigen vector of
     # the selected subedge points for the source --target,
@@ -345,6 +408,10 @@ def subedges(
     # subedge pair
     s_v = first_component(source=True)
     t_v = first_component(source=False)
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | first_component {pca_on_cpu=}: {time() - start:0.3f} sec")
+        start = time()
 
     # Flip the target first component direction when needed. This is to
     # limit subedge crossings. This is motivated by the desire to mimick
@@ -359,6 +426,10 @@ def subedges(
         t_v[to_flip] *= -1
     elif source_pc_sort:
         t_v = s_v
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | flip: {time() - start:0.3f} sec")
+        start = time()
 
     # Local helper to sort points along their first component
     def sort_by_first_component(source=True):
@@ -377,10 +448,17 @@ def subedges(
     # Sort the subedge points along their first component
     S_points, S_points_idx, S_uid = sort_by_first_component(source=True)
     T_points, T_points_idx, T_uid = sort_by_first_component(source=False)
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | sort_by_first_component: {time() - start:0.3f} sec")
+        start = time()
 
     # Bring the subedge points together to make up the final pairs
     ST_pairs = torch.vstack((S_points_idx, T_points_idx))
     ST_uid = S_uid
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    superedge | vstack: {time() - start:0.3f} sec")
 
     return edge_index, ST_pairs, ST_uid
 

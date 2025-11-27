@@ -1,0 +1,31 @@
+# @package datamodule
+defaults:
+  - /datamodule/semantic/s3dis.yaml # General dataset parameters
+  - /datamodule/partition/s3dis_ezsp.yaml # Partition parameters
+  - /datamodule/semantic/default_ezsp.yaml # Semantic task parameters for EZ-SP
+
+# Use `python src/train.py experiment=partition/s3dis.yaml`
+# to pretrain the CNN and override the `pretrained_cnn_ckpt_path` field with
+# your own checkpoint path.
+pretrained_cnn_ckpt_path: ${eval:'${datamodule.pretrained_cnn_ckpt_path_per_fold}[${datamodule.fold}]'}
+pretrained_cnn_ckpt_path_per_fold: {
+  1: "ckpt/ezsp_partition_s3dis_fold1.ckpt",
+  2: "ckpt/ezsp_partition_s3dis_fold2.ckpt",
+  3: "ckpt/ezsp_partition_s3dis_fold3.ckpt",
+  4: "ckpt/ezsp_partition_s3dis_fold4.ckpt",
+  5: "ckpt/ezsp_partition_s3dis_fold5.ckpt",
+  6: "ckpt/ezsp_partition_s3dis_fold6.ckpt",
+}
+pretrained_cnn_dim_without_in_dim: [32, 32, 32]
+pretrained_cnn_kernel_size: 3
+
+# Parameter defining the 3 partition levels.
+contour_prior_min_size: [5,30,90]
+
+# Inputs.
+partition_hf:
+ - 'rgb'
+
+post_cnn_point_hf:
+  - 'elevation'
+  - 'rgb'

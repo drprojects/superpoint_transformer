@@ -1,0 +1,32 @@
+# @package _global_
+
+defaults:
+  - /model/semantic/spt-3.yaml # SPT on 3 superpoint partition levels
+  - /model/semantic/_point_cnn.yaml # EZ-SP uses a CNN in the first stage
+  - /experiment/semantic/default_ezsp.yaml
+  - override /datamodule: semantic/dales_ezsp.yaml
+  - override /trainer: gpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+trainer:
+  max_epochs: 600
+
+model:
+  optimizer:
+    lr: 0.005
+    weight_decay: 1e-4
+
+  criterion:
+    _target_: src.loss.focal.WeightedFocalLoss
+    gamma: 2
+
+  net:
+    no_ffn: False
+    down_ffn_ratio: 1
+
+logger:
+  wandb:
+    project: dales_ezsp
+    name: semantic

@@ -1,0 +1,25 @@
+# @package _global_
+
+defaults:
+  - /model/semantic/spt-3.yaml # SPT on 3 superpoint partition levels
+  - /model/semantic/_point_cnn.yaml # EZ-SP uses a CNN in the first stage
+  - /experiment/semantic/default_ezsp.yaml
+  - override /datamodule: semantic/s3dis_ezsp.yaml
+  - override /trainer: gpu.yaml
+
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+trainer:
+  max_epochs: 3000
+
+model:
+  optimizer:
+    lr: 0.05
+    weight_decay: 1e-2
+
+logger:
+  wandb:
+    project: s3dis_ezsp
+    name: semantic

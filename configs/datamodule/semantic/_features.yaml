@@ -1,10 +1,14 @@
 # @package datamodule
 
+# to know wether the datasets should load the atom level or not.
+nano: ${model.net.nano}
+
 # Mandatory list of handcrafted features for points, segments and edges
 # that will be used for partition and training. The rest of the config
 # will use these to interpolate other important values
 partition_hf: ???  # point features used for the partition
 point_hf: ???  # point features used for training
+post_cnn_point_hf: []  # when point_cnn_blocks=True, point features to be concatenated to the CNN features and processed by MLP in PointStage 
 segment_base_hf: ???   # segment-wise features computed at preprocessing
 segment_mean_hf: ???  # segment features computed as the mean of point feature in each segment, saved with "mean_" prefix
 segment_std_hf: ???  # segment features computed as the std of point feature in each segment, saved with "std_" prefix
@@ -31,6 +35,9 @@ extra_segment_hf: ${eval:'["normal"] * (${datamodule.h_edge_hf_need_normal} + ${
 # 'segment_hf' will be loaded at training time
 segment_hf: ${eval:'${datamodule.segment_base_hf} + ["mean_" + x for x in ${datamodule.segment_mean_hf}] + ["std_" + x for x in ${datamodule.segment_std_hf}]'}
 
+# complete list of point features used for training
+all_point_hf: ${eval:'list(set(${datamodule.point_hf} + ${datamodule.post_cnn_point_hf}))'} # summarize the features here for the augmentation
+
 # features that will need to be computed at preprocessing time
 # and saved to disk. If set to 'null', all supported features will be
 # computed and saved to disk. This may be useful when you are
@@ -46,8 +53,9 @@ segment_base_hf_preprocess: ${eval:'list(set( ${datamodule.segment_base_hf} + ${
 segment_mean_hf_preprocess: ${eval:'${datamodule.segment_mean_hf} if ${datamodule.lite_preprocessing} else None'}
 segment_std_hf_preprocess: ${eval:'${datamodule.segment_std_hf} if ${datamodule.lite_preprocessing} else None'}
 
-# The number of input channels for points, segments and horizontal and
+# The number of input channels for points during partition, points, segments and horizontal and
 # vertical edges
+num_hf_partition: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.partition_hf} ])'}
 num_hf_point: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.point_hf} ])'}
 num_hf_segment: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.segment_hf} ])'}
 num_hf_edge: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.edge_hf} ])'}
@@ -57,14 +65,19 @@ num_hf_v_edge: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.v_
 # or loaded from disk. This saves training time, loading only necessary
 # data
 obj_key: ['obj']  # key used to store instance labels, for points and segments alike
+point_hf_overwrite: True  # whether to overwrite the point features with the computed ones during preprocessing
 point_full_res_key: ['sub']  # key used to store indices of full-resolution points in each for voxel
 point_save_keys: null  # level-0 keys to save on disk after preprocessing, 'null' to save all
-point_no_save_keys: ['edge_index', 'edge_attr', 'neighbor_index', 'neighbor_distance', 'node_size', 'grid_size']  # level-0 keys to NOT save on disk after preprocessing
+point_no_save_keys: ['edge_index', 'edge_attr', 'neighbor_index', 'neighbor_distance', 'node_size', 'grid_size', 'coords']  # level-0 keys to NOT save on disk after preprocessing
 segment_save_keys: null  # level-1+ keys to save on disk after preprocessing, 'null' to save all
-point_basic_load_keys: ['pos', 'pos_offset', 'y', 'obj', 'super_index']  # needed point attributes, other than features
-segment_basic_load_keys: ['pos', 'y', 'super_index', 'sub', 'edge_index', 'edge_attr']  # needed segment attributes, other than features
-point_load_keys: ${eval:'list(set( ${datamodule.point_basic_load_keys} + ${datamodule.obj_key} * ${datamodule.instance} + ${datamodule.point_hf} + ${datamodule.extra_point_hf} + ${datamodule.point_full_res_key} * ${datamodule.load_full_res_idx} ))'}  # level-0 keys to load from disk after preprocessing, 'null' to load all
+point_basic_load_keys: ['pos', 'pos_offset', 'y', 'obj', 'super_index',]  # needed point attributes, other than features
+segment_basic_load_keys: ['pos', 'y', 'super_index', 'sub', 'edge_index', 'edge_attr',]  # needed segment attributes, other than features
+point_load_keys: ${eval:'list(set(${datamodule.point_basic_load_keys} + ${datamodule.obj_key} * ${datamodule.instance} + ${datamodule.point_hf} + ${datamodule.post_cnn_point_hf} + ${datamodule.extra_point_hf} + ${datamodule.point_full_res_key} * ${datamodule.load_full_res_idx}))'}  # level-0 keys to load from disk after preprocessing, 'null' to load all
 segment_load_keys: ${eval:'list(set( ${datamodule.segment_basic_load_keys} + ${datamodule.obj_key} * ${datamodule.instance} + ${datamodule.segment_hf} + ${datamodule.extra_segment_hf} ))'}  # level-1+ keys to load from disk after preprocessing, 'null' to load all
+
+# Quantize coordinates at point level to create the `coords` attribute,
+# required for applying sparse convolutions.
+quantize_coords: ${model.net.point_cnn_blocks}
 
 # Comprehensive list of feature sizes, to be used to deduce feature size
 # from name

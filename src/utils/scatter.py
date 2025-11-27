@@ -1,14 +1,17 @@
 import math
 import torch
-from torch_scatter import scatter_add, scatter_mean, scatter_min
+from torch_scatter import scatter_sum, scatter_mean, scatter_min
 from itertools import combinations_with_replacement
 from src.utils.edge import edge_wise_points
 from torch_geometric.utils import coalesce
 
 
 __all__ = [
-    'scatter_mean_weighted', 'scatter_pca', 'scatter_nearest_neighbor',
-    'idx_preserving_mask', 'scatter_mean_orientation']
+    'scatter_mean_weighted',
+    'scatter_pca',
+    'scatter_nearest_neighbor',
+    'idx_preserving_mask',
+    'scatter_mean_orientation']
 
 
 def scatter_mean_weighted(x, idx, w, dim_size=None):
@@ -24,7 +27,7 @@ def scatter_mean_weighted(x, idx, w, dim_size=None):
     wx = torch.cat((w, x * w), dim=1)
 
     # Scatter sum the wx tensor to obtain
-    wx_segment = scatter_add(wx, idx, dim=0, dim_size=dim_size)
+    wx_segment = scatter_sum(wx, idx, dim=0, dim_size=dim_size)
 
     # Extract the weighted mean from the result
     w_segment = wx_segment[:, 0]
@@ -35,7 +38,7 @@ def scatter_mean_weighted(x, idx, w, dim_size=None):
     return mean_segment
 
 
-def scatter_pca(x, idx, on_cpu=True):
+def scatter_pca(x, idx, on_cpu=False, algorithm='eigh'):
     """Scatter implementation for PCA.
 
     Returns eigenvalues and eigenvectors for each group in idx.
@@ -60,34 +63,66 @@ def scatter_pca(x, idx, on_cpu=True):
     ij = torch.tensor(list(combinations_with_replacement(range(d), 2)), device=device)
     upper_triangle = x[:, ij[:, 0]] * x[:, ij[:, 1]]
 
+    # Compute the number of elements in each group. This will be needed
+    # to normalize the covariance
+    sizes = idx.bincount()
+
     # Aggregate the covariances as a N_2x(DxD) with scatter_sum
     # and convert it to a N_2xDxD batch of matrices
-    upper_triangle = scatter_add(upper_triangle, idx, dim=0) / d
+    upper_triangle = scatter_sum(upper_triangle, idx, dim=0) / sizes.view(-1, 1)
     cov = torch.empty((upper_triangle.shape[0], d, d), device=device)
     cov[:, ij[:, 0], ij[:, 1]] = upper_triangle
 
     # Eigendecompostion
-    if on_cpu:
+    # TODO: careful there, torch.linalg.eigh triggers a CPU-GPU
+    #  synchronization:
+    #  https://docs.pytorch.org/docs/stable/generated/torch.linalg.eigh.html
+    if algorithm == 'eigh' and on_cpu:
         device = cov.device
         cov = cov.cpu()
-        eval, evec = torch.linalg.eigh(cov, UPLO='U')
-        eval = eval.to(device)
-        evec = evec.to(device)
+        eigenval, eigenvec = torch.linalg.eigh(cov, UPLO='U')
+        eigenval = eigenval.to(device)
+        eigenvec = eigenvec.to(device)
+
+    elif algorithm == 'eigh':
+        eigenval, eigenvec = torch.linalg.eigh(cov, UPLO='U')
+
+    elif algorithm == 'eig':
+        cov[:, ij[:, 1], ij[:, 0]] = upper_triangle
+        eigenval, eigenvec = torch.linalg.eig(cov)
+
+        # torch.linalg.eig() returns complex values but in our specific
+        # case the imaginary values are all 0 so we can ignore them
+        eigenvec = eigenvec.real
+        eigenval = eigenval.real
+
+        # torch.linalg.eig() does not return sorted eigenvalue. So we
+        # need to sort them in increasing order, along with their
+        # eigenvectors
+        idx = eigenval.argsort(dim=1)
+        eigenval = eigenval.gather(dim=1, index=idx)
+        eigenvec = eigenvec.gather(dim=2, index=idx.unsqueeze(1).repeat(1, 3, 1))
+
     else:
-        eval, evec = torch.linalg.eigh(cov, UPLO='U')
+        raise NotImplementedError(
+            f"Unknown algorithm '{algorithm}'. Please choose among 'eigh' and "
+            f"'eig'.")
 
     # If Nan values are computed, return equal eigenvalues and
     # Identity eigenvectors
     idx_nan = torch.where(torch.logical_and(
-        eval.isnan().any(1), evec.flatten(1).isnan().any(1)))
-    eval[idx_nan] = torch.ones(3, dtype=eval.dtype, device=device)
-    evec[idx_nan] = torch.eye(3, dtype=evec.dtype, device=device)
+        eigenval.isnan().any(1), eigenvec.flatten(1).isnan().any(1)))
+    eigenval[idx_nan] = torch.ones(3, dtype=eigenval.dtype, device=device)
+    eigenvec[idx_nan] = torch.eye(3, dtype=eigenvec.dtype, device=device)
+    #
+    # print(f"{eigenval.imag=}")
+    # print(f"{eigenval.imag.abs().max().values=}")
 
     # Precision errors may cause close-to-zero eigenvalues to be
     # negative. Hard-code these to zero
-    eval[torch.where(eval < 0)] = 0
+    eigenval = eigenval.clamp(min=0)
 
-    return eval, evec
+    return eigenval, eigenvec
 
 
 def scatter_nearest_neighbor(
@@ -207,7 +242,7 @@ def idx_preserving_mask(mask, idx, dim=0):
     """Helper to pass a boolean mask and an index, to make sure indexing
     using the mask will not entirely discard all elements of index.
     """
-    is_empty = scatter_add(mask.float(), idx, dim=dim) == 0
+    is_empty = scatter_sum(mask.float(), idx, dim=dim) == 0
     return mask | is_empty[idx]
 
 

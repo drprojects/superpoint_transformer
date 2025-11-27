@@ -1,13 +1,23 @@
 import torch
 import src
-from src.utils.tensor import is_dense, is_sorted, fast_repeat, tensor_idx, \
-    arange_interleave, fast_randperm
+from src.utils.tensor import (
+    is_dense,
+    is_sorted,
+    fast_repeat,
+    tensor_idx,
+    arange_interleave,
+    fast_randperm)
 from torch_scatter import scatter_mean
 
 
 __all__ = [
-    'indices_to_pointers', 'sizes_to_pointers', 'dense_to_csr', 'csr_to_dense',
-    'sparse_sort', 'sparse_sort_along_direction', 'sparse_sample']
+    'indices_to_pointers',
+    'sizes_to_pointers',
+    'dense_to_csr',
+    'csr_to_dense',
+    'sparse_sort',
+    'sparse_sort_along_direction',
+    'sparse_sample']
 
 
 def indices_to_pointers(indices: torch.Tensor):
@@ -24,9 +34,9 @@ def indices_to_pointers(indices: torch.Tensor):
 
     # Convert sorted indices to pointers
     pointers = torch.cat([
-        torch.LongTensor([0]).to(device),
+        torch.tensor([0], dtype=torch.long, device=device),
         torch.where(indices[1:] > indices[:-1])[0] + 1,
-        torch.LongTensor([indices.shape[0]]).to(device)])
+        torch.tensor([indices.shape[0]], dtype=torch.long, device=device)])
 
     return pointers, order
 
@@ -36,9 +46,8 @@ def sizes_to_pointers(sizes: torch.Tensor):
     is a trivial but often-required operation.
     """
     assert sizes.dim() == 1
-    assert sizes.dtype == torch.long
     zero = torch.zeros(1, device=sizes.device, dtype=torch.long)
-    return torch.cat((zero, sizes)).cumsum(dim=0)
+    return torch.cat((zero, sizes.long())).cumsum(dim=0)
 
 
 def dense_to_csr(a):
@@ -51,7 +60,7 @@ def dense_to_csr(a):
     return pointers, columns, values
 
 
-def csr_to_dense(pointers, columns, values, shape=None):
+def csr_to_dense(pointers, columns, values, shape=None, fill_value=0):
     """Convert a CSR matrix to its dense counterpart of a given shape.
     """
     assert pointers.dim() == 1
@@ -69,7 +78,7 @@ def csr_to_dense(pointers, columns, values, shape=None):
         shape = (max(shape[0], shape_guess[0]), max(shape[1], shape_guess[1]))
 
     n, m = shape
-    a = torch.zeros(n, m, dtype=values.dtype, device=device)
+    a = torch.full((n, m), fill_value=fill_value, dtype=values.dtype, device=device)
     i = torch.arange(n, device=device)
     i = fast_repeat(i, pointers[1:] - pointers[:-1])
     j = columns.long()
@@ -84,11 +93,12 @@ def sparse_sort(src, index, dim=0, descending=False, eps=1e-6):
 
     Credit: https://github.com/rusty1s/pytorch_scatter/issues/48
     """
-    # NB: we use double precision here to make sure we can capture fine
-    # grained src changes even with very large index values.
+    # NB: we use double precision here to make sure we can capture
+    # fine-grained src changes even with very large index values
     f_src = src.double()
     f_min, f_max = f_src.min(dim)[0], f_src.max(dim)[0]
-    norm = (f_src - f_min)/(f_max - f_min + eps) + index.double()*(-1)**int(descending)
+    norm = ((f_src - f_min) / (f_max - f_min + eps)
+            + index.double() * (-1)**int(descending))
     perm = norm.argsort(dim=dim, descending=descending)
 
     return src[perm], perm
@@ -190,7 +200,7 @@ def sparse_sample(idx, n_max=32, n_min=1, mask=None, return_pointers=False):
     # If a mask is provided, only keep the corresponding elements.
     # This also requires updating the `size` and `n_samples`
     mask = tensor_idx(mask, device=device)
-    if mask.shape[0] > 0:
+    if mask is not None:
         sample_idx = sample_idx[mask]
         idx = idx[mask]
         size = idx.bincount(minlength=num_segments)

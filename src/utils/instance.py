@@ -1,9 +1,7 @@
-import sys
 import hydra
 import torch
 import numpy as np
 import pandas as pd
-import os.path as osp
 from tqdm import tqdm
 from copy import deepcopy
 from itertools import product
@@ -12,6 +10,9 @@ import matplotlib.patches as patches
 import matplotlib.cm as cm
 from torch.nn.functional import one_hot
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
+from pycut_pursuit.cp_d0_dist import cp_d0_dist
+from grid_graph import edge_list_to_forward_star
+
 from src.utils.hydra import init_config
 from src.utils.neighbors import knn_2
 from src.utils.graph import to_trimmed
@@ -20,20 +21,14 @@ from src.utils.scatter import scatter_mean_weighted
 from src.utils.semantic import _set_attribute_preserving_transforms
 
 
-src_folder = osp.dirname(osp.dirname(osp.abspath(__file__)))
-sys.path.append(src_folder)
-sys.path.append(osp.join(src_folder, "dependencies/grid_graph/python/bin"))
-sys.path.append(osp.join(src_folder, "dependencies/parallel_cut_pursuit/python/wrappers"))
-
-
-from grid_graph import edge_list_to_forward_star
-from cp_d0_dist import cp_d0_dist
-
-
 __all__ = [
-    'generate_random_bbox_data', 'generate_random_segment_data',
-    'instance_cut_pursuit', 'oracle_superpoint_clustering', 'get_stuff_mask',
-    'compute_panoptic_metrics', 'compute_panoptic_metrics_s3dis_6fold',
+    'generate_random_bbox_data',
+    'generate_random_segment_data',
+    'instance_cut_pursuit',
+    'oracle_superpoint_clustering',
+    'get_stuff_mask',
+    'compute_panoptic_metrics',
+    'compute_panoptic_metrics_s3dis_6fold',
     'grid_search_panoptic_partition']
 
 
@@ -1137,11 +1132,11 @@ def _forward_multi_partition(
         # Extract features
         x = model.net(nag)
 
-        # Compute level-1 or multi-level semantic predictions
+        # Compute first segment-level or multi-level semantic predictions
         semantic_pred = [head(x_) for head, x_ in zip(model.head, x)] \
             if model.multi_stage_loss else model.head(x)
 
-        # Recover level-1 features only
+        # Recover first segment-level features only
         x = x[0] if model.multi_stage_loss else x
 
         # TODO: offset soft-assigned to 0 based on the predicted
@@ -1222,7 +1217,7 @@ def _forward_multi_partition(
                 model.stuff_classes,
                 edge_affinity_logits,
                 # node_offset_pred,
-                nag.get_sub_size(1))
+                nag.get_sub_size(1,low=0))
 
             # Compute the panoptic partition
             output = model._forward_partition(nag, output)

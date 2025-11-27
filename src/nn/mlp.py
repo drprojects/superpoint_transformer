@@ -11,7 +11,8 @@ def mlp(
         last_activation=True,
         norm=BatchNorm,
         last_norm=True,
-        drop=None):
+        drop=None,
+        device='cpu'):
     """Helper to build MLP-like structures.
 
     :param dims: List[int]
@@ -30,6 +31,8 @@ def mlp(
     :param drop: float in [0, 1]
         Dropout on the output features. No dropout layer will be
         created if `drop=None` or `drop < 0`
+    :param device: str or torch.device
+        Device on which to create the MLP
     :return:
     """
     assert len(dims) >= 2
@@ -40,15 +43,16 @@ def mlp(
     # Iteratively build the layers based on dims
     modules = []
     for i in range(1, len(dims)):
-        modules.append(nn.Linear(dims[i - 1], dims[i], bias=bias))
+        modules.append(
+            nn.Linear(dims[i - 1], dims[i], bias=bias, device=device))
         if norm is not None and (last_norm or i < len(dims) - 1):
-            modules.append(norm(dims[i]))
+            modules.append(norm(dims[i]).to(device))
         if activation is not None and (last_activation or i < len(dims) - 1):
-            modules.append(activation)
+            modules.append(activation.to(device))
 
     # Add final dropout if required
     if drop is not None and drop > 0:
-        modules.append(nn.Dropout(drop, inplace=True))
+        modules.append(nn.Dropout(drop, inplace=True, device=device))
 
     return nn.ModuleList(modules)
 
@@ -65,7 +69,8 @@ class MLP(nn.Module):
             last_activation=True,
             norm=BatchNorm,
             last_norm=True,
-            drop=None):
+            drop=None,
+            device='cpu'):
         super().__init__()
         self.mlp = mlp(
             dims,
@@ -73,7 +78,8 @@ class MLP(nn.Module):
             last_activation=last_activation,
             norm=norm,
             last_norm=last_norm,
-            drop=drop)
+            drop=drop,
+            device=device)
         self.out_dim = dims[-1]
 
     def forward(self, x, batch=None):
@@ -101,7 +107,8 @@ class FFN(MLP):
             hidden_dim=None,
             out_dim=None,
             activation=nn.LeakyReLU(),
-            drop=None):
+            drop=None,
+            device='cpu'):
 
         # Build the channel sizes for the 2 linear layers
         hidden_dim = hidden_dim or dim
@@ -114,7 +121,8 @@ class FFN(MLP):
             last_activation=False,
             norm=None,
             last_norm=False,
-            drop=drop)
+            drop=drop,
+            device=device)
 
 
 class Classifier(nn.Module):
@@ -122,9 +130,13 @@ class Classifier(nn.Module):
     normalization.
     """
 
-    def __init__(self, in_dim, num_classes, bias=True):
+    def __init__(self, in_dim, num_classes, bias=True, device='cpu'):
         super().__init__()
-        self.classifier = nn.Linear(in_dim, num_classes, bias=bias)
+        self.classifier = nn.Linear(
+            in_dim,
+            num_classes,
+            bias=bias,
+            device=device)
 
     def forward(self, x):
         return self.classifier(x)

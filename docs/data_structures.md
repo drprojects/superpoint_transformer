@@ -43,7 +43,11 @@ their advanced mechanisms without index collisions.
 list of `Data` objects.
 
 Important specificities of our `Data` object are:
-- `NAG[i]` returns a `Data` object holding the partition level `ì`
+-  `Data` objects held by a `NAG` are indexed using **absolute** indices. 
+This means that if you load level 1 but not level 0 (the atomic level), 
+trying to access `NAG[0]` will raise an error.
+- `NAG.start_i_level` parameter indicates the first level held by the `NAG`.
+- `NAG[i]` returns a `Data` object holding the partition level `i`. 
 - `NAG.get_super_index()` returns the index mapping nodes from any level `i` to
 `j` with `i<j`
 - `NAG.get_sampling()` produces indices for sampling the superpoints with 
@@ -53,6 +57,17 @@ certain constraints
 and updates the rest of the `NAG` structure accordingly
 - `NAG.show()` for interactive visualization (see 
 [visualization documentation](docs/visualization.md))
+
+- Other useful properties are implemented and documented to handle a `NAG` 
+object, e.g.: 
+    - `NAG.end_i_level`: Index of the last loaded level of the hierarchy
+    - `NAG.has_atoms`: Boolean indicating whether the `NAG` holds its atomic level 
+    (point level)
+    - `NAG.first_level`: Returns the first available level of the hierarchy
+    - `NAG.absolute_num_levels`: Number of levels including non-loaded lower levels
+    - `NAG.level_range`: Iterator over the loaded data levels
+    - `NAG.enumerate_with_absolute_index`: Iterator that enumerates the `NAG` with 
+    its absolute level index, returning tuples `(absolute_index, level)`
 
 The `NAGBatch` class allows for batching `NAG` objects together, while 
 preserving their advanced mechanisms without index collisions.

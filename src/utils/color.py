@@ -5,8 +5,13 @@ from plotly.colors import sample_colorscale, get_colorscale
 
 
 __all__ = [
-    'to_float_rgb', 'to_byte_rgb', 'rgb_to_plotly_rgb', 'int_to_plotly_rgb',
-    'hex_to_tensor', 'feats_to_plotly_rgb', 'identity_PCA']
+    'to_float_rgb',
+    'to_byte_rgb',
+    'rgb_to_plotly_rgb',
+    'int_to_plotly_rgb',
+    'hex_to_tensor',
+    'feats_to_plotly_rgb',
+    'identity_PCA']
 
 
 def to_float_rgb(rgb):
@@ -89,7 +94,12 @@ def feats_to_plotly_rgb(feats, normalize=False, colorscale='Agsunset'):
 
     if feats.shape[1] == 3:
         color = feats
-
+        
+        if (color < 0).any():
+            color = (torch.clamp(color, -0.5, 0.6) + 0.5) / 1.1
+            is_normalized = True
+            
+        
     elif feats.shape[1] == 1:
         # If only 1 feature is found convert to a 3-channel
         # repetition for grayscale visualization or to plotly RGB string

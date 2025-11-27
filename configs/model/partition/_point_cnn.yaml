@@ -1,0 +1,33 @@
+# @package model
+
+# Partial config for the first stage with only CNN 
+# (to learn good input features for the partition algorithm)
+
+pretrained_cnn_ckpt_path: null
+train_cnn_from_scratch: True
+freeze_cnn: False
+
+_point_out_dim: ${eval:'${model._point_mlp}[-1] if ${model.net.point_mlp} else ${model.net.point_cnn}[-1]'}
+
+net:
+  # Controls whether to add an MLP layer after the CNN in the PointStage.
+  # True: CNN → MLP pipeline (CNN features fed to MLP)
+  # False: CNN, MLP  in parallel, both outputs are concatenated to build the final output
+  point_mlp_on_cnn_feats: False # Set to False, because no MLP is used in the first stage of partition learning
+  
+  # Dimension of the point MLP
+  point_mlp: null
+
+  # CNN parameters
+  point_cnn_blocks: True
+  point_cnn: ${eval:'[${datamodule.num_hf_partition}] + ${model._point_cnn}'}
+  point_cnn_kernel_size: ???
+  point_cnn_dilation: 1
+  point_cnn_norm:
+    _target_: src.nn.GraphNorm
+    _partial_: True
+  point_cnn_activation:
+    _target_: torch.nn.LeakyReLU
+
+  point_cnn_residual: False
+  point_cnn_global_residual: False

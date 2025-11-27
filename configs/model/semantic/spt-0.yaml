@@ -1,0 +1,9 @@
+# @package model
+defaults:
+  - /model/semantic/spt.yaml
+
+net:
+  down_dim: []
+  down_in_mlp: []
+  up_dim: ${eval:'[]'}
+  up_in_mlp: ${eval:'[]'}

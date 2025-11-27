@@ -6,7 +6,11 @@ from typing import List, Tuple, Union
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
 
 from src.data.csr import CSRData, CSRBatch
-from src.utils import has_duplicates, tensor_idx, load_tensor
+from src.utils import (
+    has_duplicates,
+    tensor_idx,
+    load_tensor,
+    is_arange)
 
 
 __all__ = ['Cluster', 'ClusterBatch']
@@ -16,9 +20,6 @@ class Cluster(CSRData):
     """Child class of CSRData to simplify some common operations
     dedicated to cluster-point indexing.
     """
-
-    __value_serialization_keys__ = ['points']
-    __is_index_value_serialization_key__ = None
 
     def __init__(
             self,
@@ -72,14 +73,17 @@ class Cluster(CSRData):
         device = self.device
         out = torch.empty((self.num_items,), dtype=torch.long, device=device)
         cluster_idx = torch.arange(self.num_groups, device=device)
-        out[self.points] = cluster_idx.repeat_interleave(self.sizes)
+        out[self.points] = cluster_idx.repeat_interleave(self.sizes.long())
         return out
 
     def select(
             self,
             idx: Union[int, List[int], torch.Tensor, np.ndarray],
-            update_sub: bool = True
-    ) -> Tuple['Cluster', Tuple[torch.Tensor, torch.Tensor]]:
+            update_sub: bool = True,
+            **kwargs
+    ) -> Union[
+        Tuple['Cluster', Tuple[torch.Tensor, torch.Tensor]],
+        Tuple['Cluster', Tuple[None, None]]]:
         """Returns a new Cluster with updated clusters and points, which
         indexes `self` using entries in `idx`. Supports torch and numpy
         fancy indexing. `idx` must NOT contain duplicate entries, as
@@ -88,13 +92,12 @@ class Cluster(CSRData):
         NB: if `self` belongs to a NAG, calling this function in
         isolation may break compatibility with point and cluster indices
         in the other hierarchy levels. If consistency matters, prefer
-        using NAG indexing instead.
+        using `NAG.select()` indexing instead.
 
-        :parameter
-        idx: int or 1D torch.LongTensor or numpy.NDArray
+        :param idx: int or 1D torch.LongTensor or numpy.NDArray
             Cluster indices to select from 'self'. Must NOT contain
             duplicates
-        update_sub: bool
+        :param update_sub: bool
             If True, the point (i.e. subpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_sub, sub_super)' which can help apply these
@@ -112,7 +115,11 @@ class Cluster(CSRData):
         # Normal CSRData indexing, creates a new object in memory
         cluster = super().select(idx)
 
-        if not update_sub:
+        # Check whether the indexing is actually effective. If not, all
+        # indexing-related behavior can be skipped for simplicity
+        idx = tensor_idx(idx, device=self.device)
+        no_indexing_required = idx is None or is_arange(idx, self.num_clusters)
+        if not update_sub or no_indexing_required:
             return cluster, (None, None)
 
         # Convert subpoint indices, in case some subpoints have
@@ -148,8 +155,10 @@ class Cluster(CSRData):
             f: Union[str, h5py.File, h5py.Group],
             idx: Union[int, List, np.ndarray, torch.Tensor] = None,
             update_sub: bool = True,
-            verbose: bool = False
-    ) -> 'Cluster':
+            non_fp_to_long: bool = False,
+            verbose: bool = False,
+            **kwargs
+    ) -> Tuple['Cluster', Tuple[torch.Tensor, torch.Tensor]]:
         """Load Cluster from an HDF5 file. See `Cluster.save` for
         writing such file. Options allow reading only part of the
         clusters.
@@ -166,7 +175,16 @@ class Cluster(CSRData):
             updated to maintain dense indices. The output will then
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
-            of a NAG.
+            of a NAG
+        :param non_fp_to_long: bool
+            By default `save_tensor()` cast all non-float tensors to the
+            smallest integer dtype before saving. This allows saving
+            memory and I/O bandwidth. Upon reading, `non_fp_to_long`
+            rules whether these should be cast back to int64 or kept in
+            this "compressed" dtype. One good reason for not doing so is
+            to accelerate data loading and device transfer. To cast the
+            tensors to int64 later on in the pipeline, use the `NAGCast`
+            and `Cast` transforms
         :param verbose: bool
 
         :return: cluster, (idx_sub, sub_super)
@@ -174,16 +192,32 @@ class Cluster(CSRData):
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
                 out = cls.load(
-                    file, idx=idx, update_sub=update_sub, verbose=verbose)
+                    file,
+                    idx=idx,
+                    update_sub=update_sub,
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose,
+                    **kwargs)
             return out
 
         # CSRData load behavior
-        out = super().load(f, idx=idx, verbose=verbose)
+        out = super().load(
+            f,
+            idx=idx,
+            update_sub=update_sub,
+            non_fp_to_long=non_fp_to_long,
+            verbose=verbose,
+            **kwargs)
         cluster = out[0] if isinstance(out, tuple) else out
-        
-        if not update_sub:
+
+        # Check whether the indexing is actually effective. If not, all
+        # indexing-related behavior can be skipped for simplicity
+        idx = tensor_idx(idx)
+        num_clusters = f[cls._pointer_serialization_key].shape[0] - 1
+        no_indexing_required = idx is None or is_arange(idx, num_clusters)
+        if not update_sub or no_indexing_required:
             return cluster, (None, None)
-        
+
         # Convert subpoint indices, in case some subpoints have
         # disappeared. 'idx_sub' is intended to be used with
         # Data.select() on the level below
@@ -217,8 +251,12 @@ class ClusterBatch(Cluster, CSRBatch):
             f: Union[str, h5py.File, h5py.Group],
             idx: Union[int, List, np.ndarray, torch.Tensor] = None,
             update_sub: bool = True,
-            verbose: bool = False
-    ) -> Union['ClusterBatch', 'Cluster']:
+            non_fp_to_long: bool = False,
+            verbose: bool = False,
+            **kwargs
+    ) -> Union[
+            Tuple[Union['ClusterBatch', 'Cluster'], Tuple[torch.Tensor, torch.Tensor]],
+            Tuple[Union['ClusterBatch', 'Cluster'], Tuple[None, None]]]:
         """Load ClusterBatch from an HDF5 file. See `Cluster.save` for
         writing such file. Options allow reading only part of the
         clusters.
@@ -236,6 +274,15 @@ class ClusterBatch(Cluster, CSRBatch):
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
             of a NAG.
+        :param non_fp_to_long: bool
+            By default `save_tensor()` cast all non-float tensors to the
+            smallest integer dtype before saving. This allows saving
+            memory and I/O bandwidth. Upon reading, `non_fp_to_long`
+            rules whether these should be cast back to int64 or kept in
+            this "compressed" dtype. One good reason for not doing so is
+            to accelerate data loading and device transfer. To cast the
+            tensors to int64 later on in the pipeline, use the `NAGCast`
+            and `Cast` transforms
         :param verbose: bool
 
         :return: cluster, (idx_sub, sub_super)
@@ -243,22 +290,40 @@ class ClusterBatch(Cluster, CSRBatch):
         # Indexing breaks batching, so we return a base object if
         # indexing is required
         idx = tensor_idx(idx)
-        if idx is not None and idx.shape[0] != 0:
+        if idx is not None:
             return cls.get_base_class().load(
-                f, idx=idx, update_sub=update_sub, verbose=verbose)
+                f,
+                idx=idx,
+                update_sub=update_sub,
+                non_fp_to_long=non_fp_to_long,
+                verbose=verbose,
+                **kwargs)
 
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
                 out = cls.load(
-                    file, idx=idx, update_sub=update_sub, verbose=verbose)
+                    file,
+                    update_sub=update_sub,
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose,
+                    **kwargs)
             return out
 
         # Check if the file actually corresponds to a batch object
         # rather than its corresponding base object
         if '__sizes__' not in f.keys():
             return cls.get_base_class().load(
-                f, idx=idx, update_sub=update_sub, verbose=verbose)
+                f,
+                update_sub=update_sub,
+                non_fp_to_long=non_fp_to_long,
+                verbose=verbose,
+                **kwargs)
 
-        out = super().load(f, idx=idx, update_sub=update_sub, verbose=verbose)
-        out[0].__sizes__ = load_tensor(f['__sizes__'])
+        out = super().load(
+            f,
+            update_sub=update_sub,
+            non_fp_to_long=non_fp_to_long,
+            verbose=verbose,
+            **kwargs)
+        out[0].__sizes__ = load_tensor(f['__sizes__'], non_fp_to_long=non_fp_to_long)
         return out

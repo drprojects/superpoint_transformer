@@ -1,7 +1,8 @@
+from .dict import *
 from .point import *
 from .keys import *
 from .color import *
-from .configs import * 
+from .configs import *
 from .dropout import *
 from .hydra import *
 from .list import *
@@ -32,5 +33,11 @@ from .semantic import *
 from .instance import *
 from .output_panoptic import *
 from .output_semantic import *
+from .output_partition import *
 from .widgets import *
 from .ground import *
+from .batch_utils import *
+from .version import *
+
+# from .connected_components import * # circular import (bcs of `from src.data import *`)
+# from .components_merge import *

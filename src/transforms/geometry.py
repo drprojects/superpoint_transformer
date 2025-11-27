@@ -5,13 +5,15 @@ from src.utils.geometry import rodrigues_rotation_matrix
 
 
 __all__ = [
-    'CenterPosition', 'RandomTiltAndRotate', 'RandomAnisotropicScale',
+    'CenterPosition',
+    'RandomTiltAndRotate',
+    'RandomAnisotropicScale',
     'RandomAxisFlip']
 
 
 class CenterPosition(Transform):
     """Center the position of all nodes of all levels of a NAG around
-    their level-0 centroid.
+    their first available level centroid.
     """
     _IN_TYPE = NAG
     _OUT_TYPE = NAG
@@ -80,7 +82,7 @@ class RandomTiltAndRotate(Transform):
 
         # Rotate the nodes at each level. If the nodes have a `normal`
         # attribute, we also rotate those accordingly
-        for i_level in range(nag.num_levels):
+        for i_level in nag.level_range:
             if sigma <= 0:
                 continue
             nag[i_level].pos = nag[i_level].pos @ R.T
@@ -156,7 +158,7 @@ class RandomAnisotropicScale(Transform):
         # Generate the random scales
         scale = 1 + (torch.rand(1) * 2 * self.delta - self.delta).to(nag.device)
 
-        for i_level in range(nag.num_levels):
+        for i_level in nag.level_range:
             nag[i_level].pos = nag[i_level].pos * scale
 
             # If the nodes have a `normal` or 'mean_normal' attribute,
@@ -214,7 +216,7 @@ class RandomAxisFlip(Transform):
             return nag
 
         axis = self.axis
-        for i_level in range(nag.num_levels):
+        for i_level in nag.level_range:
             nag[i_level].pos[:, axis] *= -1
 
             # If the nodes have a `normal` or 'mean_normal' attribute,

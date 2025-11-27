@@ -4,14 +4,21 @@ from torch_geometric.nn.aggr import SumAggregation
 from torch_geometric.nn.aggr import MeanAggregation
 from torch_geometric.nn.aggr import MaxAggregation
 from torch_geometric.nn.aggr import MinAggregation
+from torch_geometric.nn.aggr import StdAggregation
 from torch_scatter import scatter_sum
 from torch_geometric.utils import softmax
 from src.utils.nn import init_weights, LearnableParameter, build_qk_scale_func
 
 
 __all__ = [
-    'pool_factory', 'SumPool', 'MeanPool', 'MaxPool', 'MinPool',
-    'AttentivePool', 'AttentivePoolWithLearntQueries']
+    'pool_factory',
+    'SumPool',
+    'MeanPool',
+    'MaxPool',
+    'MinPool',
+    'StdPool',
+    'AttentivePool',
+    'AttentivePoolWithLearntQueries']
 
 
 def pool_factory(pool, *args, **kwargs):
@@ -29,6 +36,8 @@ def pool_factory(pool, *args, **kwargs):
         return MeanPool()
     if pool == 'sum':
         return SumPool()
+    if pool == 'std':
+        return StdPool()
     return pool(*args, **kwargs)
 
 
@@ -66,6 +75,10 @@ class MaxPool(AggregationPoolMixIn, MaxAggregation):
 
 
 class MinPool(AggregationPoolMixIn, MinAggregation):
+    pass
+
+
+class StdPool(AggregationPoolMixIn, StdAggregation):
     pass
 
 

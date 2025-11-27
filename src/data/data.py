@@ -4,21 +4,43 @@ import torch
 import warnings
 import numpy as np
 from time import time
-from typing import List, Tuple, Optional, Union, Any
+from typing import (
+    List,
+    Tuple,
+    Optional,
+    Union,
+    Any,
+    Dict)
 from torch_geometric.data import Data as PyGData
 from torch_geometric.data import Batch as PyGBatch
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
 
 import src
-from src.data.cluster import CSRData
+from src.data.csr import CSRData
 from src.data.cluster import Cluster
 from src.data.instance import InstanceData
-from src.metrics import SemanticMetricResults, PanopticMetricResults, \
-    InstanceMetricResults
-from src.utils import tensor_idx, is_dense, has_duplicates, \
-    isolated_nodes, knn_2, save_tensor, load_tensor, save_tensor_dict, \
-    load_tensor_dict, save_dense_to_csr, load_csr_to_dense, to_trimmed, \
-    to_float_rgb, to_byte_rgb
+from src.metrics import (
+    SemanticMetricResults,
+    PanopticMetricResults,
+    InstanceMetricResults)
+from src.utils import (
+    tensor_idx,
+    is_arange,
+    is_dense,
+    has_duplicates,
+    isolated_nodes,
+    knn_2,
+    save_tensor,
+    load_tensor,
+    save_tensor_dict,
+    load_tensor_dict,
+    save_dense_to_csr,
+    load_csr_to_dense,
+    to_trimmed,
+    to_float_rgb,
+    to_byte_rgb,
+    from_flat_tensor,
+    human_readable_memory)
 
 
 __all__ = ['Data', 'Batch']
@@ -158,14 +180,6 @@ class Data(PyGData):
         return [k for k in self.keys if k.startswith('v_edge_')]
 
     @property
-    def num_edges(self):
-        """Overwrite the torch_geometric initial definition, which
-        somehow returns incorrect results, like:
-            data.num_edges != data.edge_index.shape[1]
-        """
-        return self.edge_index.shape[1] if self.has_edges else 0
-
-    @property
     def num_points(self):
         return self.num_nodes
 
@@ -177,33 +191,42 @@ class Data(PyGData):
     def num_sub(self):
         return self.sub.points.max().item() + 1 if self.is_super else 0
 
-    def detach(self) -> 'Data':
-        """Extend `torch_geometric.Data.detach` to handle Cluster and
-        InstanceData attributes.
+    @classmethod
+    def from_flat_tensor(
+            cls,
+            tensors_dict: Dict[Any, torch.Tensor],
+            flat_dict: Dict
+    ) -> 'Data':
+        """Reconstruct a flattened `Data` object from tensors as
+        produced by `to_flat_tensor()`.
+
+        :param tensors_dict: Dict[Any, Tensor]
+            Dictionary of flat 1D tensors created by the
+            `to_flat_tensor` utility function
+        :param flat_dict: Dict
+            Dictionary holding metadata for reconstructing the object
+            from `tensors_dict`
         """
-        self = super().detach()
-        for k in self.keys:
-            if isinstance(self[k], CSRData):
-                self[k] = self[k].detach()
-        return self
+        return cls(**from_flat_tensor(tensors_dict, flat_dict))
 
-    def to(self, device, **kwargs) -> 'Data':
-        """Extend `torch_geometric.Data.to` to handle Cluster and
-        InstanceData attributes.
+    def forget_batching(self):
+        """Change the class of the object to Data and remove any
+        attributes characterizing Batch objects.
         """
-        self = super().to(device, **kwargs)
-        for k in self.keys:
-            if isinstance(self[k], CSRData):
-                self[k] = self[k].to(device, **kwargs)
-        return self
-
-    def cpu(self, **kwargs) -> 'Data':
-        """Move the NAG with all Data in it to CPU."""
-        return self.to('cpu', **kwargs)
-
-    def cuda(self, **kwargs) -> 'Data':
-        """Move the NAG with all Data in it to CUDA."""
-        return self.to('cuda', **kwargs)
+        ignored_keys = [
+            'batch',
+            'ptr',
+            '_slice_dict',
+            '_inc_dict',
+            '_num_graphs']
+        self_dict = {
+            k: v for k, v in self.to_dict().items()
+            if k not in ignored_keys}
+        for k, v in self_dict.items():
+            if (hasattr(v.__class__, 'forget_batching')
+                  and callable(v.__class__.forget_batching)):
+                self_dict[k] = v.forget_batching()
+        return Data(**self_dict)
 
     @property
     def device(self) -> torch.device:
@@ -277,24 +300,23 @@ class Data(PyGData):
         NB: if `self` belongs to a NAG, calling this function in
         isolation may break compatibility with point and cluster indices
         in the other hierarchy levels. If consistency matters, prefer
-        using NAG indexing instead.
+        using `NAG.select()` indexing instead.
 
-        :parameter
-        idx: int or 1D torch.LongTensor or numpy.NDArray
+        :param idx: int or 1D torch.LongTensor or numpy.NDArray
             Data indices to select from 'self'. Must NOT contain
             duplicates
-        update_sub: bool
+        :param update_sub: bool
             If True, the point (i.e. subpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
-            of a NAG.
-        update_super: bool
+            of a NAG
+        :param update_super: bool
             If True, the cluster (i.e. superpoint) indices will also be
             updated to maintain dense indices. The output will then
             contain '(idx_super, super_sub)' which can help apply these
             changes to maintain consistency with higher hierarchy levels
-            of a NAG.
+            of a NAG
 
         :return: data, (idx_sub, sub_super), (idx_super, super_sub)
             data: Data
@@ -310,8 +332,14 @@ class Data(PyGData):
         """
         device = self.device
 
-        # Convert idx to a torch.LongTensor
-        idx = tensor_idx(idx).to(device)
+        # If the idx is None, or is exactly [0, ..., num_cluster], we
+        # leave the Cluster unchanged. As a result, (idx_sub, sub_super)
+        # will not be needed for updating the indices for lower
+        # partition levels
+        idx = tensor_idx(idx, device=device)
+        no_indexing_required = idx is None or is_arange(idx, self.num_nodes)
+        if no_indexing_required:
+            return self.clone(), (None, None), (None, None)
 
         # Make sure idx contains no duplicate entries
         if src.is_debug_enabled():
@@ -340,7 +368,7 @@ class Data(PyGData):
                 (self.num_nodes,), -1, dtype=torch.int64, device=device)
             reindex = reindex.scatter_(
                 0, idx, torch.arange(idx.shape[0], device=device))
-            edge_index = reindex[self.edge_index]
+            edge_index = reindex[self.edge_index.long()]
 
             # Remove obsolete edges (i.e. those involving a '-1' index)
             idx_edge = torch.where((edge_index != -1).all(dim=0))[0]
@@ -352,7 +380,14 @@ class Data(PyGData):
         # of the level below
         out_sub = (None, None)
         if self.is_super:
-            data.sub, out_sub = self.sub.select(idx, update_sub=update_sub)
+            if isinstance(self.sub, CSRData):
+                data.sub, out_sub = self.sub.select(idx, update_sub=update_sub)
+            else:
+                # TODO: provide support for indexing when 'sub' is only
+                #  a Tensor... Really an edge case, no priority
+                data.sub = self.sub[idx]
+                if update_sub:
+                    raise NotImplementedError()
 
         # Selecting points may affect their order, if we need to
         # preserve superpoint consistency, we need to update the
@@ -375,7 +410,8 @@ class Data(PyGData):
             # also need to update the super-level's 'Data.sub', which
             # can be computed from 'super_index'
             super_sub = Cluster(
-                data.super_index, torch.arange(idx.shape[0], device=device),
+                data.super_index,
+                torch.arange(idx.shape[0], device=device),
                 dense=True)
 
             out_super = (idx_super, super_sub)
@@ -396,7 +432,7 @@ class Data(PyGData):
 
             # Slice CSRData elements, unless specified otherwise
             if isinstance(item, CSRData):
-                data[key] = item[idx]
+                data[key] = item.select(idx)
                 continue
 
             is_tensor = torch.is_tensor(item)
@@ -549,40 +585,88 @@ class Data(PyGData):
 
         return self
 
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, self.__class__):
+    def equal(self, other: Any) -> bool:
+        if (not isinstance(other, self.__class__)
+                and not isinstance(self, other.__class__)):
             if src.is_debug_enabled():
-                print(f'{self.__class__.__name__}.__eq__: classes differ')
+                print(
+                    f"{self.__class__.__name__}.equal: classes differ: "
+                    f"{self.__class__.__name__} and {other.__class__.__name__}")
             return False
         if sorted(self.keys) != sorted(other.keys):
             if src.is_debug_enabled():
-                print(f'{self.__class__.__name__}.__eq__: keys differ')
+                print(f"{self.__class__.__name__}.equal: keys differ")
             return False
         for k, v in self.items():
+            msg = f"{self.__class__.__name__}.equal: {k} differ"
             if isinstance(v, torch.Tensor):
-                if not torch.equal(v, other[k]):
-                    if src.is_debug_enabled():
-                        print(f'{self.__class__.__name__}.__eq__: {k} differ')
-                    return False
-                continue
+                if torch.equal(v, other[k]):
+                    continue
+                if src.is_debug_enabled():
+                    print(msg)
+                return False
             if isinstance(v, np.ndarray):
-                if not np.array_equal(v, other[k]):
-                    if src.is_debug_enabled():
-                        print(f'{self.__class__.__name__}.__eq__: {k} differ')
-                    return False
-                continue
+                if np.array_equal(v, other[k]):
+                    continue
+                if src.is_debug_enabled():
+                    print(msg)
+                return False
+            if isinstance(v, CSRData):
+                if v.equal(other[k]):
+                    continue
+                if src.is_debug_enabled():
+                    print(msg)
+                return False
             if v != other[k]:
                 if src.is_debug_enabled():
-                    print(f'{self.__class__.__name__}.__eq__: {k} differ')
+                    print(msg)
                 return False
         return True
+
+    @property
+    def nbytes(self):
+        """Returns the number of bytes consumed by all the Tensors held
+         in the object.
+
+         Specifically, this is the sum `tensor.nbytes` for al Tensors in
+        the object.
+        """
+        nbytes = 0
+        for _, item in self.items():
+            if torch.is_tensor(item):
+                nbytes += item.nbytes
+                continue
+            try:
+                nbytes += item.nbytes
+            except AttributeError:
+                pass
+        return nbytes
+
+    def print_memory_summary(self, depth=0, indent=2, prefix=''):
+        """Print a summary of the memory usage for tensors inside the
+        object. This is a detailed breakdown of what `self.nbytes`
+        returns.
+        """
+        print(f"{prefix} {self.__class__.__name__}: {human_readable_memory(self.nbytes)}")
+        white_length = max([len(str(key)) for key, _ in self.items()])
+        for key, item in self.to_dict().items():
+            prefix_key = f"{'' * len(prefix)}{' ' * indent * (depth + 1)} {key:<{white_length}}"
+            if torch.is_tensor(item):
+                print(f"{prefix_key}: {human_readable_memory(item.nbytes)}  {tuple(item.shape)}  {item.dtype}")
+                continue
+            try:
+                item.print_memory_summary(
+                    depth=depth + 1, indent=indent, prefix=f"{prefix_key}")
+            except AttributeError:
+                print(f"{prefix_key}: ignored")
 
     def save(
             self,
             f: Union[str, h5py.File, h5py.Group],
             y_to_csr: bool = True,
             pos_dtype: torch.dtype = torch.float,
-            fp_dtype: torch.dtype = torch.float):
+            fp_dtype: torch.dtype = torch.float,
+            rgb_to_byte: bool = True):
         """Save Data to HDF5 file.
 
         :param f: h5 file path of h5py.File or h5py.Group
@@ -597,6 +681,9 @@ class Data(PyGData):
         :param fp_dtype: torch dtype
             Data type to which floating point tensors should be cast
             before saving
+        :param rgb_to_byte: bool
+            Whether to cast the 'rgb' and 'mean_rgb' attributes to byte
+            (uint8) before saving.
         :return:
         """
         if not isinstance(f, (h5py.File, h5py.Group)):
@@ -605,7 +692,8 @@ class Data(PyGData):
                     file,
                     y_to_csr=y_to_csr,
                     pos_dtype=pos_dtype,
-                    fp_dtype=fp_dtype)
+                    fp_dtype=fp_dtype,
+                    rgb_to_byte=rgb_to_byte)
             return
 
         assert isinstance(f, (h5py.File, h5py.Group))
@@ -618,7 +706,7 @@ class Data(PyGData):
             elif k == 'y' and val.dim() > 1 and y_to_csr:
                 sg = f.create_group(f"{f.name}/_csr_/{k}")
                 save_dense_to_csr(val, sg, fp_dtype=fp_dtype)
-            elif k in ['rgb', 'mean_rgb']:
+            elif k in ['rgb', 'mean_rgb'] and rgb_to_byte:
                 if val.is_floating_point():
                     save_tensor((val * 255).byte(), f, k, fp_dtype=fp_dtype)
                 else:
@@ -651,6 +739,7 @@ class Data(PyGData):
             keys_idx: List[str] = None,
             keys: List[str] = None,
             update_sub: bool = True,
+            non_fp_to_long: bool = False,
             verbose: bool = False,
             rgb_to_float: bool = False
     ) -> 'Data':
@@ -672,6 +761,15 @@ class Data(PyGData):
             contain '(idx_sub, sub_super)' which can help apply these
             changes to maintain consistency with lower hierarchy levels
             of a NAG.
+        :param non_fp_to_long: bool
+            By default `save_tensor()` cast all non-float tensors to the
+            smallest integer dtype before saving. This allows saving
+            memory and I/O bandwidth. Upon reading, `non_fp_to_long`
+            rules whether these should be cast back to int64 or kept in
+            this "compressed" dtype. One good reason for not doing so is
+            to accelerate data loading and device transfer. To cast the
+            tensors to int64 later on in the pipeline, use the `NAGCast`
+            and `Cast` transforms
         :param verbose: bool
         :param rgb_to_float: bool
             If True and an integer 'rgb' or 'mean_rgb' attribute is
@@ -681,8 +779,13 @@ class Data(PyGData):
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
                 out = cls.load(
-                    file, idx=idx, keys_idx=keys_idx, keys=keys,
-                    update_sub=update_sub, verbose=verbose,
+                    file,
+                    idx=idx,
+                    keys_idx=keys_idx,
+                    keys=keys,
+                    update_sub=update_sub,
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose,
                     rgb_to_float=rgb_to_float)
             return out
 
@@ -691,8 +794,16 @@ class Data(PyGData):
         if '_not_indexable_' in f.keys():
             _not_indexable += [s.decode("utf-8") for s in f['_not_indexable_']]
 
+        # Check whether the indexing is actually effective. If not, all
+        # indexing-related behavior can be skipped for simplicity
+        # TODO: if 'pos' is not in the saved file keys, need a backup to
+        #  infer the number of nodes
         idx = tensor_idx(idx)
-        if idx.shape[0] == 0:
+        num_nodes = f['pos'].shape[0] - 1
+        no_indexing_required = idx is None or is_arange(idx, num_nodes)
+
+        if no_indexing_required:
+            idx = None
             keys_idx = []
         elif keys_idx is None:
             keys_idx = list(set(f.keys()) - set(_not_indexable))
@@ -714,8 +825,7 @@ class Data(PyGData):
         # rather than a simple Data object
         has_slice_and_inc = '_slice_dict' in f.keys() and '_inc_dict' in f.keys()
         has_batch = 'batch' in f.keys()
-        has_no_indexing = idx is None or idx.shape[0] == 0
-        if (has_slice_and_inc or has_batch) and has_no_indexing:
+        if (has_slice_and_inc or has_batch) and no_indexing_required:
             cls = Batch
         else:
             cls = Data
@@ -736,16 +846,17 @@ class Data(PyGData):
                 continue
             if k in ['_slice_dict', '_inc_dict']:
                 if cls == Batch:
-                    d_dict[k] = load_tensor_dict(f[k])
+                    d_dict[k] = load_tensor_dict(
+                        f[k], non_fp_to_long=non_fp_to_long)
                 continue
             if k == '_num_graphs':
                 if cls == Batch:
                     d_dict[k] = f['_num_graphs'][0]
                 continue
             if k in keys_idx:
-                d_dict[k] = load_tensor(f[k], idx=idx)
+                d_dict[k] = load_tensor(f[k], idx=idx, non_fp_to_long=non_fp_to_long)
             elif k in keys:
-                d_dict[k] = load_tensor(f[k])
+                d_dict[k] = load_tensor(f[k], non_fp_to_long=non_fp_to_long)
             if verbose and k in d_dict.keys():
                 print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
 
@@ -761,19 +872,24 @@ class Data(PyGData):
 
         # Update the 'keys_idx' with newly-found 'csr_keys',
         # 'cluster_keys', and 'instance_data_keys'
-        if idx.shape[0] != 0:
-            keys_idx = list(set(keys_idx).union(set(csr_keys)))
-            keys_idx = list(set(keys_idx).union(set(cluster_keys)))
-            keys_idx = list(set(keys_idx).union(set(instance_data_keys)))
+        if not no_indexing_required:
+            keys_idx = list(set(
+                keys_idx + csr_keys + cluster_keys + instance_data_keys))
 
         # Special key '_csr_' holds data saved in CSR format
         for k in csr_keys:
             start = time()
             if k in keys_idx:
                 d_dict[k] = load_csr_to_dense(
-                    f['_csr_'][k], idx=idx, verbose=verbose)
+                    f['_csr_'][k],
+                    idx=idx,
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose)
             elif k in keys:
-                d_dict[k] = load_csr_to_dense(f['_csr_'][k], verbose=verbose)
+                d_dict[k] = load_csr_to_dense(
+                    f['_csr_'][k],
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose)
             if verbose and k in d_dict.keys():
                 print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
 
@@ -782,11 +898,16 @@ class Data(PyGData):
             start = time()
             if k in keys_idx:
                 d_dict[k] = Cluster.load(
-                    f['_cluster_'][k], idx=idx, update_sub=update_sub,
+                    f['_cluster_'][k],
+                    idx=idx,
+                    update_sub=update_sub,
+                    non_fp_to_long=non_fp_to_long,
                     verbose=verbose)[0]
             elif k in keys:
                 d_dict[k] = Cluster.load(
-                    f['_cluster_'][k], update_sub=update_sub,
+                    f['_cluster_'][k],
+                    update_sub=update_sub,
+                    non_fp_to_long=non_fp_to_long,
                     verbose=verbose)[0]
             if verbose and k in d_dict.keys():
                 print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
@@ -796,10 +917,15 @@ class Data(PyGData):
             start = time()
             if k in keys_idx:
                 d_dict[k] = InstanceData.load(
-                    f['_instance_data_'][k], idx=idx, verbose=verbose)
+                    f['_instance_data_'][k],
+                    idx=idx,
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose)
             elif k in keys:
                 d_dict[k] = InstanceData.load(
-                    f['_instance_data_'][k], verbose=verbose)
+                    f['_instance_data_'][k],
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose)
             if verbose and k in d_dict.keys():
                 print(f'{cls.__name__}.load {k:<22}: {time() - start:0.5f}s')
 
@@ -968,6 +1094,52 @@ class Data(PyGData):
         from src.visualization import show
         return show(self, **kwargs)
 
+    def add_keys_to(
+            self,
+            keys: List[str],
+            to: str = 'x',
+            strict: bool = True,
+            delete_after: bool = False
+    ) -> None:
+        """Add node features to the Data object."""
+        if keys is None or len(keys) == 0:
+            return
+        
+        previous_feat = getattr(self, to, None)
+        
+        # Initialize the list that will contain all the keys to be concatenated
+        if previous_feat is not None:
+            feat_list = [previous_feat]
+        else:
+            feat_list = []
+        
+        # Loop on the keys to add
+        for key in keys:
+            # Skip if the attribute is None
+            feat = getattr(self, key, None)
+            if feat is None:
+                if strict:
+                    raise Exception(f"Data should contain the attribute '{key}'")
+                else:
+                    continue
+            if delete_after:
+                delattr(self, key)
+            
+            if previous_feat is None:
+                if strict and self.num_nodes != feat.shape[0]:
+                    raise Exception(f"Data should contain the attribute '{to}'")
+            elif previous_feat.shape[0] != feat.shape[0]: # Make sure shapes match
+                raise Exception(
+                    f"The tensors '{to}' and '{key}' can't be concatenated, "
+                    f"'{to}': {previous_feat.shape[0]}, '{key}': {feat.shape[0]}")
+            
+            if feat.dim() == 1:
+                feat = feat.unsqueeze(-1)
+
+            feat_list.append(feat)
+
+        setattr(self, to, torch.cat(feat_list, dim=1))
+
 
 class Batch(PyGBatch, Data):
     """Inherit from torch_geometric.Batch with extensions tailored to
@@ -1019,8 +1191,41 @@ class Batch(PyGBatch, Data):
                     data_list[i].edge_index = edge_index
                     data_list[i].edge_attr = edge_attr
 
-            # PyG way of batching does not recognize some local classes such
-            # as Cluster and CSRData, so it will accumulate them in lists
+            # PyG's collate() mechanism will increment tensors for which
+            # self.__inc__() is not None. Yet, in our pipeline, it is
+            # possible that some of these tensors are stored in such a
+            # dtype that this operation would cause an overflow. To
+            # avoid this, we cast these tensors to a bigger dtype before
+            # PyG's collate
+            for k, v in data_list[0].to_dict().items():
+                inc = data_list[0].__inc__(k, getattr(data_list[0], k, None))
+                if inc is None or inc == 0:
+                    continue
+                if not isinstance(v, torch.Tensor):
+                    continue
+                dtype = torch.float if v.is_floating_point() else torch.long
+                for d in data_list:
+                    d[k] = d[k].to(dtype)
+
+            # PyG's collate() (and torch's default_collate()) mechanism
+            # will concatenate tensors based on the dtype of the first
+            # element of the list, when `num_workers > 0`. For this
+            # specific reason, we need to uniformize all tensors to the
+            # same largest dtype when needed before PyG's collate
+            for k, v in data_list[0].to_dict().items():
+                if torch.utils.data.get_worker_info() is None:
+                    continue
+                if not isinstance(v, torch.Tensor):
+                    continue
+                # Find the appropriate dtype for the concatenation of
+                # all the tensors and cast all tensors to the same one
+                dtype = torch.stack([d[k].view(-1)[0] for d in data_list]).dtype
+                for d in data_list:
+                    d[k] = d[k].to(dtype)
+
+            # PyG way of batching does not recognize some local classes
+            # such as Cluster and CSRData, so it will accumulate them in
+            # lists
             batch = super().from_data_list(
                 data_list, follow_batch=follow_batch, exclude_keys=exclude_keys)
 
@@ -1048,7 +1253,7 @@ class Batch(PyGBatch, Data):
         return [
             self.get_example(i, strict=strict) for i in range(self.num_graphs)]
 
-    def get_example(self, idx: int, strict: bool = False) -> List['Data']:
+    def get_example(self, idx: int, strict: bool = False) -> 'Data':
         """Overwrite torch_geometric get_example to be able to handle
         Cluster and InstanceData objects batching.
         """
@@ -1116,7 +1321,7 @@ class Batch(PyGBatch, Data):
         slice_edge_keys = slice_keys.intersection(all_edge_keys)
         slice_node_csr_keys = slice_keys.intersection(all_node_csr_keys)
         slice_other_keys = slice_keys.intersection(all_other_keys)
-        special_keys = set(['_num_graphs', 'ptr', 'batch'])
+        special_keys = {'_num_graphs', 'ptr', 'batch'}
         missing_keys = all_keys - slice_keys - special_keys
         missing_node_keys = missing_keys.intersection(all_node_keys)
         missing_edge_keys = missing_keys.intersection(all_edge_keys)
@@ -1262,12 +1467,30 @@ class Batch(PyGBatch, Data):
             ptr = self._slice_dict[ref_k]
             self[k].__sizes__ = ptr[1:] - ptr[:-1]
 
+    def to_dict(self):
+        """Return a dictionary of objects contained in self in view of
+        serialization.
+
+        Extends `Data.to_dict()` to also handle the `Batch`-specific
+        items.
+
+        This is typically used by the `to_flat_tensor` utility function
+        for converting complex objects into dictionaries of flattened
+        Tensors.
+        """
+        item_dict = super().to_dict()
+        for key in ['_slice_dict', '_inc_dict', '_num_graphs']:
+            if hasattr(self, key):
+                item_dict[key] = getattr(self, key)
+        return item_dict
+
     def save(
             self,
             f: Union[h5py.File, h5py.Group],
             y_to_csr: bool = True,
             pos_dtype: torch.dtype = torch.float,
-            fp_dtype: torch.dtype = torch.float):
+            fp_dtype: torch.dtype = torch.float,
+            rgb_to_byte: bool = True):
         """Save Batch to HDF5 file.
 
         :param f: h5 file path of h5py.File or h5py.Group
@@ -1290,7 +1513,8 @@ class Batch(PyGBatch, Data):
                     file,
                     y_to_csr=y_to_csr,
                     pos_dtype=pos_dtype,
-                    fp_dtype=fp_dtype)
+                    fp_dtype=fp_dtype,
+                    rgb_to_byte=rgb_to_byte)
             return
 
         assert isinstance(f, (h5py.File, h5py.Group))
@@ -1301,7 +1525,8 @@ class Batch(PyGBatch, Data):
             f,
             y_to_csr=y_to_csr,
             pos_dtype=pos_dtype,
-            fp_dtype=fp_dtype)
+            fp_dtype=fp_dtype,
+            rgb_to_byte=rgb_to_byte)
 
         # Need to additionally save attributes allowing to maintain
         # the batching mechanism throughout serialization
@@ -1319,3 +1544,94 @@ class Batch(PyGBatch, Data):
         See Data.load()
         """
         return Data.load(*args, **kwargs)
+
+    def equal(self, other: Any) -> bool:
+        """If `self` has the same content as `other`. False otherwise.
+
+        This differs from `self == other` in the sense that these may be
+        two different instances of the same class, but with comparable
+        attributes.
+        """
+        if not super().equal(other):
+            return False
+
+        # Need to additionally check attributes allowing to maintain
+        # the batching mechanism
+        keys = ['_slice_dict', '_inc_dict', '_num_graphs']
+        for key in keys:
+            attr_1 = getattr(self, key, None)
+            attr_2 = getattr(other, key, None)
+
+            # Check whether one of the structures is None
+            if (attr_1 is None) != (attr_2 is None):
+                if src.is_debug_enabled():
+                    print(f"{self.__class__.__name__}.equal: {key} differ")
+                return False
+
+            # If the attributes are dictionary-like, recover the set of
+            # keys
+            try:
+                keys_set = {*attr_1.keys(), *attr_1.keys()}
+            except:  # noqa
+                keys_set = None
+
+            if keys_set is None:
+                if attr_1 == attr_2:
+                    continue
+                if src.is_debug_enabled():
+                    print(f"{self.__class__.__name__}.equal: {key} differ")
+                return False
+
+            for k in keys_set:
+                v_1 = attr_1.get(k, None)
+                v_2 = attr_2.get(k, None)
+                msg = f"{self.__class__.__name__}.equal: {key}[{k}] differ"
+
+                if (v_1 is None) and (v_2 is None):
+                    continue
+
+                if type(v_1) != type(v_2):
+                    if src.is_debug_enabled():
+                        print(msg)
+                    return False
+
+                if isinstance(v_1, torch.Tensor):
+                    if torch.equal(v_1, v_2):
+                        continue
+                    if src.is_debug_enabled():
+                        print(msg)
+                    return False
+
+                if isinstance(v_1, np.ndarray):
+                    if np.array_equal(v_1, v_2):
+                        continue
+                    if src.is_debug_enabled():
+                        print(msg)
+                    return False
+
+                if v_1 != v_2:
+                    if src.is_debug_enabled():
+                        print(msg)
+                    return False
+
+        return True
+
+    def clone(self):
+        """Make a copy of a Batch object.
+
+        By default, `Data.clone()` is inherited from PyGData, but
+        ignores `Batch`-specific attributes, such as `_slice_dict`,
+        `_inc_dict`, and `_num_graphs`.
+        """
+        out = super().clone()
+
+        # Need to additionally save attributes allowing to maintain
+        # the batching mechanism throughout serialization
+        keys = ['_slice_dict', '_inc_dict', '_num_graphs']
+        for key in keys:
+            attr = getattr(self, key, None)
+            if attr is None:
+                continue
+            setattr(out, key, copy.deepcopy(attr))
+
+        return out

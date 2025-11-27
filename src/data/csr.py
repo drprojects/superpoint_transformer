@@ -1,13 +1,27 @@
-import copy
 import h5py
 import torch
 import numpy as np
 from time import time
-from typing import List, Tuple, Union, Any
+from typing import (
+    List,
+    Tuple,
+    Dict,
+    Union,
+    Any)
 
 import src
-from src.utils import tensor_idx, is_sorted, indices_to_pointers, \
-    sizes_to_pointers, fast_repeat, save_tensor, load_tensor
+from src.data.tensor_holder import TensorHolderMixIn
+from src.utils import (
+    tensor_idx,
+    is_arange,
+    is_sorted,
+    indices_to_pointers,
+    sizes_to_pointers,
+    fast_repeat,
+    save_tensor,
+    load_tensor,
+    from_flat_tensor,
+    check_incremental_keys)
 
 
 __all__ = ['CSRData', 'CSRBatch']
@@ -30,7 +44,8 @@ __all__ = ['CSRData', 'CSRBatch']
 #  fancy indexing, and concatenation. BUT, although feasible, some
 #  basic elementwise operations on the values like addition or
 #  multiplication requires non-trivial syntax
-class CSRData:
+
+class CSRData(TensorHolderMixIn):
     """Implements the CSRData format and associated mechanisms in Torch.
 
     When defining a subclass A of CSRData, it is recommended to create
@@ -40,9 +55,9 @@ class CSRData:
         - A.get_batch_class() returns ABatch
     """
 
-    __value_serialization_keys__ = None
-    __pointer_serialization_key__ = 'pointers'
-    __is_index_value_serialization_key__ = 'is_index_value'
+    _pointer_serialization_key = 'pointers'
+    _iiv_serialization_key = 'is_index_value'
+    _value_serialization_prefix = 'value_'
 
     def __init__(
             self,
@@ -73,25 +88,15 @@ class CSRData:
             self.pointers = pointers
         self.values = [*args] if len(args) > 0 else None
         if is_index_value is None or is_index_value == []:
-            self.is_index_value = torch.zeros(self.num_values, dtype=torch.bool)
+            self.is_index_value = torch.zeros(
+                self.num_values, dtype=torch.bool, device=pointers.device)
         else:
-            self.is_index_value = torch.BoolTensor(is_index_value)
+            self.is_index_value = torch.as_tensor(
+                is_index_value, dtype=torch.bool, device=pointers.device)
         if src.is_debug_enabled():
             self.debug()
 
     def debug(self):
-        if self.pointer_key in self.value_keys:
-            raise ValueError(
-                f"Cannot serialize {self.__class__.__name__} object because"
-                f"'{self.pointer_key}' is both in `self.pointer_key` and "
-                f"`self.value_keys`.")
-
-        if len(self.value_keys) != self.num_values:
-            raise ValueError(
-                f"Cannot serialize {self.__class__.__name__} object because"
-                f"`self.value_keys` has length {len(self.value_keys)} but "
-                f"`self.num_values` is {self.num_values}.")
-
         # assert self.num_groups >= 1, \
         #     "pointer indices must cover at least one group."
         assert self.pointers[0] == 0, \
@@ -111,8 +116,9 @@ class CSRData:
                     v.debug()
 
         if self.values is not None and self.is_index_value is not None:
-            assert isinstance(self.is_index_value, torch.BoolTensor), \
-                "is_index_value must be a torch.BoolTensor."
+            assert (isinstance(self.is_index_value, torch.Tensor)
+                    and self.is_index_value.dtype == torch.bool), \
+                "is_index_value must be a tensor of booleans."
             assert self.is_index_value.dtype == torch.bool, \
                 "is_index_value must be an tensor of booleans."
             assert self.is_index_value.ndim == 1, \
@@ -120,31 +126,101 @@ class CSRData:
             assert self.is_index_value.shape[0] == self.num_values, \
                 "is_index_value size must match the number of value tensors."
 
-    def detach(self) -> 'CSRData':
-        """Detach all tensors in the CSRData."""
-        self.pointers = self.pointers.detach()
+    def _items(self) -> Dict:
+        """Return a dictionary containing all attributes."""
+        items = {
+            self._pointer_serialization_key: self.pointers,
+            self._iiv_serialization_key: self.is_index_value}
         for i in range(self.num_values):
-            self.values[i] = self.values[i].detach()
-        return self
+            items[f'{self._value_serialization_prefix}{i}'] = self.values[i]
+        return items
 
-    def to(self, device, **kwargs) -> 'CSRData':
-        """Move the CSRData to the specified device."""
-        self.pointers = self.pointers.to(device, **kwargs)
-        for i in range(self.num_values):
-            self.values[i] = self.values[i].to(device, **kwargs)
-        return self
+    def __setattr__(self, key, value):
+        """Set values as '{_value_serialization_prefix}{i}' attributes.
+        """
+        prefix = self._value_serialization_prefix
+        if key.startswith(prefix) and key[len(prefix):].isdigit():
+            index = int(key[len(prefix):])
+            try:
+                self.values[index] = value
+                return
+            except IndexError:
+                raise AttributeError(f"No value at index {index}")
+        super().__setattr__(key, value)
 
-    def cpu(self, **kwargs) -> 'CSRData':
-        """Move the CSRData to the CPU."""
-        return self.to('cpu', **kwargs)
+    @classmethod
+    def from_flat_tensor(
+            cls,
+            tensors_dict: Dict[Any, torch.Tensor],
+            flat_dict: Dict
+    ) -> 'CSRData':
+        """Reconstruct a flattened `CSRData` object from tensors as
+        produced by `to_flat_tensor()`.
 
-    def cuda(self, **kwargs) -> 'CSRData':
-        """Move the CSRData to the first available GPU."""
-        return self.to('cuda', **kwargs)
+        :param tensors_dict: Dict[Any, Tensor]
+            Dictionary of flat 1D tensors created by the
+            `to_flat_tensor` utility function
+        :param flat_dict: Dict
+            Dictionary holding metadata for reconstructing the object
+            from `tensors_dict`
+        """
+        # Load all the items stored in the flat_dict, assuming these
+        # relate to the object at hand
+        item_dict = from_flat_tensor(tensors_dict, flat_dict)
 
-    @property
-    def device(self) -> torch.device:
-        return self.pointers.device
+        # Check expected keys are in the item_dict
+        ptr_key = cls._pointer_serialization_key
+        iiv_key = cls._iiv_serialization_key
+        assert ptr_key in item_dict.keys()
+        assert iiv_key in item_dict.keys()
+
+        prefix = cls._value_serialization_prefix
+        num_values, max_inc, all_inc_used = check_incremental_keys(
+            item_dict, prefix=prefix)
+        value_keys = [f"{prefix}{i}" for i in range(num_values)]
+        assert all_inc_used
+
+        # Instantiate the object with the restored attributes
+        csr = cls(
+            item_dict[ptr_key],
+            *[item_dict[k] for k in value_keys],
+            dense=False,
+            is_index_value=item_dict[iiv_key])
+
+        # Blindly assign any leftover attribute still in `item_dict`.
+        # This will cover, for instance, the `__sizes__` attribute used
+        # by `CSRBatch`
+        used_keys = [ptr_key, iiv_key] + value_keys
+        for key, item in item_dict.items():
+            if key in used_keys:
+                continue
+            setattr(csr, key, item)
+
+        return csr
+
+    def forget_batching(self):
+        """Change the class of the object to the base class and remove
+        any attributes characterizing batch objects.
+        """
+        return self.get_base_class()(
+            self.pointers,
+            *self.values,
+            dense=False,
+            is_index_value=self.is_index_value)
+
+    def __getattr__(self, key):
+        """Recover values as '{_value_serialization_prefix}{i}'
+        attributes.
+        """
+        prefix = self._value_serialization_prefix
+        if key.startswith(prefix) and key[len(prefix):].isdigit():
+            index = int(key[len(prefix):])
+            try:
+                return self.values[index]
+            except IndexError:
+                raise AttributeError(f"No value at index {index}")
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{key}'")
 
     @property
     def num_groups(self):
@@ -184,16 +260,6 @@ class CSRData:
         classes to use for batch collation and un-collation.
         """
         return CSRBatch
-
-    def clone(self) -> 'CSRData':
-        """Shallow copy of self. This may cause issues for certain types
-        of downstream operations, but it saves time and memory. In
-        practice, it shouldn't be problematic in this project.
-        """
-        out = copy.copy(self)
-        out.pointers = copy.copy(self.pointers)
-        out.values = copy.copy(self.values)
-        return out
 
     def reindex_groups(
             self,
@@ -248,11 +314,11 @@ class CSRData:
             num_groups = group_indices.max() + 1
 
         starts = torch.cat([
-            torch.LongTensor([-1]).to(self.device),
+            torch.tensor([-1], dtype=torch.long, device=self.device),
             group_indices.to(self.device)])
         ends = torch.cat([
             group_indices.to(self.device),
-            torch.LongTensor([num_groups]).to(self.device)])
+            torch.tensor([num_groups], dtype=torch.long, device=self.device)])
         repeats = ends - starts
         self.pointers = self.pointers.repeat_interleave(repeats)
 
@@ -298,24 +364,28 @@ class CSRData:
 
         Return a copy of self with updated pointers and values.
         """
-        idx = tensor_idx(idx).to(self.device)
+        idx = tensor_idx(idx, device=self.device)
 
-        # Shallow copy self and edit pointers and values. This
-        # preserves the class for CSRData subclasses.
-        out = self.clone()
-
-        # If idx is empty, return an empty CSRData with empty values
-        # of consistent type
-        if idx.shape[0] == 0:
-            out.pointers = torch.LongTensor([0])
-            out.values = [v[[]] for v in self.values]
+        # Check whether the indexing is actually effective. If not, all
+        # indexing-related behavior can be skipped for simplicity
+        no_indexing_required = idx is None or is_arange(idx, self.num_groups)
+        if no_indexing_required:
+            pointers = torch.zeros(1, dtype=torch.long, device=self.device)
+            values = [v[[]] for v in self.values]
+            out = self.__class__(
+                pointers,
+                *values,
+                is_index_value=self.is_index_value)
 
         else:
             # Select the pointers and prepare the values indexing
             pointers, val_idx = self.__class__.index_select_pointers(
                 self.pointers, idx)
-            out.pointers = pointers
-            out.values = [v[val_idx] for v in self.values]
+            values = [v[val_idx] for v in self.values]
+            out = self.__class__(
+                pointers,
+                *values,
+                is_index_value=self.is_index_value)
 
         if src.is_debug_enabled():
             out.debug()
@@ -325,14 +395,12 @@ class CSRData:
     def select(
             self,
             idx: Union[int, List[int], torch.Tensor, np.ndarray],
-            *args,
             **kwargs
     ) -> 'CSRData':
         """Returns a new CSRData which indexes `self` using entries
         in `idx`. Supports torch and numpy fancy indexing.
 
-        :parameter
-        idx: int or 1D torch.LongTensor or numpy.NDArray
+        :param idx: int or 1D torch.LongTensor or numpy.NDArray
             Cluster indices to select from 'self'. Must NOT contain
             duplicates
         """
@@ -349,22 +417,22 @@ class CSRData:
         info.append(f"device={self.device}")
         return f"{self.__class__.__name__}({', '.join(info)})"
 
-    def __eq__(self, other: Any) -> bool:
+    def equal(self, other: Any) -> bool:
         if not isinstance(other, self.__class__):
             if src.is_debug_enabled():
-                print(f'{self.__class__.__name__}.__eq__: classes differ')
+                print(f'{self.__class__.__name__}.equal: classes differ')
             return False
         if not torch.equal(self.pointers, other.pointers):
             if src.is_debug_enabled():
-                print(f'{self.__class__.__name__}.__eq__: pointers differ')
+                print(f'{self.__class__.__name__}.equal: pointers differ')
             return False
         if not torch.equal(self.is_index_value, other.is_index_value):
             if src.is_debug_enabled():
-                print(f'{self.__class__.__name__}.__eq__: is_index_value differ')
+                print(f'{self.__class__.__name__}.equal: is_index_value differ')
             return False
         if self.num_values != other.num_values:
             if src.is_debug_enabled():
-                print(f'{self.__class__.__name__}.__eq__: num_values differ')
+                print(f'{self.__class__.__name__}.equal: num_values differ')
             return False
         for v1, v2 in zip(self.values, other.values):
             # NB: this may be a bit strong a constraint for Cluster
@@ -375,7 +443,7 @@ class CSRData:
             # this be a bit costly...
             if not torch.equal(v1, v2):
                 if src.is_debug_enabled():
-                    print(f'{self.__class__.__name__}.__eq__: values differ')
+                    print(f'{self.__class__.__name__}.equal: values differ')
                 return False
         return True
 
@@ -384,29 +452,6 @@ class CSRData:
         """
         return hash((
             self.__class__.__name__, self.pointers, *(v for v in self.values)))
-
-    @property
-    def pointer_key(self) -> str:
-        """Key name for pointers. This will be used as labels for
-        serialization.
-        """
-        return self.__pointer_serialization_key__
-    
-    @property
-    def value_keys(self) -> List[str]:
-        """List of names for each value. These will be used as labels
-        for serialization.
-        """
-        if self.__value_serialization_keys__ is None:
-            return [str(i) for i in range(self.num_values)]
-        return self.__value_serialization_keys__
-
-    @property
-    def is_index_value_key(self) -> str:
-        """Key name for is_index_value. This will be used as labels for
-        serialization.
-        """
-        return self.__is_index_value_serialization_key__
 
     def save(
             self,
@@ -425,16 +470,24 @@ class CSRData:
                 self.save(file, fp_dtype=fp_dtype)
             return
 
-        save_tensor(self.pointers, f, self.pointer_key, fp_dtype=fp_dtype)
+        save_tensor(
+            self.pointers,
+            f,
+            self._pointer_serialization_key,
+            fp_dtype=fp_dtype)
 
-        if self.is_index_value_key is not None:
-            save_tensor(
-                self.is_index_value, f, self.is_index_value_key,
-                fp_dtype=fp_dtype)
+        save_tensor(
+            self.is_index_value,
+            f,
+            self._iiv_serialization_key,
+            fp_dtype=fp_dtype)
 
         if self.values is None:
             return
-        for k, v in zip(self.value_keys, self.values):
+        value_keys = [
+            f"{self._value_serialization_prefix}{i}"
+            for i in range(self.num_values)]
+        for k, v in zip(value_keys, self.values):
             save_tensor(v, f, k, fp_dtype=fp_dtype)
 
     @classmethod
@@ -442,7 +495,9 @@ class CSRData:
             cls,
             f: Union[str, h5py.File, h5py.Group],
             idx: Union[int, List, np.ndarray, torch.Tensor] = None,
-            verbose: bool = False
+            non_fp_to_long: bool = False,
+            verbose: bool = False,
+            **kwargs
     ) -> 'CSRData':
         """Load CSRData from an HDF5 file. See `CSRData.save`
         for writing such file. Options allow reading only part of the
@@ -452,11 +507,25 @@ class CSRData:
         :param idx: int, list, numpy.ndarray, torch.Tensor
             Used to select clusters when reading. Supports fancy
             indexing
+        :param non_fp_to_long: bool
+            By default `save_tensor()` cast all non-float tensors to the
+            smallest integer dtype before saving. This allows saving
+            memory and I/O bandwidth. Upon reading, `non_fp_to_long`
+            rules whether these should be cast back to int64 or kept in
+            this "compressed" dtype. One good reason for not doing so is
+            to accelerate data loading and device transfer. To cast the
+            tensors to int64 later on in the pipeline, use the `NAGCast`
+            and `Cast` transforms
         :param verbose: bool
         """
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
-                out = cls.load(file, idx=idx, verbose=verbose)
+                out = cls.load(
+                    file,
+                    idx=idx,
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose,
+                    **kwargs)
             return out
 
         start = time()
@@ -464,50 +533,59 @@ class CSRData:
         if verbose:
             print(f'{cls.__name__}.load tensor_idx         : {time() - start:0.5f}s')
 
+        # Check whether the indexing is actually effective. If not, all
+        # indexing-related behavior can be skipped for simplicity
+        num_groups = f[cls._pointer_serialization_key].shape[0] - 1
+        no_indexing_required = idx is None or is_arange(idx, num_groups)
+
         # Check if the file actually corresponds to a batch object
-        # rather than its corresponding base object
+        # rather than its corresponding base object. If so, load with
+        # the appropriate class
         has_sizes = '__sizes__' in f.keys()
         is_not_batch = cls != cls.get_batch_class()
-        has_no_indexing = idx is None or idx.shape[0] == 0
-        if has_sizes and is_not_batch and has_no_indexing:
-            return cls.get_batch_class().load(f, idx=idx, verbose=verbose)
+        if has_sizes and is_not_batch and no_indexing_required:
+            return cls.get_batch_class().load(
+                f,
+                idx=None,
+                non_fp_to_long=non_fp_to_long,
+                verbose=verbose,
+                **kwargs)
 
         # Check expected keys are in the file
-        pointer_key = cls.__pointer_serialization_key__
-        value_keys = cls.__value_serialization_keys__
-        value_keys = value_keys if value_keys is not None else []
-        is_index_value_key = cls.__is_index_value_serialization_key__
-        assert pointer_key in f.keys()
-        assert all(k in f.keys() for k in value_keys)
-        assert is_index_value_key is None or is_index_value_key in f.keys()
+        pointer_key = cls._pointer_serialization_key
+        iiv_key = cls._iiv_serialization_key
+        assert pointer_key in f.keys(),\
+            f"Expected key '{pointer_key}' but could not find it."
+        assert iiv_key in f.keys(),\
+            f"Expected key '{iiv_key}' but could not find it."
 
-        # If no value keys are provided, CSRData.save() falls back to
-        # using integers to index values. So, need to infer the number
-        # of values from the consecutive integer keys in the file
-        if len(value_keys) == 0:
-            num_values = 0
-            while str(num_values) in f.keys():
-                num_values += 1
-            value_keys = [str(i) for i in range(num_values)]
+        prefix = cls._value_serialization_prefix
+        num_values, max_inc, all_inc_used = check_incremental_keys(
+            f, prefix=prefix)
+        value_keys = [f"{prefix}{i}" for i in range(num_values)]
+        assert all_inc_used
 
-        if idx is None or idx.shape[0] == 0:
+        # If slicing is not needed
+        if no_indexing_required:
             start = time()
-            pointers = load_tensor(f[pointer_key])
-            values = [load_tensor(f[k]) for k in value_keys]
+            pointers = load_tensor(
+                f[pointer_key], non_fp_to_long=non_fp_to_long)
+            values = [
+                load_tensor(f[k], non_fp_to_long=non_fp_to_long)
+                for k in value_keys]
             if verbose:
                 print(f'{cls.__name__}.load read all           : {time() - start:0.5f}s')
             start = time()
             out = cls(pointers, *values)
-            if is_index_value_key is not None:
-                out.is_index_value = load_tensor(f[is_index_value_key]).bool()
+            out.is_index_value = load_tensor(f[iiv_key]).bool()
             if verbose:
                 print(f'{cls.__name__}.load init               : {time() - start:0.5f}s')
             return out
 
         # Read only pointers start and end indices based on idx
         start = time()
-        ptr_start = load_tensor(f[pointer_key], idx=idx)
-        ptr_end = load_tensor(f[pointer_key], idx=idx + 1)
+        ptr_start = load_tensor(f[pointer_key], idx=idx, non_fp_to_long=True)
+        ptr_end = load_tensor(f[pointer_key], idx=idx + 1, non_fp_to_long=True)
         if verbose:
             print(f'{cls.__name__}.load read ptr       : {time() - start:0.5f}s')
 
@@ -534,15 +612,19 @@ class CSRData:
 
         # Read the values now we have computed the val_idx
         start = time()
-        values = [load_tensor(f[k], idx=val_idx) for k in value_keys]
+        values = [
+            load_tensor(
+                f[k],
+                idx=val_idx,
+                non_fp_to_long=non_fp_to_long)
+            for k in value_keys]
         if verbose:
             print(f'{cls.__name__}.load read values    : {time() - start:0.5f}s')
 
         # Build the CSRData object
         start = time()
         out = cls(pointers, *values)
-        if is_index_value_key is not None:
-            out.is_index_value = load_tensor(f[is_index_value_key]).bool()
+        out.is_index_value = load_tensor(f[iiv_key]).bool()
         if verbose:
             print(f'{cls.__name__}.load init           : {time() - start:0.5f}s')
         return out
@@ -572,6 +654,12 @@ class CSRBatch(CSRData):
             pointers, *args, dense=dense, is_index_value=is_index_value)
         self.__sizes__ = None
 
+    def _items(self) -> Dict:
+        """Return a dictionary containing all attributes."""
+        items = super()._items()
+        items['__sizes__'] = self.__sizes__
+        return items
+
     @property
     def batch_pointers(self) -> torch.Tensor:
         return sizes_to_pointers(self.__sizes__) if self.__sizes__ is not None \
@@ -585,26 +673,12 @@ class CSRBatch(CSRData):
     def num_batch_items(self):
         return len(self.__sizes__) if self.__sizes__ is not None else 0
 
-    def detach(self) -> 'CSRBatch':
-        """Detach all tensors in the CSRBatch."""
-        self = super().detach()
-        self.__sizes__ = self.__sizes__.detach() if self.__sizes__ is not None \
-            else None
-        return self
-
-    def to(self, device, **kwargs) -> 'CSRBatch':
-        """Move the CSRBatch to the specified device."""
-        out = super().to(device, **kwargs)
-        out.__sizes__ = self.__sizes__.to(device, **kwargs) \
-            if self.__sizes__ is not None else None
-        return out
-
     @classmethod
     def from_list(cls, csr_list: List['CSRData']) -> 'CSRBatch':
         assert isinstance(csr_list, list) and len(csr_list) > 0
         assert isinstance(csr_list[0], CSRData), \
             "All provided items must be CSRData objects."
-        csr_cls = type(csr_list[0])
+        csr_cls = type(csr_list[0]).get_base_class()
         assert all([isinstance(csr, csr_cls) for csr in csr_list]), \
             "All provided items must have the same class."
         device = csr_list[0].device
@@ -616,7 +690,7 @@ class CSRBatch(CSRData):
         is_index_value = csr_list[0].is_index_value
         if is_index_value is not None:
             assert all([
-                np.array_equal(csr.is_index_value, is_index_value)
+                torch.equal(csr.is_index_value, is_index_value)
                 for csr in csr_list]), \
                 "All provided items must have the same is_index_value."
         else:
@@ -629,13 +703,17 @@ class CSRBatch(CSRData):
         # Offsets are used to stack pointer indices and values
         # identified as "index" value by `is_index_value` without
         # losing the indexing information they carry.
-        offsets = torch.cumsum(torch.LongTensor(
-            [0] + [csr.num_items for csr in csr_list[:-1]]), dim=0).to(device)
+        offsets = torch.cumsum(
+            torch.tensor(
+                [0] + [csr.num_items for csr in csr_list[:-1]],
+                dtype=torch.long,
+                device=device),
+            dim=0)
 
         # Stack pointers
         pointers = torch.cat((
-            torch.LongTensor([0]).to(device),
-            *[csr.pointers[1:] + offset
+            torch.tensor([0], dtype=torch.long, device=device),
+            *[csr.pointers[1:].long() + offset
               for csr, offset in zip(csr_list, offsets)]), dim=0)
 
         # Stack values
@@ -648,14 +726,20 @@ class CSRBatch(CSRData):
                 # "Index" values are stacked with updated indices.
                 # For Clusters, this implies all point indices are
                 # assumed to be present in the Cluster.points. There can
-                # be no point with no cluster
-                offsets = torch.LongTensor(
+                # be no point with no cluster.
+                # It may be that the value is currently stored in a
+                # dtype that would overflow when incrementing values for
+                # collation. To this end, we explicitly cast to int64
+                # when sensitive
+                offsets = torch.tensor(
                     [0] + [
-                        v.max() + 1 if v.shape[0] > 0 else 0
-                        for v in val_list[:-1]])
-                cum_offsets = torch.cumsum(offsets, dim=0).to(device)
+                        v.max().long() + 1 if v.shape[0] > 0 else 0
+                        for v in val_list[:-1]],
+                    dtype=torch.long,
+                    device=device)
+                cum_offsets = torch.cumsum(offsets, dim=0)
                 val = torch.cat([
-                    v + o for v, o in zip(val_list, cum_offsets)], dim=0)
+                    v.long() + o for v, o in zip(val_list, cum_offsets)], dim=0)
             else:
                 val = torch.cat(val_list, dim=0)
             values.append(val)
@@ -665,7 +749,10 @@ class CSRBatch(CSRData):
         # may define their own batch class inheriting from CSRBatch.
         batch = csr_list[0].get_batch_class()(
             pointers, *values, dense=False, is_index_value=is_index_value)
-        batch.__sizes__ = torch.LongTensor([csr.num_groups for csr in csr_list])
+        batch.__sizes__ = torch.tensor(
+            [csr.num_groups for csr in csr_list],
+            dtype=torch.long,
+            device=device)
 
         return batch
 
@@ -736,11 +823,9 @@ class CSRBatch(CSRData):
                     'num_batch_items', 'num_groups', 'num_items', 'device']]
         return f"{self.__class__.__name__}({', '.join(info)})"
 
-    def select(
+    def __getitem__(
             self,
-            idx: Union[int, List[int], torch.Tensor, np.ndarray],
-            *args,
-            **kwargs
+            idx: Union[int, List[int], torch.Tensor, np.ndarray]
     ) -> 'CSRData':
         """Indexing CSRBatch format. Supports Numpy and torch indexing
         mechanisms.
@@ -749,19 +834,12 @@ class CSRBatch(CSRData):
         object with updated pointers and values.
         """
         # Default indexing will return a CSRBatch object
-        out_batch = super().select(idx, *args, **kwargs)
+        out_batch = super().__getitem__(idx)
 
         # Convert to a base object, since batching mechanism is lost
         # after indexing. For this, we populate an object of the proper
         # class, initialized with fake data
-        out = self.get_base_class()(
-            torch.arange(1),
-            *[torch.empty(0, dtype=v.dtype) for v in self.values])
-        out.pointers = out_batch.pointers
-        out.values = out_batch.values
-        out.is_index_value = out_batch.is_index_value
-
-        return out
+        return out_batch.forget_batching()
 
     def save(
             self,
@@ -792,7 +870,9 @@ class CSRBatch(CSRData):
             cls,
             f: Union[str, h5py.File, h5py.Group],
             idx: Union[int, List, np.ndarray, torch.Tensor] = None,
-            verbose: bool = False
+            non_fp_to_long: bool = False,
+            verbose: bool = False,
+            **kwargs
     ) -> Union['CSRBatch', 'CSRData']:
         """Load CSRBatch from an HDF5 file. See `CSRData.save`
         for writing such file. Options allow reading only part of the
@@ -802,26 +882,54 @@ class CSRBatch(CSRData):
         :param idx: int, list, numpy.ndarray, torch.Tensor
             Used to select clusters when reading. Supports fancy
             indexing
+        :param non_fp_to_long: bool
+            By default `save_tensor()` cast all non-float tensors to the
+            smallest integer dtype before saving. This allows saving
+            memory and I/O bandwidth. Upon reading, `non_fp_to_long`
+            rules whether these should be cast back to int64 or kept in
+            this "compressed" dtype. One good reason for not doing so is
+            to accelerate data loading and device transfer. To cast the
+            tensors to int64 later on in the pipeline, use the `NAGCast`
+            and `Cast` transforms
         :param verbose: bool
         """
         # Indexing breaks batching, so we return a base object if
         # indexing is required
         idx = tensor_idx(idx)
-        if idx is not None and idx.shape[0] != 0:
-            return cls.get_base_class().load(f, idx=idx, verbose=verbose)
+        if idx is not None:
+            return cls.get_base_class().load(
+                f,
+                idx=idx,
+                non_fp_to_long=non_fp_to_long,
+                verbose=verbose,
+                **kwargs)
 
         if not isinstance(f, (h5py.File, h5py.Group)):
             with h5py.File(f, 'r') as file:
-                out = cls.load(file, idx=idx, verbose=verbose)
+                out = cls.load(
+                    file,
+                    non_fp_to_long=non_fp_to_long,
+                    verbose=verbose,
+                    **kwargs)
             return out
 
         # Check if the file actually corresponds to a batch object
         # rather than its corresponding base object
         if '__sizes__' not in f.keys():
-            return cls.get_base_class().load(f, idx=idx, verbose=verbose)
+            return cls.get_base_class().load(
+                f,
+                non_fp_to_long=non_fp_to_long,
+                verbose=verbose,
+                **kwargs)
 
         # Load all attributes like the parent class, and also load
         # attributes necessary for batching
-        out = super().load(f, idx=idx, verbose=verbose)
-        out.__sizes__ = load_tensor(f['__sizes__'])
+        out = super().load(
+            f,
+            non_fp_to_long=non_fp_to_long,
+            verbose=verbose,
+            **kwargs)
+        out.__sizes__ = load_tensor(
+            f['__sizes__'],
+            non_fp_to_long=non_fp_to_long)
         return out

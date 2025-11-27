@@ -9,4 +9,11 @@ instance: True
 
 # Instance graph parameters
 instance_k_max: 20  # maximum number of neighbors for each superpoint in the instance graph
-instance_radius: 0.1  # maximum distance of neighbors for each superpoint in the instance graph
+
+# The `instance_radius` parameter was modified due to the new adjacency mode (`radius-centroid`) 
+# used for constructing the instance graph with `nano` models. 
+# Previously set to `radius-atomic`, this is no longer possible as atomic-level data is no longer loaded in `nano` models.
+# NOTE: The current value has not been optimized experimentally. 
+# TODO: Optimize `instance_radius` and construct the instance graph based on both centroid position 
+#       and cluster size.
+instance_radius: 0.25  # maximum distance of neighbors for each superpoint in the instance graph

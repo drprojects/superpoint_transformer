@@ -1,0 +1,354 @@
+# @package datamodule
+
+pos_jitter: 0.05
+
+# Parameters of the pretrained CNN.
+#
+# This CNN has been optimized to get low-dimensional point
+# embeddings tailored for detecting semantic transitions.
+# Use `python src/train.py experiment=partition/<dataset>.yaml`
+# to train the CNN and fill the `pretrained_cnn_ckpt_path` field.
+#
+# The pretrained CNN is used twice:
+# - to compute the point features on which the partition is computed,
+# - to initialize the CNN in the first stage of the model when learning the semantic.
+pretrained_cnn_ckpt_path: ???
+pretrained_cnn_dim_without_in_dim: ???
+pretrained_cnn_dim: ${eval:'[${datamodule.num_hf_partition}] + ${datamodule.pretrained_cnn_dim_without_in_dim}'}
+pretrained_cnn_kernel_size: ???
+pretrained_cnn_dilation: 1
+pretrained_cnn_norm:
+  _target_: src.nn.GraphNorm
+  _partial_: True
+pretrained_cnn_activation:
+  _target_: torch.nn.LeakyReLU
+
+# If there is a CNN in the first stage, the `post_cnn_point_hf` features are concatenated to the CNN 
+# features and then processed by the rest (MLP) of the first stage. 
+post_cnn_point_hf: [] # No features by default. See the `<dataset>_ezsp.yaml` for specific configurations.
+post_cnn_point_hf_dim: ${eval:'sum([ ${datamodule.feat_size}[k] for k in ${datamodule.post_cnn_point_hf} ])'}
+
+# Preprocessing
+pre_transform:
+    - transform: DataTo
+      params:
+        device: 'cuda'
+    - transform: SaveNodeIndex
+      params:
+        key: 'sub'
+    - transform: GridSampling3D  # might OOM on CUDA if voxel and GPU memory too small
+      params:
+        size: ${datamodule.voxel}
+        quantize_coords: ${datamodule.quantize_coords} # These quantized coordinates won't be used for training, but for val
+        hist_key: 'y'
+        hist_size: ${eval:'${datamodule.num_classes} + 1'}
+        chunk_size: 10000000  # reduce if OOM on CUDA for small GPU
+    # Sets correctly colorattribute (rgb, hsv, lab)
+    - transform: PointFeatures
+      params:
+        keys: ${datamodule.point_hf_preprocess}
+        overwrite: ${datamodule.point_hf_overwrite}
+    - transform: GroundElevation
+      params:
+        model: ${datamodule.ground_model}
+        z_threshold: ${datamodule.ground_threshold}
+        xy_grid: ${datamodule.ground_xy_grid}
+        scale: ${datamodule.ground_scale}
+    - transform: KNN
+      params:
+        k: ${datamodule.contour_prior_knn}
+        r_max: ${datamodule.contour_prior_knn_r}
+        verbose: False
+    - transform: AdjacencyGraph
+      params:
+        k: ${datamodule.contour_prior_knn}
+        w: -1
+
+    - transform: PretrainedCNN
+      params:
+        ckpt_path: ${datamodule.pretrained_cnn_ckpt_path}
+        partition_hf: ${datamodule.partition_hf}
+        first_stage:
+          _target_: src.nn.stage.PointStage
+          in_mlp: null
+          use_pos: False
+          use_diameter_parent: False
+          cnn_blocks: True
+          cnn: ${datamodule.pretrained_cnn_dim}
+          cnn_kernel_size: ${datamodule.pretrained_cnn_kernel_size}
+          cnn_dilation: ${datamodule.pretrained_cnn_dilation}
+          cnn_norm: ${datamodule.pretrained_cnn_norm}
+          cnn_activation: ${datamodule.pretrained_cnn_activation}
+          
+          cnn_residual: False
+          cnn_global_residual: False
+
+        device: 'cuda'
+
+    # The same transform `GreedyContourPriorPartition`is defined in `partition.default.yaml` 
+    # when evaluating the partition during the pretraining of the CNN.
+    - transform: GreedyContourPriorPartition 
+      params:
+        reg: ${datamodule.contour_prior_reg}
+        min_size: ${datamodule.contour_prior_min_size}
+        edge_weight_mode: ${datamodule.contour_prior_edge_weight_mode}
+        edge_reduce: ${datamodule.contour_prior_edge_reduce}
+        k: ${datamodule.contour_prior_k_isolated}
+        w_adjacency: 0.0
+        max_iterations: -1
+        verbose: ${datamodule.contour_prior_verbose}
+        sharding: ${datamodule.contour_prior_sharding}
+
+    - transform: NAGRemoveKeys  # remove 'x' used for partition (features are still preserved under their respective Data attributes)
+      params:
+        level: 'all'
+        keys: 'x'
+
+    - transform: SegmentFeatures
+      params:
+        n_min: 32
+        n_max: 128
+        keys: ${datamodule.segment_base_hf_preprocess}
+        mean_keys: ${datamodule.segment_mean_hf_preprocess}
+        std_keys: ${datamodule.segment_std_hf_preprocess}
+        strict: False  # will not raise error if a mean or std key is missing
+    - transform: RadiusHorizontalGraph
+      params:
+        k_min: ${datamodule.graph_k_min}
+        k_max: ${datamodule.graph_k_max}
+        gap: ${datamodule.graph_gap}
+        se_ratio: ${datamodule.graph_se_ratio}
+        se_min: ${datamodule.graph_se_min}
+        cycles: ${datamodule.graph_cycles}
+        margin: ${datamodule.graph_margin}
+        chunk_size: ${datamodule.graph_chunk}
+        halfspace_filter: True
+        bbox_filter: True
+        target_pc_flip: True
+        source_pc_sort: False
+        keys: ['mean_off', 'std_off', 'mean_dist' ]
+
+on_device_train_transform:
+
+    # Cast all attributes to either float or long. Doing this only now
+    # allows speeding up disk I/O and CPU->GPU transfer
+    - transform: NAGCast
+
+    # Add a `node_size` attribute to all segments, this is needed for
+    # segment-wise position normalization with UnitSphereNorm
+    - transform: NodeSize
+      params:
+        low: 0
+
+    # Apply sampling transforms first to reduce the number of nodes and
+    # edges. These operations are compute-intensive and are the reason
+    # why these transforms are not performed on CPU
+    - transform: SampleSubNodes
+      params: 
+        low: 0
+        high: ${eval:'0 if ${datamodule.nano} else 1'} #i.e.: skip the transform if nano
+        n_min: ${datamodule.sample_point_min}
+        n_max: ${datamodule.sample_point_max}
+    - transform: SampleRadiusSubgraphs
+      params:
+        r: ${datamodule.sample_graph_r}
+        k: ${datamodule.sample_graph_k}
+        k_max: ${datamodule.sample_graph_max_nodes}
+        i_level: 1
+        by_size: False
+        by_class: False
+        disjoint: ${datamodule.sample_graph_disjoint}
+        cylindrical: ${datamodule.sample_graph_cylindrical}
+    - transform: SampleSegments
+      params:
+        ratio: ${datamodule.sample_segment_ratio}
+        by_size: ${datamodule.sample_segment_by_size}
+        by_class: ${datamodule.sample_segment_by_class}
+    - transform: NAGRestrictSize
+      params:
+        level: "1+"
+        num_nodes: ${datamodule.max_num_nodes}
+
+    # # Apply geometric transforms affecting position, offsets, normals
+    # # before calling transforms relying on those, such as on-the-fly
+    # # edge features computation
+    - transform: NAGJitterKey
+      params:
+        key: 'pos'
+        sigma: ${datamodule.pos_jitter}
+        trunc: ${datamodule.voxel} 
+    - transform: RandomTiltAndRotate
+      params:
+        phi: ${datamodule.tilt_n_rotate_phi}
+        theta: ${datamodule.tilt_n_rotate_theta}
+    - transform: RandomAnisotropicScale
+      params:
+        delta: ${datamodule.anisotropic_scaling}
+    - transform: RandomAxisFlip
+      params:
+        p: 0.5
+
+    # Compute some horizontal and vertical edges on-the-fly. Those are
+    # only computed now since they can be deduced from point and node
+    # attributes. Besides, the OnTheFlyHorizontalEdgeFeatures transform
+    # takes a trimmed graph as input and doubles its size, creating j->i
+    # for each input i->j edge
+    - transform: OnTheFlyHorizontalEdgeFeatures
+      params:
+        keys: ${datamodule.edge_hf}
+        use_mean_normal: ${eval:'"normal" in ${datamodule.segment_mean_hf}'}
+    - transform: OnTheFlyVerticalEdgeFeatures
+      params:
+        keys: ${datamodule.v_edge_hf}
+        use_mean_normal: ${eval:'"normal" in ${datamodule.segment_mean_hf}'}
+
+    # Edge sampling is only performed after the horizontal graph is
+    # untrimmed by OnTheFlyHorizontalEdgeFeatures
+    - transform: SampleEdges
+      params:
+        level: '1+'
+        n_min: ${datamodule.sample_edge_n_min}
+        n_max: ${datamodule.sample_edge_n_max}
+    - transform: NAGRestrictSize
+      params:
+        level: '1+'
+        num_edges: ${datamodule.max_num_edges}
+
+    # Augmentations on the node features.
+    - transform: NAGJitterKey
+      params:
+        key: ${eval:'ListConfig([k for k in ${datamodule.all_point_hf} if k != "rgb"])'}
+        sigma: ${datamodule.node_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.node_feat_jitter}'}
+    - transform: NAGDropoutColumns
+      params:
+        p: ${datamodule.node_feat_drop}
+        key: ${eval:'ListConfig([k for k in ${datamodule.all_point_hf} if k != "rgb"])'}
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: NAGDropoutRows
+      params:
+        p: ${datamodule.node_row_drop}
+        key: ${eval:'ListConfig([k for k in ${datamodule.all_point_hf} if k != "rgb"])'}
+        to_mean: ${datamodule.drop_to_mean}
+
+    - transform: NAGJitterKey
+      params:
+        key: 'edge_attr'
+        sigma: ${datamodule.h_edge_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.h_edge_feat_jitter}'}
+    - transform: NAGJitterKey
+      params:
+        key: 'v_edge_attr'
+        sigma: ${datamodule.v_edge_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.v_edge_feat_jitter}'}
+
+    - transform: NAGDropoutColumns
+      params:
+        p: ${datamodule.h_edge_feat_drop}
+        key: 'edge_attr'
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: NAGDropoutColumns
+      params:
+        p: ${datamodule.v_edge_feat_drop}
+        key: 'v_edge_attr'
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+
+    - transform: NAGDropoutRows
+      params:
+        p: ${datamodule.h_edge_row_drop}
+        key: 'edge_attr'
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: NAGDropoutRows
+      params:
+        p: ${datamodule.v_edge_row_drop}
+        key: 'v_edge_attr'
+        to_mean: ${datamodule.drop_to_mean}
+
+    # RGB-specific transforms. In particular, the color dropout will
+    # switch off all three color channels together, instead of just one
+    # by one with
+#    - transform: NAGColorNormalize
+#      params:
+#        level: 'all'
+    - transform: NAGJitterKey
+      params:
+        key: 'rgb'
+        sigma: ${datamodule.rgb_jitter}
+        trunc: ${eval:'2 * ${datamodule.rgb_jitter}'}
+    - transform: NAGColorAutoContrast
+      params:
+        p: ${datamodule.rgb_autocontrast}
+    - transform: NAGColorDrop
+      params:
+        p: ${datamodule.rgb_drop}
+
+    # Add self-loops in the horizontal graph
+    - transform: NAGAddSelfLoops
+
+    # Compute the instance graph for instantiation
+    # NB: setting `datamodule.instance: False` will skip this step
+    - transform: OnTheFlyInstanceGraph
+      params:
+        level: ${eval:'1 if ${datamodule.instance} else -1'}
+        num_classes: ${datamodule.num_classes}
+        k_max: ${datamodule.instance_k_max}
+        radius: ${datamodule.instance_radius}
+        adjacency_mode: ${eval:'"radius-centroid" if ${datamodule.nano} else "radius-atomic"'}
+
+    - transform: QuantizePointCoordinates
+      params:
+        size: ${eval:'${datamodule.voxel} if ${datamodule.quantize_coords} else -1'}
+
+# GPU-based val transforms
+on_device_val_transform:
+
+    # Cast all attributes to either float or long. Doing this only now
+    # allows speeding up disk I/O and CPU->GPU transfer
+    - transform: NAGCast
+
+    # Add a `node_size` attribute to all segments, this is needed for
+    # segment-wise position normalization with UnitSphereNorm
+    - transform: NodeSize
+      params:
+        low: 0
+
+    # Compute some horizontal and vertical edges on-the-fly. Those are
+    # only computed now since they can be deduced from point and node
+    # attributes. Besides, the OnTheFlyHorizontalEdgeFeatures transform
+    # takes a trimmed graph as input and doubles its size, creating j->i
+    # for each input i->j edge
+    - transform: OnTheFlyHorizontalEdgeFeatures
+      params:
+        keys: ${datamodule.edge_hf}
+        use_mean_normal: ${eval:'"normal" in ${datamodule.segment_mean_hf}'}
+    - transform: OnTheFlyVerticalEdgeFeatures
+      params:
+        keys: ${datamodule.v_edge_hf}
+        use_mean_normal: ${eval:'"normal" in ${datamodule.segment_mean_hf}'}
+
+    # RGB-specific transforms. In particular, the color dropout will
+    # switch off all three color channels together, instead of just one
+    # by one with
+#    - transform: NAGColorNormalize
+#      params:
+#        level: 'all'
+        
+    # Add self-loops in the horizontal graph
+    - transform: NAGAddSelfLoops
+
+    # Compute the instance graph for instantiation
+    # NB: setting `datamodule.instance: False` will skip this step
+    - transform: OnTheFlyInstanceGraph
+      params:
+        level: ${eval:'1 if ${datamodule.instance} else -1'}
+        num_classes: ${datamodule.num_classes}
+        k_max: ${datamodule.instance_k_max}
+        radius: ${datamodule.instance_radius}
+        adjacency_mode: ${eval:'"radius-centroid" if ${datamodule.nano} else "radius-atomic"'}
+
+    - transform: QuantizePointCoordinates
+      params:
+        size: ${eval:'${datamodule.voxel} if ${datamodule.quantize_coords} else -1'}

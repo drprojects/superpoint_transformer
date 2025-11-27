@@ -6,6 +6,11 @@ from src.nn.pool import pool_factory
 from src.nn.unpool import *
 from src.nn.fusion import CatFusion, fusion_factory
 
+# Optional torchsparse support
+try:
+    from torchsparse import SparseTensor
+except ImportError:
+    SparseTensor = None
 
 __all__ = ['Stage', 'DownNFuseStage', 'UpNFuseStage', 'PointStage']
 
@@ -85,6 +90,8 @@ class Stage(nn.Module):
     :param transformer_kwargs: Dict
         All remaining keyword arguments will be passed to the
         `TransformerBlock`
+    :param version_holder: VersionHolder
+        Object storing the code verison
     """
 
     def __init__(
@@ -109,10 +116,12 @@ class Stage(nn.Module):
             q_on_minus_rpe=False,
             blocks_share_rpe=False,
             heads_share_rpe=False,
+            version_holder=None,
             **transformer_kwargs):
 
         super().__init__()
 
+        self.version_holder = version_holder
         self.dim = dim
         self.num_blocks = num_blocks
         self.num_heads = num_heads
@@ -174,6 +183,7 @@ class Stage(nn.Module):
                     qk_share_rpe=qk_share_rpe,
                     q_on_minus_rpe=q_on_minus_rpe,
                     heads_share_rpe=heads_share_rpe,
+                    version_holder=self.version_holder,
                     **transformer_kwargs)
                 for k_rpe_block, q_rpe_block, k_delta_rpe_block, q_delta_rpe_block
                 in zip(k_rpe_blocks, q_rpe_blocks, k_delta_rpe_blocks, q_delta_rpe_blocks))
@@ -211,7 +221,9 @@ class Stage(nn.Module):
             node_size=None,
             super_index=None,
             edge_index=None,
-            edge_attr=None):
+            edge_attr=None,
+            *args,
+            **kwargs):
 
         # Recover info from the input
         if x is not None:
@@ -235,9 +247,9 @@ class Stage(nn.Module):
 
         # Append normalized coordinates to the node features
         if pos is not None:
-            pos, diameter_parent = self.pos_norm(pos, super_index, w=node_size)
+            normalized_pos, diameter_parent = self.pos_norm(pos, super_index, w=node_size)
             if self.use_pos:
-                x = self.feature_fusion(pos, x)
+                x = self.feature_fusion(normalized_pos, x)
         else:
             diameter_parent = None
 
@@ -314,8 +326,8 @@ class DownNFuseStage(Stage):
     :param dim: int
         Number of channels for the `TransformerBlock`
     :param pool: str, nn.Module
-        Pooling mechanism. Supports 'max', 'min', 'mean', 'sum' for
-        string arguments. See `pool_factory()` for more
+        Pooling mechanism. Supports 'max', 'min', 'mean', 'sum', and
+        'std' for string arguments. See `pool_factory()` for more
     :param fusion: str
         Fusion mechanism. Supports 'cat', 'residual', 'first', 'second'.
         See `fusion_factory()` for more
@@ -564,10 +576,33 @@ class PointStage(Stage):
     is similar to the point-wise part of PointNet, operating on Level-1
     segments. A PointStage has the following structure:
 
-         x  -- PosInjection -- in_MLP -->
-                     |       (optional)
-        pos -- UnitSphereNorm
-    (optional)
+    ┌─── Basic Structure (without CNN) ───────┐
+    │                                         │
+    │  x ──► Concatenation ──► in_MLP ──►     │
+    │           ▲           (optional)        │
+    │           │                             │
+    │  pos ──► UnitSphereNorm                 │
+    │        (optional)                       │
+    └─────────────────────────────────────────┘
+    
+    ┌─── With point_mlp_on_cnn_feats = True ────────────┐
+    │                                                   │
+    │  x ──► CNN ──────────────┐                        │
+    │                          │                        │
+    │  pos ──► UnitSphereNorm ─┼─► Concat ──► in_MLP ─► │
+    │                          │                        │
+    │  x_mlp ──────────────────┘                        │
+    └───────────────────────────────────────────────────┘
+
+    ┌─── With point_mlp_on_cnn_feats = False ────────────────────────────┐
+    │                                                                    │
+    │  x ──► CNN ──────────────────────────────────────────┐             │
+    │                                                      │             │
+    │                                                      ┼─► Concat ─► │
+    │  pos ──► UnitSphereNorm ─┐                           │             │
+    │                          │ ─► Concat ──► in_MLP ─────┘             │
+    │  x_mlp ──────────────────┘                                         │
+    └────────────────────────────────────────────────────────────────────┘
 
     :param in_mlp: List[int]
         Channels for the input MLP
@@ -577,12 +612,40 @@ class PointStage(Stage):
         Normalization function for the input and output MLPs
     :param mlp_drop: float
         Dropout rate for the last layer of the input and output MLPs
+    
     :param use_pos: bool
         Whether the node's position (normalized with `UnitSphereNorm`)
         should be concatenated to the features before `in_MLP`
     :param use_diameter_parent: bool
         Whether the node's parent diameter should be concatenated to the
         features before `in_MLP` (only if pos is passed in the forward)
+        
+    :param cnn_blocks: bool
+        Whether to use a sparse CNN before the in_MLP
+        Note that this parameter is reused in `SemanticSegmentationModule.initialize_cnn()`
+        to trigger the initialization of the CNN.
+    :param cnn: List[int]
+        List of channels for the sparse CNN
+    :param cnn_kernel_size: int
+        Kernel size for the sparse CNN
+    :param cnn_dilation: int
+        Dilation for the sparse CNN
+    :param cnn_norm: nn.Module
+        Normalization function for the sparse CNN
+    :param cnn_activation: nn.Module
+        Activation function for the sparse CNN
+    :param cnn_residual: bool
+        Whether to use a pre-activation residual connection 
+        in each block of the CNN.
+    :param cnn_global_residual: bool
+        Whether to have a residual connection between the 
+        input and the output of the sparse CNN
+        
+    :param point_mlp_on_cnn_feats: bool
+        Whether to use the CNN features as input to the 
+        MLP (see scheme above for global structure)
+
+    
     """
 
     def __init__(
@@ -592,19 +655,154 @@ class PointStage(Stage):
             mlp_norm=BatchNorm,
             mlp_drop=None,
             use_pos=True,
-            use_diameter_parent=False):
+            use_diameter_parent=False,
+            
+            cnn_blocks=False,
+            cnn=[3,16,32,64],
+            cnn_kernel_size=3,
+            cnn_dilation=1,
+            cnn_norm=None,
+            cnn_activation=None,
+            cnn_residual=False,
+            cnn_global_residual=False,
 
-        assert len(in_mlp) > 1, \
-            'in_mlp should be a list of channels of length >= 2'
+            point_mlp_on_cnn_feats=False,
+            
+            version_holder=None,
+            ):
+        
+        # Note: the boolean parameter `cnn_blocks` is checked in 
+        # `SemanticSegmentationModule.initialize_cnn()` to trigger CNN initialization.
+        self.cnn_blocks = cnn_blocks
+        self.point_mlp_on_cnn_feats = point_mlp_on_cnn_feats
 
-        super().__init__(
-            in_mlp[-1],
-            num_blocks=0,
-            in_mlp=in_mlp,
-            out_mlp=None,
-            mlp_activation=mlp_activation,
-            mlp_norm=mlp_norm,
-            mlp_drop=mlp_drop,
-            use_pos=use_pos,
-            use_diameter=False,
-            use_diameter_parent=use_diameter_parent)
+        if not cnn_blocks:
+            assert in_mlp is None or len(in_mlp) > 1, \
+                'in_mlp should be a list of channels of length >= 2'
+                
+            super().__init__(
+                in_mlp[-1] if in_mlp is not None else None,
+                num_blocks=0,
+                in_mlp=in_mlp,
+                out_mlp=None,
+                mlp_activation=mlp_activation,
+                mlp_norm=mlp_norm,
+                mlp_drop=mlp_drop,
+                use_pos=use_pos,
+                use_diameter=False,
+                use_diameter_parent=use_diameter_parent,
+                version_holder=version_holder)
+        else:
+            from src.nn.sparse import SparseCNN
+            
+            dim = in_mlp[-1] if in_mlp is not None else \
+                cnn[-1] + 3 * use_pos + use_diameter_parent
+
+            super().__init__(
+                dim,
+                num_blocks=0,
+                in_mlp=in_mlp,
+                out_mlp=None,
+                mlp_activation=mlp_activation,
+                mlp_norm=mlp_norm,
+                mlp_drop=mlp_drop,
+                use_pos=use_pos,
+                use_diameter=False,
+                use_diameter_parent=use_diameter_parent,
+                version_holder=version_holder)
+            
+            self.cnn_blocks = SparseCNN(cnn = cnn, 
+                                        kernel_size=cnn_kernel_size, 
+                                        dilation=cnn_dilation,
+                                        norm=cnn_norm,
+                                        activation=cnn_activation,
+                                        residual=cnn_residual,
+                                        global_residual=cnn_global_residual,
+                                        )
+
+                
+    def forward(
+            self,
+            x,
+            norm_index,
+            pos=None,
+            diameter=None,
+            node_size=None,
+            super_index=None,
+            edge_index=None,
+            edge_attr=None,
+            coords=None,
+            batch=None,
+            x_mlp=None):
+        """
+        :param x: torch.Tensor
+            The input features to the PointStage
+        :param norm_index: torch.Tensor
+            The batch index of the points to be used by the normalization layer
+        :param pos: torch.Tensor
+            The positions of the points
+        :param diameter: torch.Tensor
+            The diameter of the points
+        :param node_size: torch.Tensor
+            The size of the points
+        :param super_index: torch.Tensor
+            The superpoint index of the points
+        :param edge_index: torch.Tensor
+            The edge index of the points
+        :param edge_attr: torch.Tensor
+            The edge attributes of the points
+        :param coords: torch.Tensor
+            The coordinates of the points (quantized by the transform GridSampling3D or QuantizeCoordinates)
+            Only needed if `self.cnn_blocks` is True
+        :param batch: torch.Tensor
+            The batch of the points 
+            Only needed if `self.cnn_blocks` is True
+        :param x_mlp: torch.Tensor
+            The handcrafted features to be processed by the MLP 
+            If `self.point_mlp_on_cnn_feats`, the CNN features are concatenated to x_mlp and processed together by the MLP.
+        """
+
+        # Sparse convolution on the point features
+        if self.cnn_blocks:
+            if SparseTensor is None:
+                raise ImportError(
+                    "torchsparse is required when cnn_blocks=True. "
+                    "Please install torchsparse: pip install torchsparse")
+            
+            if batch is not None:                
+                coords = torch.cat([batch.view(-1, 1), coords], dim=1)
+            else:
+                batch = torch.zeros(coords.shape[0], 1, device=coords.device)
+                coords = torch.cat([batch, coords], dim=1)
+            x = SparseTensor(coords=coords.int(), feats=x)
+            x = self.cnn_blocks(x, batch=norm_index)
+            x = x.F
+            
+            if self.point_mlp_on_cnn_feats:
+                # The MLP processes the CNN features and the handcrafted features given set in the `model.net.post_cnn_point_hf` config parameter (if any)
+                
+                x = self.feature_fusion(x, x_mlp) if x_mlp is not None else x
+                
+                return super().forward(x, norm_index, pos, diameter, node_size, super_index, edge_index, edge_attr)
+            
+            else:
+                assert x_mlp is not None or self.in_mlp is None, "The MLP in the PointStage needs an input. \
+                    As `point_mlp_on_cnn_feats` is False, please set some handcrafted features in the `model.net.post_cnn_point_hf` config parameter."
+                
+                x_mlp, diameter_parent = super().forward(x_mlp , norm_index, pos, diameter, node_size, super_index, edge_index, edge_attr)
+                
+                # We concatenate :
+                # - `x`, features output from the CNN
+                # - `x_mlp`, features output from the MLP
+                
+                x = self.feature_fusion(x, x_mlp)
+
+                # Outputs of the CNN and MLP are concatenated at the end of the stage
+                return x, diameter_parent
+        
+        else:
+            assert self.point_mlp_on_cnn_feats is False, "Can't use the CNN features as input to the MLP if there is no CNN"
+            
+            return super().forward(x, norm_index, pos, diameter, node_size, super_index, edge_index, edge_attr)
+
+        

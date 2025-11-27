@@ -15,7 +15,9 @@ log = logging.getLogger(__name__)
 
 
 __all__ = [
-    'MeanAveragePrecision3D', 'MAPMetricResults', 'MARMetricResults',
+    'MeanAveragePrecision3D',
+    'MAPMetricResults',
+    'MARMetricResults',
     'InstanceMetricResults']
 
 

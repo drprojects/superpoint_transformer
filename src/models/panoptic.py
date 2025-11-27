@@ -488,7 +488,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
             self.stuff_classes,
             edge_affinity_logits,
             # node_offset_pred,
-            nag.get_sub_size(1))
+            nag.get_sub_size(1,low = 0))
 
         # Compute the panoptic partition
         output = self._forward_partition(nag, output, grid=grid)
@@ -533,7 +533,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         batch = nag[1].batch
         # node_x = nag[1].pos + output.node_offset_pred
         node_x = nag[1].pos
-        node_size = nag.get_sub_size(1)
+        node_size = nag.get_sub_size(1, low = 0)
         node_logits = output.logits[0] if output.multi_stage else output.logits
         edge_index = nag[1].obj_edge_index
         edge_affinity_logits = output.edge_affinity_logits
@@ -564,7 +564,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         # the LightningModule with this new information, but it could
         # easily become tedious to track all places where stuff_classes
         # affects the LightningModule object.
-        stuff_classes = self.trainer.datamodule.train_dataset.stuff_classes
+        stuff_classes = self.trainer.datamodule.test_dataset.stuff_classes
         assert sorted(stuff_classes) == sorted(self.stuff_classes), \
             f'LightningModule has the following stuff classes ' \
             f'{self.stuff_classes} while the LightningDataModule has ' \
@@ -611,7 +611,7 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         num_edges = nag[1].obj_edge_index.shape[1]
         edge_affinity_logits = torch.zeros(num_edges, device=nag.device)
         # node_offset_pred = torch.zeros_like(nag[1].pos)
-        node_size = nag.get_sub_size(1)
+        node_size = nag.get_sub_size(1, low=0)
 
         return PanopticSegmentationOutput(
             output_semseg.logits,
@@ -1452,15 +1452,19 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         # object
         sp_y_pred, sp_obj_index_pred, sp_obj_pred = (
             output.superpoint_panoptic_pred())
-        vox_y_pred, vox_obj_index_pred, vox_obj_pred = (
-            output.voxel_panoptic_pred(super_index=batch[0].super_index))
+        
         batch[1].obj_y_pred = sp_y_pred
         batch[1].obj_index_pred = sp_obj_index_pred
         batch[1].obj_pred = sp_obj_pred
-        batch[0].obj_y_pred = vox_y_pred
-        batch[0].obj_index_pred = vox_obj_index_pred
-        batch[0].obj_pred = vox_obj_pred
         batch[1].edge_affinity_logits = output.edge_affinity_logits
+        
+        if batch.has_atoms :
+            vox_y_pred, vox_obj_index_pred, vox_obj_pred = (
+                output.voxel_panoptic_pred(super_index=batch[0].super_index))
+            
+            batch[0].obj_y_pred = vox_y_pred
+            batch[0].obj_index_pred = vox_obj_index_pred
+            batch[0].obj_pred = vox_obj_pred
 
         # Parent behavior for saving semantic segmentation prediction
         super().track_batch(batch, batch_idx, output, folder=folder)

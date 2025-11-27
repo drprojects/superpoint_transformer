@@ -1,53 +1,53 @@
 from collections.abc import Iterable
+import inspect
 
 
 __all__ = [
-    'POINT_FEATURES', 'SEGMENT_BASE_FEATURES', 'SUBEDGE_FEATURES',
-    'ON_THE_FLY_HORIZONTAL_FEATURES', 'ON_THE_FLY_VERTICAL_FEATURES',
-    'sanitize_keys']
+    'RADIOMETRIC_FEATURES',
+    'GEOMETRIC_FEATURES',
+    'POINT_FEATURES',
+    'SEGMENT_BASE_FEATURES',
+    'SUBEDGE_FEATURES',
+    'ON_THE_FLY_HORIZONTAL_FEATURES',
+    'ON_THE_FLY_VERTICAL_FEATURES',
+    'sanitize_keys',
+    'filter_kwargs']
 
 
-POINT_FEATURES = [
+RADIOMETRIC_FEATURES = [
     'rgb',
     'hsv',
     'lab',
-    'density',
+    'intensity']
+
+GEOMETRIC_FEATURES = [
     'linearity',
     'planarity',
     'scattering',
     'verticality',
-    'elevation',
-    'normal',
+    'curvature',
     'length',
     'surface',
     'volume',
-    'curvature',
-    'intensity',
-    'pos_room']
+    'normal']
+
+POINT_FEATURES = [
+    'density',
+    'elevation',
+    'pos_room'] + GEOMETRIC_FEATURES + RADIOMETRIC_FEATURES
 
 SEGMENT_BASE_FEATURES = [
-    'linearity',
-    'planarity',
-    'scattering',
-    'verticality',
-    'curvature',
+    'log_size',
     'log_length',
     'log_surface',
-    'log_volume',
-    'normal',
-    'log_size']
+    'log_volume'] + GEOMETRIC_FEATURES
 
 SUBEDGE_FEATURES = [
     'mean_off',
     'std_off',
     'mean_dist']
 
-ON_THE_FLY_HORIZONTAL_FEATURES = [
-    'mean_off',
-    'std_off',
-    'mean_dist',
-    'angle_source',
-    'angle_target',
+SUPEREDGE_FEATURES = [
     'centroid_dir',
     'centroid_dist',
     'normal_angle',
@@ -56,14 +56,11 @@ ON_THE_FLY_HORIZONTAL_FEATURES = [
     'log_volume',
     'log_size']
 
-ON_THE_FLY_VERTICAL_FEATURES = [
-    'centroid_dir',
-    'centroid_dist',
-    'normal_angle',
-    'log_length',
-    'log_surface',
-    'log_volume',
-    'log_size']
+ON_THE_FLY_HORIZONTAL_FEATURES = [
+    'angle_source',
+    'angle_target'] + SUPEREDGE_FEATURES + SUBEDGE_FEATURES
+
+ON_THE_FLY_VERTICAL_FEATURES = SUPEREDGE_FEATURES
 
 
 def sanitize_keys(keys, default=[]):
@@ -87,3 +84,9 @@ def sanitize_keys(keys, default=[]):
     out = tuple(sorted(list(set(out))))
 
     return out
+
+def filter_kwargs(func, kwargs):
+    """Filter kwargs to only include parameters accepted by func."""
+    sig = inspect.signature(func)
+    valid_params = set(sig.parameters.keys())
+    return {k: v for k, v in kwargs.items() if k in valid_params}

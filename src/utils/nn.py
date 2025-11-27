@@ -2,7 +2,6 @@ import torch
 from torch import nn
 from src.utils.parameter import LearnableParameter
 
-
 __all__ = ['init_weights']
 
 
@@ -42,6 +41,15 @@ def init_weights(m, linear=None, rpe=None, activation='leaky_relu'):
         if m.q_rpe is not None:
             _linear_init(m.q_rpe, method=rpe, activation=activation)
         return
+    
+    try:
+        from torchsparse import nn as spnn
+        if isinstance(m, spnn.Conv3d):
+            _conv_init(m, method=linear, activation=activation)
+            return
+    except ImportError:
+        # torchsparse is not installed, skip this initialization
+        pass
 
 
 def _linear_init(m, method='xavier_uniform', activation='leaky_relu'):
@@ -117,3 +125,35 @@ def build_qk_scale_func(dim, num_heads, qk_scale):
 
     raise ValueError(
         f"Unable to build QK scaling scheme for qk_scale='{qk_scale}'")
+
+def _conv_init(m, method='xavier_uniform', activation='leaky_relu'):
+    gain = torch.nn.init.calculate_gain(activation)
+
+    if m.bias is not None:
+        nn.init.constant_(m.bias, 0)
+    
+    # We need to transpose the kernel so that fan_in and fan_out are correctly computed,
+    # because the conv3d weights are stored in shape (kernel_volume, in_channels, out_channels)
+    # in torchsparse, while nn.init expects (out_channels, in_channels, kernel_volume).
+    # Cf. https://pytorch.org/docs/stable/nn.init.html#torch.nn.init.xavier_uniform_
+    
+    if m.kernel.dim() == 3:
+        kernel = m.kernel.permute(2, 1, 0)
+    elif m.kernel.dim() == 2:
+        kernel = m.kernel.permute(1, 0)
+    else:
+        raise ValueError(f"Kernel has {m.kernel.dim()} dimensions, expected 2 (kernel_size=1) or 3 (kernel_size>=3)")
+    # `permute` returns a view of `m.kernel`, so we don't need to reshape back `kernel` to the shape expected in `m.kernel`
+    
+    if method == 'xavier_uniform':
+        nn.init.xavier_uniform_(kernel, gain=gain)
+    elif method == 'xavier_normal':
+        nn.init.xavier_normal_(kernel, gain=gain)
+    elif method == 'kaiming_uniform':
+        nn.init.kaiming_uniform_(kernel, nonlinearity=activation)
+    elif method == 'kaiming_normal':
+        nn.init.kaiming_normal_(kernel, nonlinearity=activation)
+    elif method == 'trunc_normal':
+        nn.init.trunc_normal_(kernel, std=0.02)
+    else:
+        raise NotImplementedError(f"Unknown initialization method: {method}")

@@ -1,0 +1,225 @@
+# @package datamodule
+
+# We don't load `datamodule/semantic/default.yaml` by default here,
+# as the `partition/<dataset>.yaml` files have their own default using their
+# own `semantic/<dataset>.yaml` and already overrides some parameters.
+
+# Parameters needed for validation steps (to compute the partition)
+# They are not used during training epochs, as we don't compute the partition during training epochs.
+contour_prior_reg: 2e-2
+contour_prior_min_size: ???
+contour_prior_k_isolated: 0
+contour_prior_verbose: False
+contour_prior_sharding: null
+contour_prior_edge_reduce: 'add'
+contour_prior_edge_weight_mode: 'unit'
+
+# The `contour_prior_knn` and `contour_prior_knn_r` parameters are NOT taken as input of 
+# the `GreedyContourPriorPartition` transform. However, they influence the partition results
+# as they define the graph on which the partition is computed.
+contour_prior_knn: 8
+contour_prior_knn_r: 2
+
+
+# The `point_hf` is the input to the first stage.
+# As we are training the CNN to learn good features for partitioning,
+# we set `point_hf` to `partition_hf`.
+point_hf: ${datamodule.partition_hf}
+
+pre_transform:
+    - transform: DataTo
+      params:
+        device: 'cuda'
+    - transform: SaveNodeIndex
+      params:
+        key: 'sub'
+    - transform: GridSampling3D  # might OOM on CUDA if voxel and GPU memory too small
+      params:
+        size: ${datamodule.voxel}
+        quantize_coords: ${datamodule.quantize_coords} # These quantized coordinates won't be used for training, but for val
+        hist_key: 'y'
+        hist_size: ${eval:'${datamodule.num_classes} + 1'}
+    # Sets correctly colorattribute (rgb, hsv, lab)
+    - transform: PointFeatures
+      params:
+        keys: ${datamodule.point_hf_preprocess}
+        overwrite: ${datamodule.point_hf_overwrite}
+    # By default, this transform is skipped as we don't use elevation to learn the partition.
+    - transform: GroundElevation
+      params:
+        model: 'ransac'
+        z_threshold: ${datamodule.ground_threshold}
+        xy_grid: ${datamodule.ground_xy_grid}
+        scale: ${eval:'${datamodule.ground_scale} if "elevation" in ${datamodule.point_hf_preprocess} else 0'}
+
+# GPU-based train transforms
+on_device_train_transform:
+    # Cast all attributes to either float or long. Doing this only now
+    # allows speeding up disk I/O and CPU->GPU transfer
+    - transform: Cast
+
+    # Add a `node_size` attribute to all segments, this is needed for
+    # segment-wise position normalization with UnitSphereNorm
+    - transform: NodeSize
+      params:
+        low: 0
+
+    # Apply sampling transforms first to reduce the number of nodes and
+    # edges. These operations are compute-intensive and are the reason
+    # why these transforms are not performed on CPU
+
+    - transform: SampleRadiusSubgraphs
+      params:
+        r: ${datamodule.sample_graph_r}
+        k: ${datamodule.sample_graph_k}
+        k_max: ${datamodule.sample_graph_max_nodes}
+        i_level: 0
+        by_size: False
+        by_class: False
+        disjoint: ${datamodule.sample_graph_disjoint}
+        cylindrical: ${datamodule.sample_graph_cylindrical}
+
+    # # Apply geometric transforms affecting position, offsets, normals
+    # # before calling transforms relying on those, such as on-the-fly
+    # # edge features computation
+
+    - transform: NAGJitterKey
+      params:
+        key: 'pos'
+        sigma: ${datamodule.pos_jitter}
+        trunc: ${datamodule.voxel}
+    - transform: RandomTiltAndRotate
+      params:
+        phi: ${datamodule.tilt_n_rotate_phi}
+        theta: ${datamodule.tilt_n_rotate_theta}
+    - transform: RandomAnisotropicScale
+      params:
+        delta: ${datamodule.anisotropic_scaling}
+    - transform: RandomAxisFlip
+      params:
+        p: 0.5
+
+    # Add some noise and randomly some point, node and edge features
+    - transform: NAGJitterKey
+      params:
+        key: 'x'
+        sigma: ${datamodule.node_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.node_feat_jitter}'}
+    - transform: NAGJitterKey
+      params:
+        key: 'edge_attr'
+        sigma: ${datamodule.h_edge_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.h_edge_feat_jitter}'}
+    # - transform: NAGJitterKey
+    #   params:
+    #     key: 'v_edge_attr'
+    #     sigma: ${datamodule.v_edge_feat_jitter}
+    #     trunc: ${eval:'2 * ${datamodule.v_edge_feat_jitter}'}
+    - transform: DropoutColumns
+      params:
+        p: ${datamodule.node_feat_drop}
+        key: 'x'
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: DropoutColumns
+      params:
+        p: ${datamodule.h_edge_feat_drop}
+        key: 'edge_attr'
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: DropoutColumns
+      params:
+        p: ${datamodule.v_edge_feat_drop}
+        key: 'v_edge_attr'
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: DropoutRows
+      params:
+        p: ${datamodule.node_row_drop}
+        key: 'x'
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: DropoutRows
+      params:
+        p: ${datamodule.h_edge_row_drop}
+        key: 'edge_attr'
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: DropoutRows
+      params:
+        p: ${datamodule.v_edge_row_drop}
+        key: 'v_edge_attr'
+        to_mean: ${datamodule.drop_to_mean}
+
+    # RGB-specific transforms. In particular, the color dropout will
+    # switch off all three color channels together, instead of just one
+    # by one with
+#    - transform: NAGColorNormalize
+#      params:
+#        level: 'all'
+    - transform: NAGJitterKey
+      params:
+        key: 'rgb'
+        sigma: ${datamodule.rgb_jitter}
+        trunc: ${eval:'2 * ${datamodule.rgb_jitter}'}
+    - transform: ColorAutoContrast
+      params:
+        p: ${datamodule.rgb_autocontrast}
+    - transform: ColorDrop
+      params:
+        p: ${datamodule.rgb_drop}
+
+    - transform: QuantizePointCoordinates
+      params:
+        size: ${eval:'${datamodule.voxel} if ${datamodule.quantize_coords} else -1'}
+
+    # Compute the graph on which :
+    # - the contour prior (to build partition) is computed (during validation)
+    # - the edge loss is computed (during training)
+    - transform: KNN 
+      params:
+        k: ${datamodule.contour_prior_knn}
+        r_max: ${datamodule.contour_prior_knn_r}
+        verbose: False
+        self_is_neighbor: False
+        save_as_csr: False
+
+    - transform: AdjacencyGraph
+      params:
+        k: ${datamodule.contour_prior_knn}
+        w: 0.0
+
+    - transform: RemoveKeys
+      params:
+        keys: ['edge_attr', 'neighbor_index', 'neighbor_distance']
+
+on_device_val_transform:
+
+    # Cast all attributes to either float or long. Doing this only now
+    # allows speeding up disk I/O and CPU->GPU transfer
+    - transform: Cast
+
+    # Add a `node_size` attribute to all segments, this is needed for
+    # segment-wise position normalization with UnitSphereNorm
+    - transform: NodeSize
+      params:
+        low: 0
+
+    - transform: QuantizePointCoordinates
+      params:
+        size: ${eval:'${datamodule.voxel} if ${datamodule.quantize_coords} else -1'}
+
+    - transform: KNN # Graph on which the contour prior is computed
+      params:
+        k: ${datamodule.contour_prior_knn}
+        r_max: ${datamodule.contour_prior_knn_r}
+        verbose: False
+        self_is_neighbor: False
+        save_as_csr: False
+    
+    - transform: AdjacencyGraph
+      params:
+        k: ${datamodule.contour_prior_knn}
+        w: 0.0
+  
+    - transform: RemoveKeys
+      params:
+        keys: ['edge_attr', 'neighbor_index', 'neighbor_distance']

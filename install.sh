@@ -6,6 +6,17 @@ PYTHON=3.8
 TORCH=2.2.0
 CUDA_SUPPORTED=(11.8 12.1)
 
+# Check if torchsparse should be installed
+INSTALL_TORCHSPARSE=false
+if [[ "$1" == "with_torchsparse" ]]; then
+    INSTALL_TORCHSPARSE=true
+elif [[ -n "$1" ]]; then
+    echo "Unknown argument: $1"
+    echo "Usage: ./install.sh [with_torchsparse]"
+    echo "  with_torchsparse: Install TorchSparse (optional dependency)"
+    exit 1
+fi
+
 
 # Recover the project's directory from the position of the install.sh
 # script and move there. Not doing so would install some dependencies in
@@ -103,6 +114,10 @@ pip install wandb
 pip install open3d
 pip install gdown
 pip install ipyfilechooser
+pip install torch-ransac3d
+pip install pgeof
+pip install pycut-pursuit
+pip install pygrid-graph
 
 echo
 echo
@@ -112,36 +127,29 @@ git clone --recursive https://github.com/lxxue/FRNN.git src/dependencies/FRNN
 
 # install a prefix_sum routine first
 cd src/dependencies/FRNN/external/prefix_sum
-python setup.py install
+pip install .
 
 # install FRNN
 cd ../../ # back to the {FRNN} directory
-python setup.py install
+pip install .
 cd ../../../
 
-echo
-echo
-echo "⭐ Installing Point Geometric Features"
-echo
-# Install libstdcxx-ng in the conda environment, to make sure pgeof
-# finds its dependencies:
-# https://github.com/drprojects/superpoint_transformer/issues/102
-# This is a linux-only fix:
-# https://stackoverflow.com/a/68845839
-conda install -c conda-forge libstdcxx-ng
-pip install git+https://github.com/drprojects/point_geometric_features.git
+# install TorchSparse (optional)
+if [[ "$INSTALL_TORCHSPARSE" == true ]]; then
+    echo
+    echo
+    echo "⭐ Installing TorchSparse"
+    echo
+    git clone https://github.com/mit-han-lab/torchsparse.git src/dependencies/torchsparse
+    pip install backports.cached-property
+    pip install rootpath
+    conda install -y google-sparsehash -c bioconda
+    cd src/dependencies/torchsparse
+    pip install .
+    cd ../../../
+fi
 
-echo
-echo
-echo "⭐ Installing Parallel Cut-Pursuit"
-echo
-# Clone parallel-cut-pursuit and grid-graph repos
-git clone https://gitlab.com/1a7r0ch3/parallel-cut-pursuit.git src/dependencies/parallel_cut_pursuit
-git clone https://gitlab.com/1a7r0ch3/grid-graph.git src/dependencies/grid_graph
-
-# Compile the projects
-python scripts/setup_dependencies.py build_ext
-
+# let user know
 echo
 echo
 echo "🚀 Successfully installed SPT"

@@ -1,0 +1,32 @@
+# @package _global_
+
+datamodule:
+  pretrained_cnn_ckpt_path: ???
+
+model:
+  _target_: src.models.semantic.PartitionAndSemanticModule
+  
+  # This is the flag so that the instance of `PartitionAndSemanticModule` knows 
+  # the partition has been trained, and now it is time to learn the semantic.
+  training_partition_stage: False
+
+  _point_mlp: [48, 64, 128] # [32, 64, 128] in regular SPT. But here, the CNN takes as input features of dimension 39 (32 CNN features + HF), so we prefer to increase the first hidden dimension.
+  multi_stage_loss_lambdas: [1,25,100]
+  
+  # `extensive_logging` to True enables the logging of per class iou during training (and some other metrics).
+  # This is alleviates the memory usage, notably useful with wandb in offline mode where
+  # big files can take a lot of time to be synced.
+  # NB : the validation and test metrics are always logged.
+  extensive_logging: False
+
+  optimizer:
+    lr: ???
+    weight_decay: ???
+
+  scheduler:
+    num_warmup: 50
+
+
+  net:
+    use_diameter_parent: False
+    use_diameter: True

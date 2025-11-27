@@ -7,8 +7,11 @@ from src.nn.mlp import FFN
 
 
 __all__ = [
-    'CatInjection', 'AdditiveInjection', 'AdditiveMLPInjection',
-    'FourierInjection', 'LearnableFourierInjection']
+    'CatInjection',
+    'AdditiveInjection',
+    'AdditiveMLPInjection',
+    'FourierInjection',
+    'LearnableFourierInjection']
 
 
 class BasePositionalInjection(nn.Module):

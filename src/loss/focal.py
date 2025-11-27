@@ -5,10 +5,10 @@ from torch import Tensor
 from torch import nn
 from torch.nn import functional as F
 
-__all__ = ['WeightedFocalLoss']
+__all__ = ['WeightedFocalLoss', 'BinaryFocalLoss']
 
 
-class WeightedFocalLoss(nn.Module):
+class WeightedFocalLoss(nn.NLLLoss):
     """ Focal Loss, as described in https://arxiv.org/abs/1708.02002.
     It is essentially an enhancement to cross entropy loss and is
     useful for classification tasks when there is a large class imbalance.
@@ -45,14 +45,9 @@ class WeightedFocalLoss(nn.Module):
             raise ValueError(
                 'Reduction must be one of: "mean", "none".')
 
-        super().__init__()
-        self.weight = weight
-        self.gamma = gamma
-        self.ignore_index = ignore_index
-        self.reduction = reduction
+        super().__init__(reduction=reduction, ignore_index=ignore_index,weight=weight)
 
-        self.nll_loss = nn.NLLLoss(
-            weight=weight, reduction='none', ignore_index=ignore_index)
+        self.gamma = gamma
 
     def __repr__(self):
         arg_keys = ['weight', 'gamma', 'ignore_index', 'reduction']
@@ -61,7 +56,7 @@ class WeightedFocalLoss(nn.Module):
         arg_str = ', '.join(arg_strs)
         return f'{type(self).__name__}({arg_str})'
 
-    def forward(self, x: Tensor, y: Tensor, w: Tensor) -> Tensor:
+    def forward(self, x: Tensor, y: Tensor, w: Tensor=None) -> Tensor:
         """
         :param x: (N, C, ...) Tensor
             Logits
@@ -77,8 +72,11 @@ class WeightedFocalLoss(nn.Module):
         # convert these precitions to 2D for downstream softmax
         if x.dim() == 1:
             x_binary = torch.zeros(x.shape[0], 2, dtype=x.dtype, device=x.device)
-            x_binary[x < 0, 0] = -x[x < 0]
-            x_binary[x > 0, 1] = x[x > 0]
+            # Create copies to avoid in-place operations that can break gradients
+            x_neg_mask = x < 0
+            x_pos_mask = x > 0
+            x_binary[x_neg_mask, 0] = -x[x_neg_mask]
+            x_binary[x_pos_mask, 1] = x[x_pos_mask]
             x = x_binary
 
         # Convert y to long. The NLL loss does not support non-integer
@@ -100,6 +98,7 @@ class WeightedFocalLoss(nn.Module):
             w = w.view(-1)
 
         unignored_mask = y != self.ignore_index
+        y_original_shape = y.shape
         y = y[unignored_mask]
         if len(y) == 0:
             return torch.tensor(0., device=x.device)
@@ -107,9 +106,9 @@ class WeightedFocalLoss(nn.Module):
         w = w[unignored_mask]
 
         # compute weighted cross entropy term: -weight * log(pt)
-        # (weight is already part of self.nll_loss)
+        # (weight is already part of super().NLLLoss)
         log_p = F.log_softmax(x, dim=-1)
-        ce = self.nll_loss(log_p, y)
+        ce = super().forward(log_p, y)
 
         # get true class column from each row
         log_pt = log_p.gather(dim=1, index=y.view(-1, 1)).squeeze()
@@ -125,7 +124,10 @@ class WeightedFocalLoss(nn.Module):
         loss = loss * w
 
         if self.reduction == 'none':
-            return loss
+            # Create a tensor of zeros with original shape and fill valid positions
+            loss_with_original_shape = torch.zeros(y_original_shape, dtype=torch.float, device=x.device)
+            loss_with_original_shape[unignored_mask] = loss
+            return loss_with_original_shape
 
         return loss.sum()
 
@@ -164,3 +166,61 @@ def weighted_focal_loss(
         reduction=reduction,
         ignore_index=ignore_index)
     return fl
+
+
+class BinaryFocalLoss(nn.Module):
+    """
+    Focal Loss, as described in https://arxiv.org/abs/1708.02002.
+    It is essentially an enhancement to cross entropy loss and is
+    useful for classification tasks when there is a large class imbalance.
+    
+    This class is a simplified version of the WeightedFocalLoss class.
+    It supports only 2 classes.
+    
+    Mean reduction is used.
+    """
+    
+    def __init__(self, 
+                 gamma: float = 0, 
+                 weight: float = 0.5, 
+                 epsilon: float = 1e-6):
+        
+        super().__init__()
+        
+        self.gamma = gamma
+        self.weight = weight
+        self.epsilon = epsilon
+        
+    def forward(self, p: Tensor, y: Tensor) -> Tensor:
+        """
+        :param p: (N) Tensor
+            Predicted probabilities (for True label)
+        :param y: (N) Tensor boolean
+            Target labels (True or False)
+            
+        :return: Tensor
+            Loss
+        """
+        
+        
+        factor = 2*y.float() - 1 #True -> 1, False -> -1
+        p = (~y).float() + p * factor
+        p = self.epsilon + (1 - 2 * self.epsilon) * p
+        
+        
+        weight = y.float()*self.weight + (1-y.float()) *(1-self.weight)
+        
+        loss = self.focal(p) * weight
+        
+        loss = loss.mean()
+        
+        return loss
+        
+    def focal(self, p: Tensor) -> Tensor:
+        return -(1 - p) ** self.gamma * torch.log(p)
+    
+    
+    
+    
+    
+    

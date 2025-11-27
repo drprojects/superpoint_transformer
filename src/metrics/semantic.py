@@ -3,7 +3,7 @@ import torch
 import logging
 import numpy as np
 from torchmetrics.classification import MulticlassConfusionMatrix
-from torch_scatter import scatter_add
+from torch_scatter import scatter_sum
 from src.metrics.mean_average_precision import BaseMetricResults
 
 
@@ -101,7 +101,7 @@ class ConfusionMatrix(MulticlassConfusionMatrix):
         if target.dim() == 2 and target.shape[1] >= self.num_classes:
             # Exclude 'void'/'ignored' labels counts from the histogram
             target = target[:, :self.num_classes]
-            confmat = scatter_add(
+            confmat = scatter_sum(
                 target.float(), pred, dim=0, dim_size=self.num_classes)
             self.confmat += confmat.T.long()
             return
@@ -111,7 +111,7 @@ class ConfusionMatrix(MulticlassConfusionMatrix):
             target = target.squeeze()
 
         # Set all 'void'/'ignored' target indices to `num_classes`
-        target[target < 0 | target > self.num_classes] = self.num_classes
+        target[(target < 0) | (target > self.num_classes)] = self.num_classes
 
         # Basic parent-class update on 1D tensors
         super().update(pred, target)
@@ -271,19 +271,6 @@ def save_confusion_matrix(cm, path2save, ordered_names):
 
     template_path = os.path.join(path2save, "{}.svg")
     # PRECISION
-    cmn = cm.astype("float") / cm.sum(axis=-1)[:, np.newaxis]
-    cmn[np.isnan(cmn) | np.isinf(cmn)] = 0
-    fig, ax = plt.subplots(figsize=(31, 31))
-    sns.heatmap(
-        cmn, annot=True, fmt=".2f", xticklabels=ordered_names,
-        yticklabels=ordered_names, annot_kws={"size": 20})
-    # g.set_xticklabels(g.get_xticklabels(), rotation = 35, fontsize = 20)
-    plt.ylabel("Actual")
-    plt.xlabel("Predicted")
-    path_precision = template_path.format("precision")
-    plt.savefig(path_precision, format="svg")
-
-    # RECALL
     cmn = cm.astype("float") / cm.sum(axis=0)[np.newaxis, :]
     cmn[np.isnan(cmn) | np.isinf(cmn)] = 0
     fig, ax = plt.subplots(figsize=(31, 31))
@@ -293,5 +280,20 @@ def save_confusion_matrix(cm, path2save, ordered_names):
     # g.set_xticklabels(g.get_xticklabels(), rotation = 35, fontsize = 20)
     plt.ylabel("Actual")
     plt.xlabel("Predicted")
+    path_precision = template_path.format("precision")
+    plt.savefig(path_precision, format="svg", bbox_inches='tight')
+    plt.close()
+
+    # RECALL
+    cmn = cm.astype("float") / cm.sum(axis=-1)[:, np.newaxis]
+    cmn[np.isnan(cmn) | np.isinf(cmn)] = 0
+    fig, ax = plt.subplots(figsize=(31, 31))
+    sns.heatmap(
+        cmn, annot=True, fmt=".2f", xticklabels=ordered_names,
+        yticklabels=ordered_names, annot_kws={"size": 20})
+    # g.set_xticklabels(g.get_xticklabels(), rotation = 35, fontsize = 20)
+    plt.ylabel("Actual")
+    plt.xlabel("Predicted")
     path_recall = template_path.format("recall")
-    plt.savefig(path_recall, format="svg")
+    plt.savefig(path_recall, format="svg", bbox_inches='tight')
+    plt.close()

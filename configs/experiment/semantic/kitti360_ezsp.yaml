@@ -1,0 +1,36 @@
+# @package _global_
+
+defaults:
+  - /model/semantic/spt-3.yaml # SPT on 3 superpoint partition levels
+  - /model/semantic/_point_cnn.yaml # EZ-SP uses a CNN in the first stage
+  - /experiment/semantic/default_ezsp.yaml
+  - override /datamodule: semantic/kitti360_ezsp.yaml
+  - override /trainer: gpu.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+trainer:
+  max_epochs: 200
+
+model:
+  optimizer:
+    lr: 0.005
+    weight_decay: 1e-4
+
+  # SPT-128
+  _down_dim: [ 128, 128, 128, 128 ]
+  _up_dim: [ 128, 128, 128 ]
+  
+  criterion:
+    _target_: src.loss.focal.WeightedFocalLoss
+    gamma: 2
+
+  net:
+    no_ffn: True
+
+
+logger:
+  wandb:
+    project: kitti360_ezsp
+    name: semantic

@@ -1,0 +1,24 @@
+# @package _global_
+
+defaults:
+  - override /datamodule: partition/s3dis_ezsp.yaml
+  - override /model: partition/default_ezsp.yaml
+  - override /trainer: gpu.yaml
+
+optimized_metric: "val/omiou"
+
+trainer:
+  max_epochs: 900
+  check_val_every_n_epoch: 25
+
+model:
+  partition_criterion:
+    adaptive_sampling_ratio: 0.9
+    
+  net:
+    point_cnn_kernel_size: 3
+
+logger:
+  wandb:
+    project: ezsp_s3dis
+    name: partition

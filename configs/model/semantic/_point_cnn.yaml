@@ -1,0 +1,32 @@
+# @package model
+
+# Partial spt config specifically for the point encoder with CNN
+
+pretrained_cnn_ckpt_path: ${datamodule.pretrained_cnn_ckpt_path}
+train_cnn_from_scratch: False
+freeze_cnn: False
+
+_point_out_dim: ${eval:'${model._point_mlp}[-1] if ${model.net.point_mlp} else ${model.net.point_cnn}[-1]'}
+
+net:
+  # Controls whether to add an MLP layer after the CNN in the PointStage.
+  # True: CNN → MLP pipeline (CNN features fed to MLP)
+  # False: CNN only (direct CNN output)
+  point_mlp_on_cnn_feats: True
+
+  # Features to concatenate to the CNN features to feed the MLP
+  post_cnn_point_hf: ${datamodule.post_cnn_point_hf}
+  
+  # Dimension of the point MLP
+  point_mlp: ${eval:'[${model.net.point_cnn}[-1] + ${model._point_injection_dim} + ${datamodule.post_cnn_point_hf_dim}] + ${model._point_mlp}'}
+
+  # CNN parameters
+  point_cnn_blocks: True
+  point_cnn: ${datamodule.pretrained_cnn_dim}
+  point_cnn_kernel_size: ${datamodule.pretrained_cnn_kernel_size}
+  point_cnn_dilation: ${datamodule.pretrained_cnn_dilation}
+  point_cnn_norm: ${datamodule.pretrained_cnn_norm}
+  point_cnn_activation: ${datamodule.pretrained_cnn_activation}
+
+  point_cnn_residual: False
+  point_cnn_global_residual: False

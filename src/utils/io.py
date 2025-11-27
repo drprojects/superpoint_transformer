@@ -10,8 +10,13 @@ from src.utils.sparse import dense_to_csr, csr_to_dense
 
 
 __all__ = [
-    'date_time_string', 'dated_dir', 'host_data_root', 'save_tensor',
-    'load_tensor', 'save_tensor_dict', 'load_tensor_dict', 'save_dense_to_csr',
+    'date_time_string',
+    'dated_dir',
+    'save_tensor',
+    'load_tensor',
+    'save_tensor_dict',
+    'load_tensor_dict',
+    'save_dense_to_csr',
     'load_csr_to_dense']
 
 
@@ -39,26 +44,6 @@ def dated_dir(root, create=False):
     return path
 
 
-#TODO: remove this for deployment !
-def host_data_root():
-    """Read the host machine's name and return the known $DATA_ROOT
-    directory
-    """
-    HOST = socket.gethostname()
-    if HOST == 'DEL2001W017':
-        DATA_ROOT = '/media/drobert-admin/DATA2/datasets'
-    elif HOST == 'HP-2010S002':
-        DATA_ROOT = '/var/data/drobert/datasets'
-    elif HOST == '9c81b1a54ad8':
-        DATA_ROOT = '/raid/dataset/pointcloud/data'
-    elif HOST.endswith('sis.cnes.fr'):
-        DATA_ROOT = '/home/qt/robertda/scratch/datasets'
-    else:
-        raise NotImplementedError(
-            f"Unknown host '{HOST}', cannot set DATA_ROOT")
-    return DATA_ROOT
-
-
 def save_tensor(x, f, key, fp_dtype=torch.float):
     """Save torch.Tensor to HDF5 file.
 
@@ -82,7 +67,7 @@ def save_tensor(x, f, key, fp_dtype=torch.float):
     f.create_dataset(key, data=d, dtype=d.dtype)
 
 
-def load_tensor(f, key=None, idx=None):
+def load_tensor(f, key=None, idx=None, non_fp_to_long=False):
     """Load torch.Tensor from an HDF5 file. See `save_tensor` for
     writing such file. Options allow reading only part of the rows.
 
@@ -93,11 +78,24 @@ def load_tensor(f, key=None, idx=None):
     :param idx: int, list, numpy.ndarray, torch.Tensor
         Used to select and read only some rows of the dense tensor.
         Supports fancy indexing
+    :param non_fp_to_long: bool
+        By default `save_tensor()` cast all non-float tensors to the
+        smallest integer dtype before saving. This allows saving memory
+        and I/O bandwidth. Upon reading, `non_fp_to_long` rules
+        whether these should be cast back to int64 or kept in this
+        "compressed" dtype. One good reason for not doing so is to
+        accelerate data loading and device transfer. To cast the tensors
+        to int64 later on in the pipeline, use the `NAGCast` and `Cast`
+        transforms
     :return:
     """
     if not isinstance(f, (h5py.File, h5py.Group, h5py.Dataset)):
         with h5py.File(f, 'r') as file:
-            out = load_tensor(file, key=key, idx=idx)
+            out = load_tensor(
+                file,
+                key=key,
+                idx=idx,
+                non_fp_to_long=non_fp_to_long)
         return out
 
     if not isinstance(f, h5py.Dataset):
@@ -105,14 +103,16 @@ def load_tensor(f, key=None, idx=None):
 
     idx = tensor_idx(idx)
 
-    if idx is None or idx.shape[0] == 0:
+    if idx is None:
         x = torch.from_numpy(f[:])
     else:
+        # TODO: benchmark this to double-check. Surprisingly, I think
+        #  this is faster than torch.from_numpy(f[idx]) ?
         x = torch.from_numpy(f[:])[idx]
 
     # By default, convert int16 and int32 to int64, might cause issues
     # for tensor indexing otherwise
-    if x is not None and not x.is_floating_point():
+    if x is not None and not x.is_floating_point() and non_fp_to_long:
         x = x.long()
 
     return x
@@ -142,21 +142,39 @@ def save_tensor_dict(d, f, key, fp_dtype=torch.float):
         save_tensor(v, g, k, fp_dtype=fp_dtype)
 
 
-def load_tensor_dict(f, idx=None):
+def load_tensor_dict(f, idx=None, non_fp_to_long=False):
     """Load a dictionary of torch.Tensor from an HDF5 file.
 
     :param f: h5 file path of h5py.File or h5py.Group or h5py.Dataset
     :param idx: int, list, numpy.ndarray, torch.Tensor
         Used to select and read only some rows of the dense tensor.
         Supports fancy indexing
+    :param non_fp_to_long: bool
+        By default `save_tensor()` cast all non-float tensors to the
+        smallest integer dtype before saving. This allows saving memory
+        and I/O bandwidth. Upon reading, `non_fp_to_long` rules
+        whether these should be cast back to int64 or kept in this
+        "compressed" dtype. One good reason for not doing so is to
+        accelerate data loading and device transfer. To cast the tensors
+        to int64 later on in the pipeline, use the `NAGCast` and `Cast`
+        transforms
     :return:
     """
     if not isinstance(f, (h5py.File, h5py.Group)):
         with h5py.File(f, 'w') as file:
-            load_tensor_dict(file)
+            load_tensor_dict(
+                file,
+                idx=idx,
+                non_fp_to_long=non_fp_to_long)
         return
 
-    return {k: load_tensor(f[k], key=None, idx=idx) for k in f.keys()}
+    return {
+        k: load_tensor(
+            f[k],
+            key=None,
+            idx=idx,
+            non_fp_to_long=non_fp_to_long)
+        for k in f.keys()}
 
 
 def save_dense_to_csr(x, f, fp_dtype=torch.float):
@@ -184,7 +202,7 @@ def save_dense_to_csr(x, f, fp_dtype=torch.float):
     f.create_dataset('shape', data=np.array(x.shape))
 
 
-def load_csr_to_dense(f, idx=None, verbose=False):
+def load_csr_to_dense(f, idx=None, non_fp_to_long=False, verbose=False):
     """Read an HDF5 file of group produced using `dense_to_csr_hdf5` and
     return the dense tensor. An optional idx can be passed to only read
     corresponding rows from the dense tensor.
@@ -193,6 +211,15 @@ def load_csr_to_dense(f, idx=None, verbose=False):
     :param idx: int, list, numpy.ndarray, torch.Tensor
         Used to select and read only some rows of the dense tensor.
         Supports fancy indexing
+    :param non_fp_to_long: bool
+        By default `save_tensor()` cast all non-float tensors to the
+        smallest integer dtype before saving. This allows saving memory
+        and I/O bandwidth. Upon reading, `non_fp_to_long` rules
+        whether these should be cast back to int64 or kept in this
+        "compressed" dtype. One good reason for not doing so is to
+        accelerate data loading and device transfer. To cast the tensors
+        to int64 later on in the pipeline, use the `NAGCast` and `Cast`
+        transforms
     :param verbose: bool
     :return:
     """
@@ -200,19 +227,23 @@ def load_csr_to_dense(f, idx=None, verbose=False):
 
     if not isinstance(f, (h5py.File, h5py.Group)):
         with h5py.File(f, 'r') as file:
-            out = load_csr_to_dense(file, idx=idx, verbose=verbose)
+            out = load_csr_to_dense(
+                file,
+                idx=idx,
+                non_fp_to_long=non_fp_to_long,
+                verbose=verbose)
         return out
 
     assert all(k in f.keys() for k in KEYS)
 
     idx = tensor_idx(idx)
 
-    if idx is None or idx.shape[0] == 0:
+    if idx is None:
         start = time()
-        pointers = load_tensor(f['pointers'])
-        columns = load_tensor(f['columns'])
-        values = load_tensor(f['values'])
-        shape = load_tensor(f['shape'])
+        pointers = load_tensor(f['pointers'], non_fp_to_long=True)
+        columns = load_tensor(f['columns'], non_fp_to_long=True)
+        values = load_tensor(f['values'], non_fp_to_long=non_fp_to_long)
+        shape = load_tensor(f['shape'], non_fp_to_long=True)
         if verbose:
             print(f'load_csr_to_dense read all      : {time() - start:0.5f}s')
         start = time()
@@ -223,8 +254,8 @@ def load_csr_to_dense(f, idx=None, verbose=False):
 
     # Read only pointers start and end indices based on idx
     start = time()
-    ptr_start = load_tensor(f['pointers'], idx=idx)
-    ptr_end = load_tensor(f['pointers'], idx=idx + 1)
+    ptr_start = load_tensor(f['pointers'], idx=idx, non_fp_to_long=True)
+    ptr_end = load_tensor(f['pointers'], idx=idx + 1, non_fp_to_long=True)
     if verbose:
         print(f'load_csr_to_dense read ptr      : {time() - start:0.5f}s')
 
@@ -253,9 +284,9 @@ def load_csr_to_dense(f, idx=None, verbose=False):
     # Make sure to update the output shape too, since the rows have been
     # indexed
     start = time()
-    columns = load_tensor(f['columns'], idx=val_idx)
-    values = load_tensor(f['values'], idx=val_idx)
-    shape = load_tensor(f['shape'])
+    columns = load_tensor(f['columns'], idx=val_idx, non_fp_to_long=True)
+    values = load_tensor(f['values'], idx=val_idx, non_fp_to_long=non_fp_to_long)
+    shape = load_tensor(f['shape'], non_fp_to_long=True)
     shape[0] = idx.shape[0]
     if verbose:
         print(f'load_csr_to_dense read values   : {time() - start:0.5f}s')

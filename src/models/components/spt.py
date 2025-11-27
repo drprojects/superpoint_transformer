@@ -1,5 +1,8 @@
+import torch
 from torch import nn
-from src.utils import listify_with_reference
+from typing import Any, List, Tuple, Dict, Union
+from src.data import Data, NAG
+from src.utils import listify_with_reference, VersionHolder
 from src.nn import Stage, PointStage, DownNFuseStage, UpNFuseStage, \
     BatchNorm, CatFusion, MLP, LayerNorm
 from src.nn.pool import BaseAttentivePool
@@ -37,6 +40,30 @@ class SPT(nn.Module):
     :param point_drop: float
         Dropout rate for the last layer of the input and output MLPs
         in `PointStage`
+        
+    :point_cnn_blocks: bool
+        Whether to use a sparse CNN before the in_MLP in the `PointStage`
+    :point_cnn List[int]
+        List of channels for the sparse CNN in the `PointStage`
+    :point_cnn_kernel_size: int
+        Kernel size for the sparse CNN in the `PointStage`
+    :point_cnn_dilation: int
+        Dilation for the sparse CNN in the `PointStage`
+    
+    :point_cnn_norm: nn.Module
+        Normalization function for the sparse CNN in the `PointStage`
+    :point_cnn_activation: nn.Module
+        Activation function for the sparse CNN in the `PointStage`
+    :point_cnn_residual: bool
+        Whether to use a pre-activation residual connection 
+        in each block of the CNN in the `PointStage`
+    :point_cnn_global_residual: bool
+        Whether to use a global residual connection between the 
+        input and the output of the CNN in the `PointStage`
+
+    :param point_mlp_on_cnn_feats: bool
+        Whether to use the CNN features as input to the 
+        MLP (see scheme in the `PointStage` docstring)
 
     :param nano: bool
         If True, the `PointStage` will be removed and the model will
@@ -49,8 +76,7 @@ class SPT(nn.Module):
         Feature dimension for each `DownNFuseStage` (i.e. not
         including the `PointStage` when `nano=False`)
     :param down_pool_dim: List[str], str
-        Pooling mechanism used for the down-pooling in each
-        `DownNFuseStage`. Supports 'max', 'min', 'mean', and 'sum'.
+        Dimension after pooling in each `DownNFuseStage`.
         See `pool_factory()` for more
     :param down_in_mlp: List[List[int]], List[int]
         Channels for the input MLP of each `DownNFuseStage`
@@ -225,9 +251,9 @@ class SPT(nn.Module):
         Whether the node's parent diameter (currently estimated with
         `UnitSphereNorm`) should be concatenated to the node features.
         See `Stage`
-    :param pool: str, nn.Module
+    :param pool: List[str], str, nn.Module
         Pooling mechanism for `DownNFuseStage`s. Supports 'max',
-        'min', 'mean', 'sum' for string arguments.
+        'min', 'mean', 'sum', and 'std' for string arguments.
         See `pool_factory()` for more
     :param unpool: str
         Unpooling mechanism for `UpNFuseStage`s. Only supports
@@ -251,14 +277,36 @@ class SPT(nn.Module):
         superpoint-based reasoning is to mitigate compute and memory
         by circumventing the need to manipulate such full-resolution
         objects
+    :param store_features: bool
+        Visualization purposes: whether to store the computed features of
+        the superpoints (level 1) in the output object. (These are the features 
+        that the classifier head  takes as input.) 
+        It also stores the handcrafted features of points and superpoints 
+        in the NAG (otherwise they are deleted during forward).
     """
 
     def __init__(
             self,
 
+            point_hf=[],
+            post_cnn_point_hf=[],
+            segment_hf=[],
+
             point_mlp=None,
             point_drop=None,
 
+            point_cnn_blocks=False,
+            point_cnn=None,
+            point_cnn_kernel_size=None,
+            point_cnn_dilation=None,
+
+            point_cnn_norm=None,
+            point_cnn_activation=None,
+            point_cnn_residual=False,
+            point_cnn_global_residual=False,
+
+            point_mlp_on_cnn_feats=False,
+            
             nano=False,
 
             down_dim=None,
@@ -318,7 +366,9 @@ class SPT(nn.Module):
             unpool='index',
             fusion='cat',
             norm_mode='graph',
-            output_stage_wise=False):
+            output_stage_wise=False,
+            
+            store_features=False):
         super().__init__()
 
         self.nano = nano
@@ -331,6 +381,19 @@ class SPT(nn.Module):
         self.blocks_share_rpe = blocks_share_rpe
         self.heads_share_rpe = heads_share_rpe
         self.output_stage_wise = output_stage_wise
+        self.store_features = store_features
+        
+        self.share_hf_mlps = share_hf_mlps
+        
+        self.point_mlp_on_cnn_feats = point_mlp_on_cnn_feats
+        
+        self.point_hf = point_hf
+        self.segment_hf = segment_hf
+        self.post_cnn_point_hf = post_cnn_point_hf
+
+        # Create version holder
+        from src import __version__ # imported here to avoid circular import
+        self.version_holder = VersionHolder(__version__)
 
         # Convert input arguments to nested lists
         (
@@ -344,7 +407,8 @@ class SPT(nn.Module):
             down_ffn_ratio,
             down_residual_drop,
             down_attn_drop,
-            down_drop_path
+            down_drop_path,
+            pool
         ) = listify_with_reference(
             down_dim,
             down_pool_dim,
@@ -356,7 +420,8 @@ class SPT(nn.Module):
             down_ffn_ratio,
             down_residual_drop,
             down_attn_drop,
-            down_drop_path)
+            down_drop_path,
+            pool)
 
         (
             up_dim,
@@ -386,7 +451,7 @@ class SPT(nn.Module):
         num_up = len(up_dim)
         needs_h_edge_hf = any(x > 0 for x in down_num_blocks + up_num_blocks)
         needs_v_edge_hf = num_down > 0 and isinstance(
-            pool_factory(pool, down_pool_dim[0]), BaseAttentivePool)
+            pool_factory(pool[0], down_pool_dim[0]), BaseAttentivePool)
 
         # Build MLPs that will be used to process handcrafted segment
         # and edge features. These will be called before each
@@ -452,7 +517,8 @@ class SPT(nn.Module):
                 use_diameter=use_diameter,
                 use_diameter_parent=use_diameter_parent,
                 blocks_share_rpe=blocks_share_rpe,
-                heads_share_rpe=heads_share_rpe)
+                heads_share_rpe=heads_share_rpe,
+                version_holder=self.version_holder)
         else:
             self.first_stage = PointStage(
                 point_mlp,
@@ -460,7 +526,19 @@ class SPT(nn.Module):
                 mlp_norm=mlp_norm,
                 mlp_drop=point_drop,
                 use_pos=use_pos,
-                use_diameter_parent=use_diameter_parent)
+                use_diameter_parent=use_diameter_parent,
+                
+                cnn_blocks=point_cnn_blocks,
+                cnn=point_cnn,
+                cnn_kernel_size=point_cnn_kernel_size,
+                cnn_dilation=point_cnn_dilation,
+                cnn_norm=point_cnn_norm,
+                cnn_activation=point_cnn_activation,
+                cnn_residual=point_cnn_residual,
+                cnn_global_residual=point_cnn_global_residual,
+                
+                point_mlp_on_cnn_feats= point_mlp_on_cnn_feats,
+                version_holder=self.version_holder)
 
         # Operator to append the features such as the diameter or other 
         # handcrafted features to the NAG's features
@@ -517,13 +595,14 @@ class SPT(nn.Module):
                     q_delta_rpe=q_delta_rpe,
                     qk_share_rpe=qk_share_rpe,
                     q_on_minus_rpe=q_on_minus_rpe,
-                    pool=pool_factory(pool, pool_dim),
+                    pool=pool_factory(_pool, pool_dim),
                     fusion=fusion,
                     use_pos=use_pos,
                     use_diameter=use_diameter,
                     use_diameter_parent=use_diameter_parent,
                     blocks_share_rpe=blocks_share_rpe,
-                    heads_share_rpe=heads_share_rpe)
+                    heads_share_rpe=heads_share_rpe,
+                    version_holder=self.version_holder)
                 for
                     i_down,
                     (dim,
@@ -538,7 +617,8 @@ class SPT(nn.Module):
                     drop_path,
                     stage_k_rpe,
                     stage_q_rpe,
-                    pool_dim)
+                    pool_dim,
+                    _pool)
                 in enumerate(zip(
                     down_dim,
                     down_num_blocks,
@@ -552,7 +632,8 @@ class SPT(nn.Module):
                     down_drop_path,
                     down_k_rpe,
                     down_q_rpe,
-                    down_pool_dim))
+                    down_pool_dim,
+                    pool))
                 if i_down >= self.nano])
         else:
             self.down_stages = None
@@ -606,7 +687,8 @@ class SPT(nn.Module):
                     use_diameter=use_diameter,
                     use_diameter_parent=use_diameter_parent,
                     blocks_share_rpe=blocks_share_rpe,
-                    heads_share_rpe=heads_share_rpe)
+                    heads_share_rpe=heads_share_rpe,
+                    version_holder=self.version_holder)
                 for dim,
                     num_blocks,
                     in_mlp,
@@ -642,7 +724,7 @@ class SPT(nn.Module):
                or self.num_down_stages >= self.num_up_stages, \
             "The number of Up stages should be <= the number of Down " \
             "stages."
-        assert self.nano or self.num_down_stages > self.num_up_stages, \
+        assert self.nano or self.num_down_stages > self.num_up_stages or self.num_down_stages == 0, \
             "The number of Up stages should be < the number of Down " \
             "stages. That is to say, we do not want to output Level-0 " \
             "features but at least Level-1."
@@ -667,39 +749,58 @@ class SPT(nn.Module):
             return self.down_stages[-1].out_dim
         return self.first_stage.out_dim
 
+    @property
+    def version(self):
+        return self.version_holder.value
+
+    @version.setter
+    def version(self, v):
+        self.version_holder.value = v
+
     def forward(self, nag):
         # assert isinstance(nag, NAG)
         # assert nag.num_levels >= 2
         # assert nag.num_levels > self.num_down_stages
 
-        # TODO: this will need to be changed if we want FAST NANO
-        if self.nano:
-            nag = nag[1:]
+        assert int(self.nano) == nag.start_i_level, \
+            "`nano` mode should be consistent between the model and the data.\n"\
+                "   If `nano=True`, the first NAG level should be 1.\n" \
+                "   If `nano=False`, the first NAG level should be 0."
+
+        # Get the handcrafted features
+        if not self.nano:
+            nag.add_keys_to(level=0, 
+                            keys=self.point_hf, 
+                            to='x', 
+                            delete_after=False)
+            
+            nag.add_keys_to(level=0, 
+                            keys=self.post_cnn_point_hf, 
+                            to='x_mlp', 
+                            delete_after=not self.store_features)
+        
+        nag.add_keys_to(level='1+', 
+                        keys=self.segment_hf, 
+                        to='x', 
+                        delete_after=not self.store_features)
 
         # Apply the first MLPs on the handcrafted features
         if self.nano:
             if self.node_mlps is not None and self.node_mlps[0] is not None:
-                norm_index = nag[0].norm_index(mode=self.norm_mode)
-                nag[0].x = self.node_mlps[0](nag[0].x, batch=norm_index)
+                norm_index = nag[1].norm_index(mode=self.norm_mode)
+                nag[1].x = self.node_mlps[0](nag[1].x, batch=norm_index)
             if self.h_edge_mlps is not None:
-                norm_index = nag[0].norm_index(mode=self.norm_mode)
-                norm_index = norm_index[nag[0].edge_index[0]]
-                nag[0].edge_attr = self.h_edge_mlps[0](
-                    nag[0].edge_attr, batch=norm_index)
+                norm_index = nag[1].norm_index(mode=self.norm_mode)
+                norm_index = norm_index[nag[1].edge_index[0]]
+                nag[1].edge_attr = self.h_edge_mlps[0](
+                    nag[1].edge_attr, batch=norm_index)
 
-        # Encode level-0 data
-        x, diameter = self.first_stage(
-            nag[0].x if self.use_node_hf else None,
-            nag[0].norm_index(mode=self.norm_mode),
-            pos=nag[0].pos,
-            diameter=None,
-            node_size=getattr(nag[0], 'node_size', None),
-            super_index=nag[0].super_index,
-            edge_index=nag[0].edge_index,
-            edge_attr=nag[0].edge_attr)
+        # Forward the first stage
+        x, diameter = self._forward_first_stage(nag)
 
         # Add the diameter to the next level's attributes
-        nag[1].diameter = diameter
+        start_i_level = nag.start_i_level
+        nag[start_i_level + 1].diameter = diameter
 
         # Iteratively encode level-1 and above
         down_outputs = []
@@ -717,7 +818,7 @@ class SPT(nn.Module):
 
                 # Forward on the down stage and the corresponding NAG
                 # level
-                i_level = i_stage + 1
+                i_level = i_stage + 1 + self.nano
 
                 # Process handcrafted node and edge features. We need to
                 # do this here before those can be passed to the
@@ -740,11 +841,14 @@ class SPT(nn.Module):
                             v_edge_attr, batch=norm_index)
 
                 # Forward on the DownNFuseStage
-                x, diameter = self._forward_down_stage(stage, nag, i_level, x)
+                x, diameter = self._forward_down_stage(stage, 
+                                                       nag, 
+                                                       i_level, 
+                                                       x)
                 down_outputs.append(x)
 
                 # End here if we reached the last NAG level
-                if i_level == nag.num_levels - 1:
+                if i_level == nag.absolute_num_levels - 1:
                     continue
 
                 # Add the diameter to the next level's attributes
@@ -754,9 +858,13 @@ class SPT(nn.Module):
         up_outputs = []
         if self.up_stages is not None:
             for i_stage, stage in enumerate(self.up_stages):
-                i_level = self.num_down_stages - i_stage - 1
-                x_skip = down_outputs[-(2 + i_stage)]
-                x, _ = self._forward_up_stage(stage, nag, i_level, x, x_skip)
+                i_level = self.num_down_stages - i_stage - 1 + self.nano
+                x_skip = down_outputs[-(2 + i_stage)] # Remark : down_outputs[-1] is equal to x 
+                x, _ = self._forward_up_stage(stage, 
+                                               nag, 
+                                               i_level, 
+                                               x, 
+                                               x_skip)
                 up_outputs.append(x)
 
         # Different types of output signatures. For stage-wise output,
@@ -769,9 +877,43 @@ class SPT(nn.Module):
             return out
 
         return x
+    
+    def _forward_first_stage(self, nag : NAG):
+        assert isinstance(nag, NAG)
+        
+        start_i_level = nag.start_i_level
+        data = nag[start_i_level]
+        
+        return self.forward_first_stage(
+            data=data,
+            first_stage=self.first_stage,
+            use_node_hf=self.use_node_hf,
+            norm_mode=self.norm_mode)
+
+    @staticmethod
+    def forward_first_stage(data : Data,
+                            first_stage,
+                            use_node_hf,
+                            norm_mode):
+        
+        assert isinstance(data, Data)
+
+        # Forward the first stage
+        return first_stage(
+            data.x if use_node_hf else None,
+            data.norm_index(mode=norm_mode),
+            pos=data.pos,
+            diameter=None,
+            node_size=getattr(data, 'node_size', None),
+            super_index=data.super_index,
+            edge_index=data.edge_index,
+            edge_attr=data.edge_attr,
+            coords=getattr(data, 'coords', None),
+            batch=data.batch,
+            x_mlp=getattr(data, 'x_mlp', None))
 
     def _forward_down_stage(self, stage, nag, i_level, x):
-        is_last_level = (i_level == nag.num_levels - 1)
+        is_last_level = (i_level == nag.end_i_level)
         x_handcrafted = nag[i_level].x if self.use_node_hf else None
         return stage(
             x_handcrafted,
@@ -779,7 +921,7 @@ class SPT(nn.Module):
             nag[i_level].norm_index(mode=self.norm_mode),
             nag[i_level - 1].super_index,
             pos=nag[i_level].pos,
-            diameter=nag[i_level].diameter,
+            diameter=nag[i_level].diameter, #TODO : WARNING : Diameter is not used in a `DownNFuseStage`
             node_size=nag[i_level].node_size,
             super_index=nag[i_level].super_index if not is_last_level else None,
             edge_index=nag[i_level].edge_index,
@@ -795,7 +937,7 @@ class SPT(nn.Module):
             nag[i_level].norm_index(mode=self.norm_mode),
             nag[i_level].super_index,
             pos=nag[i_level].pos,
-            diameter=nag[i_level - self.nano].diameter,
+            diameter=None, #TODO : WARNING : Diameter is not used in the `UpNFuseStage` (I removed the -self.nano, because as nag[0] is not loaded, it raises an error)
             node_size=nag[i_level].node_size,
             super_index=nag[i_level].super_index,
             edge_index=nag[i_level].edge_index,

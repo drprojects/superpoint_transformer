@@ -105,17 +105,18 @@ def instantiate_transforms(transform_options):
     if len(transforms) <= 1:
         return pygT.Compose(transforms)
 
-    # If multiple transforms are composed, make sure the input and
-    # output match
-    for i in range(1, len(transforms)):
-        t_out = transforms[i - 1]
-        t_in = transforms[i]
-        out_type = getattr(t_out, '_OUT_TYPE', Data)
-        in_type = getattr(t_in, '_IN_TYPE', Data)
-        if in_type != out_type:
-            raise ValueError(
-                f"Cannot compose transforms: {t_out} returns a {out_type} "
-                f"while {t_in} expects a {in_type} input.")
+    # When composing transforms, check type `output → input` type compatibility.
+    # Allowed: Data → Data, NAG → NAG, Data → NAG (auto-wrapped)
+    # Forbidden: NAG → Data (would lose the NAG structure)
+    # for i in range(1, len(transforms)):
+    #     t_out = transforms[i - 1]
+    #     t_in = transforms[i]
+    #     out_type = getattr(t_out, '_OUT_TYPE', Data)
+    #     in_type = getattr(t_in, '_IN_TYPE', Data)
+    #     if (out_type == NAG) and (in_type == Data):
+    #         raise ValueError(
+    #             f"Cannot compose transforms: {t_out} returns a {out_type} "
+    #             f"while {t_in} expects a {in_type} input.")
 
     return pygT.Compose(transforms)
 
