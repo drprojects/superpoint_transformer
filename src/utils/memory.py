@@ -2,22 +2,18 @@ import gc
 import torch
 
 
-__all__ = ['print_memory_size', 'garbage_collection_cuda']
+__all__ = ['human_readable_memory', 'garbage_collection_cuda']
 
 
-def print_memory_size(a):
-    assert isinstance(a, torch.Tensor)
-    memory = a.element_size() * a.nelement()
-    if memory > 1024 * 1024 * 1024:
-        print(f'Memory: {memory / (1024 * 1024 * 1024):0.3f} Gb')
-        return
-    if memory > 1024 * 1024:
-        print(f'Memory: {memory / (1024 * 1024):0.3f} Mb')
-        return
-    if memory > 1024:
-        print(f'Memory: {memory / 1024:0.3f} Kb')
-        return
-    print(f'Memory: {memory:0.3f} bytes')
+def human_readable_memory(memory):
+    """Convert memory expressed as bytes into a human-readable string.
+    """
+    for i_unit, unit in enumerate(['B', 'KB', 'MB', 'GB', 'TB', 'PB']):
+        div = 2 ** (i_unit * 10)
+        msg = f"{memory / div:0.3f} {unit}"
+        if memory < div * 2 ** 10:
+            return msg
+    return msg
 
 
 def is_oom_error(exception: BaseException) -> bool:

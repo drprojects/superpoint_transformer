@@ -8,8 +8,13 @@ from torch_geometric.utils import degree
 
 
 __all__ = [
-    'BatchNorm', 'UnitSphereNorm', 'LayerNorm', 'InstanceNorm', 'GraphNorm',
-    'GroupNorm', 'INDEX_BASED_NORMS']
+    'BatchNorm',
+    'UnitSphereNorm',
+    'LayerNorm',
+    'InstanceNorm',
+    'GraphNorm',
+    'GroupNorm',
+    'INDEX_BASED_NORMS']
 
 
 class BatchNorm(nn.Module):

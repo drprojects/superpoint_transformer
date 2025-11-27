@@ -26,6 +26,7 @@ class NAGPropagatePointInstances(Transform):
         self.strict = strict
 
     def _process(self, nag):
+        assert nag.has_atoms, "NAG must have atoms to propagate instances"
         # Read the instances from the first data
         obj_0 = nag[0].obj
         if obj_0 is None or not isinstance(obj_0, InstanceData):
@@ -76,12 +77,12 @@ class OnTheFlyInstanceGraph(Transform):
     :param adjacency_mode: str
         Method used to compute search for adjacent nodes. If 'available'
         the already-existing graph in the input's 'edge_index' will be
-        used. If 'radius', the `radius` parameter will be used to search
-        for all neighboring clusters with points within `radius` of each
-        other. If 'radius-centroid', the `radius` parameter will be used
-        to search for all neighboring clusters solely based on their
-        centroid position. This is likely faster but less accurate than
-        'radius'
+        used. If 'radius-atomic', the `radius` parameter will be used to
+        search for all neighboring clusters with points within `radius`
+        of each other. If 'radius-centroid', the `radius` parameter will
+        be used to search for all neighboring clusters solely based on
+        their centroid position. This is likely faster but less accurate
+        than 'radius-atomic'
     :param k_max: int
         Maximum number of neighbors per cluster if `adjacency_mode`
         calls for it
@@ -114,14 +115,14 @@ class OnTheFlyInstanceGraph(Transform):
 
     _IN_TYPE = NAG
     _OUT_TYPE = NAG
-    _ADJACENCY_MODES = ['available', 'radius', 'radius-centroid']
+    _ADJACENCY_MODES = ['available', 'radius-atomic', 'radius-centroid']
     _CENTROID_MODES = ['iou', 'ratio-product']
 
     def __init__(
             self,
             level=1,
             num_classes=None,
-            adjacency_mode='radius',
+            adjacency_mode='radius-atomic',
             k_max=30,
             radius=1,
             use_batch=True,
@@ -147,6 +148,12 @@ class OnTheFlyInstanceGraph(Transform):
         # this Transform in a pipeline
         if self.level is None or self.level < 0:
             return nag
+        
+        nag.assert_level_in_nag(self.level)
+        
+        assert nag.has_atoms or self.adjacency_mode != 'radius-atomic', \
+            "Cannot use 'radius-atomic' mode if the NAG does not have atoms" \
+            "because 'radius-atomic' mode requires the atom positions."
 
         data = nag[self.level]
 
@@ -158,7 +165,7 @@ class OnTheFlyInstanceGraph(Transform):
 
         # Compute the neighbors based on the distances between the
         # points they hold
-        elif self.adjacency_mode == 'radius':
+        elif self.adjacency_mode == 'radius-atomic':
             # TODO: accelerate with subsampling ?
             super_index = nag.get_super_index(self.level, low=0)
             obj_edge_index, _ = cluster_radius_nn_graph(
@@ -192,7 +199,7 @@ class OnTheFlyInstanceGraph(Transform):
             data.obj_edge_index = to_trimmed(obj_edge_index)
             data.obj_edge_affinity = None
             data.obj_pos = None
-            nag._list[self.level] = data
+            nag._list[self.level - nag.start_i_level] = data
             return nag
 
         # Compute the trimmed graph and the edge affinity scores
@@ -203,7 +210,7 @@ class OnTheFlyInstanceGraph(Transform):
 
         # Compute the superpoint target instance centroid position
         # NB: this is a proxy method assuming nag[0] is pure-enough
-        i_level = min(self.centroid_level, nag.num_levels - 1)
+        i_level = min(self.centroid_level, nag.absolute_num_levels - 1)
         obj_pos, obj_idx = nag[i_level].estimate_instance_centroid(
             mode=self.centroid_mode)
 
@@ -222,6 +229,6 @@ class OnTheFlyInstanceGraph(Transform):
         data.obj_pos = obj_pos[sp_obj_idx_consec]
 
         # Save in the data in the NAG structure
-        nag._list[self.level] = data
+        nag._list[self.level - nag.start_i_level] = data
 
         return nag

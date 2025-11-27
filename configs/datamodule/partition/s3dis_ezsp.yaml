@@ -1,0 +1,16 @@
+# @package datamodule
+
+defaults:
+  - /datamodule/semantic/s3dis.yaml # General dataset parameters (metadata, augmentations)
+  - /datamodule/partition/default_ezsp.yaml
+
+# Input of the CNN.
+partition_hf:
+- 'rgb'
+
+# `contour_prior_min_size` is only needed for validation steps (to compute the 
+# partition), but it is not used during training epochs, as we don't compute the 
+# partition during training epochs.
+# We define here only one level of partition, because we are interested in the
+# purity of the first level of the partition.
+contour_prior_min_size: [5]

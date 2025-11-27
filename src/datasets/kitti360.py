@@ -67,7 +67,7 @@ def read_kitti360_window(
 
         if xyz:
             pos = torch.stack([
-                torch.FloatTensor(window["vertex"][axis])
+                torch.tensor(window["vertex"][axis], dtype=torch.float)
                 for axis in ["x", "y", "z"]], dim=-1)
             pos_offset = pos[0]
             data.pos = pos - pos_offset
@@ -75,21 +75,21 @@ def read_kitti360_window(
 
         if rgb:
             data.rgb = to_float_rgb(torch.stack([
-                torch.FloatTensor(window["vertex"][axis])
+                torch.tensor(window["vertex"][axis], dtype=torch.float)
                 for axis in ["red", "green", "blue"]], dim=-1))
 
         if semantic and 'semantic' in attributes:
-            y = torch.LongTensor(window["vertex"]['semantic'])
+            y = torch.tensor(window["vertex"]['semantic'], dtype=torch.long)
             data.y = torch.from_numpy(ID2TRAINID)[y] if remap else y
 
         if instance and 'instance' in attributes:
             idx = torch.arange(data.num_points)
-            obj = torch.LongTensor(window["vertex"]['instance'])
+            obj = torch.tensor(window["vertex"]['instance'], dtype=torch.long)
             # is_stuff = obj % 1000 == 0
             # obj[is_stuff] = 0
             obj = consecutive_cluster(obj)[0]
             count = torch.ones_like(obj)
-            y = torch.LongTensor(window["vertex"]['semantic'])
+            y = torch.tensor(window["vertex"]['semantic'], dtype=torch.long)
             y = torch.from_numpy(ID2TRAINID)[y] if remap else y
             data.obj = InstanceData(idx, obj, count, y, dense=True)
 
@@ -105,22 +105,124 @@ class KITTI360(BaseDataset):
 
     Dataset website: http://www.cvlibs.net/datasets/kitti-360/
 
-    Parameters
-    ----------
-    root : `str`
+    :param root: str
         Root directory where the dataset should be saved.
-    stage : {'train', 'val', 'test', 'trainval'}
-    transform : `callable`
-        transform function operating on data.
-    pre_transform : `callable`
-        pre_transform function operating on data.
-    pre_filter : `callable`
-        pre_filter function operating on data.
-    on_device_transform: `callable`
-        on_device_transform function operating on data, in the
-        'on_after_batch_transfer' hook. This is where GPU-based
+    :param stage : {'train', 'val', 'test', 'trainval'}
+    :param transform: Transform
+        Function operating on data. This is executed in the
+        dataloader, on CPU. In order to maximize dataloader throughput,
+        we tend to postpone all costly operations to rather happen
+        on-device with `on_device_transform`. If you still prefer
+        running some things on CPU, be careful of what you put in
+        `transform`. In case `in_memory=True`, the `transform` will only
+        be executed once upon initial data loading to RAM (see
+        `in_memory`)
+    :param pre_transform: Transform
+        Function operating on data. This is called only once at dataset
+        preprocessing time to do all the heavy lifting of data
+        preparation once and for all
+    :param pre_filter: Transform
+        Function operating on data. This is called only once at dataset
+        preprocessing time, after `pre_transform`, to fiter out some
+        data objects before saving
+    :param on_device_transform: Transform
+        Function operating on data, called in the
+        'on_after_batch_transfer' hook. This is where device-based
         augmentations should be, as well as any Transform you do not
-        want to run in CPU-based DataLoaders
+        want to run in CPU-based DataLoaders (see `transform`)
+    :param save_y_to_csr: bool
+        Whether to save 'y' semantic segmentation label histograms using
+        a custom CSR format to save memory and I/O time
+    :param save_pos_dtype: torch.dtype
+        Torch dtype to which 'pos' should be saved to disk. By default,
+        we use float32 precision. This is usually sufficient even for
+        dealing with high-resolution point clouds. Importantly, if the
+        point coordinates in your raw point clouds are expressed as
+        float64, it is possible to maintain high-precision localization
+        without manipulating float64 coordinates. To this end, we use a
+        small float64 'pos_offset' tensor attribute in your Data objects
+        (see how this is done in `read_dales_tile`, for instance)
+    :param save_fp_dtype: torch.dtype
+        Torch dtype to which all floating point tensors (other than
+        'pos' and 'pos_offset') should be saved to disk. Unless the
+        associated tensors require very high precision, we recommend
+        using float16 to save memory and I/O time
+    :param load_non_fp_to_long: bool
+        Non-floating-point tensors are saved with the smallest
+        precision-preserving dtype possible. `load_non_fp_to_long` rules
+        whether these should be cast back to int64 upon reading. To save
+        memory and I/O time, we recommend setting
+        `load_non_fp_to_long=False` and using the `Cast` or `NAGCast`
+        Transform in your `on_device_transform`. This allows postponing
+        the casting to GPU and accelerates reading from disk and CPU-GPU
+        transfer for the DataLoader
+    :param xy_tiling: int
+        If provided, the raw point cloud tiles will be split into
+        smaller sub-tiles before calling `pre_transform` at
+        preprocessing time. This allows chunking very large clouds into
+        more manageable pieces, which can alleviate the memory cost of
+        some preprocessing and inference operations when CPU/GPU RAM is
+        scarce. When using `xy_tiling`, each raw input cloud will be
+        split into `xy_tiling * xy_tiling` tiles, based on a regular XY
+        grid. Note that this is blind to the orientation and shape of
+        your cloud and is typically recommended for densely sampled,
+        square cloud tiles (e.g. the DALES dataset). For a tiling that
+        better follows the XY structure of a cloud, see `pc_tiling`
+    :param pc_tiling: int
+        If provided, the raw point cloud tiles will be split into
+        smaller sub-tiles before calling `pre_transform` at
+        preprocessing time. This allows chunking very large clouds into
+        more manageable pieces, which can alleviate the memory cost of
+        some preprocessing and inference operations when CPU/GPU RAM is
+        scarce. When using `pc_tiling`, each raw input cloud will be
+        recursively split into `2^pc_tiling` tiles of point counts,
+        based on the principal component of the cloud's XY coordinates
+    :param val_mixed_in_train: bool
+        Whether the 'val' stage data is saved in the same clouds as the
+        'train' stage. This may happen when the stage splits are
+        performed inside the clouds. In this case, an
+        `on_device_transform` will be automatically created to separate
+        stage-specific data upon reading
+    :param test_mixed_in_val: bool
+        Whether the 'test' stage data is saved in the same clouds as the
+        'val' stage. This may happen when the stage splits are
+        performed inside the clouds. In this case, an
+        `on_device_transform` will be automatically created to separate
+        stage-specific data upon reading
+    :param custom_hash: str
+        A user-chosen hash to be used for the dataset data directory.
+        This will bypass the default behavior where the pre_transforms
+        are used to generate a hash. It can be used, for instance, when
+        one wants to instantiate a dataset with already-processed data,
+        without knowing the exact config that was used to generate it
+    :param in_memory: bool
+        If True, the processed dataset will be entirely loaded in RAM
+        upon instantiation. This will accelerate training and inference
+        but requires large memory. WARNING: __getitem__ directly
+        returns the data in memory, so any modification to the returned
+        object will affect the `in_memory_data` too. Be careful to clone
+        the object before modifying it. Besides, the `transform` are
+        pre-applied to the in_memory data
+    :param point_save_keys: list[str]
+        List of point (ie level-0) attribute keys to save to disk at
+        the end of preprocessing. Leaving to `None` will save all
+        attributes by default
+    :param point_no_save_keys: list[str]
+        List of point (ie level-0) attribute keys to NOT save to disk at
+        the end of preprocessing
+    :param point_load_keys: list[str]
+        List of point (ie level-0) attribute keys to load when reading
+        data from disk
+    :param segment_save_keys: list[str]
+        List of segment (ie level-1+) attribute keys to save to disk
+        at the end of preprocessing. Leaving to `None` will save all
+        attributes by default
+    :param segment_no_save_keys: list[str]
+        List of segment (ie level-1+) attribute keys to NOT save to disk
+        at the end of preprocessing
+    :param segment_load_keys: list[str]
+        List of segment (ie level-1+) attribute keys to load when
+        reading data from disk
     """
 
     _form_url = CVLIBS_URL

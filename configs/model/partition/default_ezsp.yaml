@@ -1,0 +1,62 @@
+# @package model
+defaults:
+  - /model/semantic/spt-0.yaml
+  - /model/partition/_point_cnn.yaml
+
+_target_: src.models.semantic.PartitionAndSemanticModule
+
+training_partition_stage: True
+
+multi_stage_loss_lambdas: null
+loss_type: null
+
+# This creates the following CNN : dim_hf -> 32 -> 32 -> 32
+# where each arrow (->) is a convolutional block. (Conv -> GN -> LeakyReLU)
+cnn_width: 32
+cnn_depth: 2
+cnn_out: 32
+_point_cnn: ${eval:'[${model.cnn_width}]*${model.cnn_depth} + [${model.cnn_out}]'}
+
+# Wether for each train step, we compute the partition or not.
+# It is only useful to get partition metrics on the training set.
+partition_during_training: False
+
+# The same transform `GreedyContourPriorPartition`is defined in `sematnic/default_ezsp.yaml` 
+# for preprocessing the point cloud to learn the semantic of the superpoints.
+partition:
+  _target_: src.transforms.partition.GreedyContourPriorPartition
+  reg: ${datamodule.contour_prior_reg}
+  min_size: ${datamodule.contour_prior_min_size}
+  edge_weight_mode: ${datamodule.contour_prior_edge_weight_mode}
+  edge_reduce: ${datamodule.contour_prior_edge_reduce}
+  k: ${datamodule.contour_prior_k_isolated}
+  w_adjacency: 0.0
+  max_iterations: -1
+  verbose: ${datamodule.contour_prior_verbose}
+  sharding: ${datamodule.contour_prior_sharding}
+
+partition_criterion:
+  _target_: src.loss.partition_criterion.PartitionCriterion
+  
+  loss_function:
+    _target_: src.loss.BinaryFocalLoss
+    gamma: 1
+
+  affinity_temperature: 1
+  adaptive_sampling_ratio: 0.9
+
+  num_classes: ${datamodule.num_classes}
+  sharding: ${datamodule.contour_prior_sharding}
+
+
+
+net:
+  # These parameters are relevant when we have a partition and we are learning the semantic.
+  # Therefure, we set them to False for that stage
+  use_pos: False
+  use_diameter_parent: False
+
+scheduler: null
+optimizer:
+  lr: 1e-4
+  weight_decay: 1e-4

@@ -14,8 +14,14 @@ from src.utils import pylogger, rich_utils
 
 
 __all__ = [
-    'close_loggers', 'extras', 'get_metric_value', 'instantiate_callbacks',
-    'instantiate_loggers', 'log_hyperparameters', 'save_file', 'task_wrapper']
+    'close_loggers',
+    'extras',
+    'get_metric_value',
+    'instantiate_callbacks',
+    'instantiate_loggers',
+    'log_hyperparameters',
+    'save_file',
+    'task_wrapper']
 
 
 log = pylogger.get_pylogger(__name__)

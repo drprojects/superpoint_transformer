@@ -1,8 +1,12 @@
 from torch import nn
-from src.nn import SelfAttentionBlock, FFN, DropPath, LayerNorm, \
-    INDEX_BASED_NORMS
+from src.nn import (
+    SelfAttentionBlock,
+    FFN,
+    DropPath,
+    LayerNorm,
+    INDEX_BASED_NORMS)
 
-
+from src.utils import VersionHolder
 __all__ = ['TransformerBlock']
 
 
@@ -104,6 +108,17 @@ class TransformerBlock(nn.Module):
         whether attention heads should share the same parameters for
         building relative positional encodings. See
         `SelfAttentionBlock`
+    :param version_holder: VersionHolder
+        Object storing the code version. Used to determine the definition of the
+        residual connection added after the FFN. This is implemented to
+        ensure compatibility with the official weights of SPT and SPC released
+        before this commit fixing the residual connection.
+        (https://github.com/drprojects/superpoint_transformer/commit/a0f753b35b86e06d426113bdeac9b0123b220aa3)
+        
+        If the version is greater than or equal to 3.0.0, the residual 
+        connection is the input value of the FFN.
+        Otherwise, it is the input value of the self-attention block.
+            
     """
 
     def __init__(
@@ -130,11 +145,13 @@ class TransformerBlock(nn.Module):
             q_delta_rpe=False,
             qk_share_rpe=False,
             q_on_minus_rpe=False,
-            heads_share_rpe=False):
+            heads_share_rpe=False,
+            version_holder=VersionHolder()):
         super().__init__()
 
         self.dim = dim
         self.pre_norm = pre_norm
+        self.version_holder = version_holder
 
         # Self-Attention residual branch
         self.no_sa = no_sa
@@ -175,7 +192,11 @@ class TransformerBlock(nn.Module):
         self.drop_path = DropPath(drop_path) \
             if drop_path is not None and drop_path > 0 else nn.Identity()
 
-    def forward(self, x, norm_index, edge_index=None, edge_attr=None):
+    def forward(self, 
+                x, 
+                norm_index, 
+                edge_index=None, 
+                edge_attr=None):
         """
         :param x: FloatTensor or shape (N, C)
             Node features
@@ -215,9 +236,12 @@ class TransformerBlock(nn.Module):
             x = self.sa(x, edge_index, edge_attr=edge_attr)
             x = self.drop_path(x)
             x = self._forward_norm(self.sa_norm, shortcut + x, norm_index)
-
-        # Keep track of x for the residual connection
-        shortcut = x
+            
+        # Keep track of x for the residual connection (if version >= 2.2.0)
+        if (self.version_holder.major >= 3
+            or (self.version_holder.major == 2 and 
+                self.version_holder.minor >= 2)):
+            shortcut = x
 
         # Feed-Forward Network residual branch
         if not self.no_ffn and self.pre_norm:

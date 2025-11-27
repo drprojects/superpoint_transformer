@@ -6,7 +6,9 @@ from src.utils.configs import get_config_structure
 
 
 __all__ = [
-    'make_experiment_widgets', 'make_device_widget', 'make_split_widget',
+    'make_experiment_widgets',
+    'make_device_widget',
+    'make_split_widget',
     'make_checkpoint_file_search_widget']
 
 

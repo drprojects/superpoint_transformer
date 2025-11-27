@@ -1,4 +1,4 @@
-from torch.utils.data import DataLoader<div align="center">
+<div align="center">
 
 # Superpoint Transformer
 
@@ -30,27 +30,17 @@ Official implementation for
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/supercluster)
 <br>
 <br>
+[_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/TODO@Geist) (arXiv)
+<br>
+[![arXiv](https://img.shields.io/badge/TODO@Geist.svg)](https://arxiv.org/abs/TODO@Geist)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642503.svg)](https://doi.org/10.5281/zenodo.17642503)
+[![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://louisgeist.github.io/ez-sp/)
+<br>
 **If you ❤️ or simply use this project, don't forget to give the repository a ⭐,
 it means a lot to us !**
 <br>
 </div>
 
-```
-@article{robert2023spt,
-  title={Efficient 3D Semantic Segmentation with Superpoint Transformer},
-  author={Robert, Damien and Raguet, Hugo and Landrieu, Loic},
-  journal={Proceedings of the IEEE/CVF International Conference on Computer Vision},
-  year={2023}
-}
-```
-```
-@article{robert2024scalable,
-  title={Scalable 3D Panoptic Segmentation as Superpoint Graph Clustering},
-  author={Robert, Damien and Raguet, Hugo and Landrieu, Loic},
-  journal={Proceedings of the IEEE International Conference on 3D Vision},
-  year={2024}
-}
-```
 
 <br>
 
@@ -102,7 +92,7 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 
 |                               ✨ SuperCluster in numbers ✨                                |
 |:----------------------------------------------------------------------------------------:|
-|                              📊 **S3DIS 6-Fold** (55.9 PQ)                               |
+|                        📊 **S3DIS 6-Fold** (55.9 PQ)                                     |
 |                              📊 **S3DIS Area 5** (50.1 PQ)                               |
 |                               📊 **ScanNet Val** (58.7 PQ)                               |
 |                              📊 **KITTI-360 Val** (48.3 PQ)                              |
@@ -119,9 +109,51 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 
 </div>
 
-<br>
+### EZ-SP (Easy Superpoints)
+
+<p align="center">
+  <img width="100%" src="./media/teaser_ezsp.png">
+</p>
+
+**EZ-SP** brings two main improvements over SPT:
+- Much faster preprocessing and inference
+- Easier and learnable parametrization of the partition
+
+EZ-SP replaces the costly, CPU-based, cut-pursuit partitioning step of SPT 
+with a **fast and learnable GPU-based partitioning**. 
+First, we train a small convolutional backbone to embed each point of the input 
+scene into a low-dimensional space, where adjacent points from different 
+semantic classes are pushed apart. 
+Next, our new GPU-accelerated graph clustering algorithm groups neighboring 
+points with similar embeddings, while encouraging simple cluster contours, thus
+produces semantically homogeneous superpoints.
+These superpoints can then be used in the SPT semantic segmentation framework.
+
+<div align="center">
+
+|                                         ✨ EZ-SP in numbers ✨                                         |
+|:----------------------------------------------------------------------------------------------------:|
+|                                   📊 **S3DIS 6-Fold** (76.1 mIoU)                                    |
+|                                   📊 **S3DIS Area 5** (69.6 mIoU)                                    |
+|                                   📊 **KITTI-360 Val** (62.0 mIoU)                                   |
+|                              📊 **DALES** (79.4 mIoU)                                                |
+|                                        🦋 **392k parameters**                                        |
+| ⚡️ **72×** faster than [PTv3](https://arxiv.org/abs/2312.10035) for end-to-end semantic segmentation |
+|                   ⚡️ **5.3x** faster than SPT for end-to-end semantic segmentation                   | 
+
+
+</div>
+
 
 ## 📰  Updates
+- **27.11.2025** Major code release for our **learnable, GPU-accelerated 
+partition**, implementing 
+[_**EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation**_](https://arxiv.org/abs/%3CARXIV%20PAPER%20ID%3E).
+This new version introduces some changes to the codebase which are 
+**non-backward compatible**.
+We strived to list document the breaking changes and provide **instructions and
+scripts** to help users of previous versions move to the new codebase.
+Please refer to the [**CHANGELOG**](CHANGELOG.md) for more details❗
 - **27.06.2024** Released our Superpoint Transformer 🧑‍🏫 tutorial 
 [slides](media/superpoint_transformer_tutorial.pdf), 
 [notebook](notebooks/superpoint_transformer_tutorial.ipynb), and [video](https://www.youtube.com/watch?v=2qKhpQs9gJw). 
@@ -135,7 +167,9 @@ Make sure to come if you want to gain some hands-on experience with the project 
 This new version also implements long-awaited features such as lightning's
 `predict()` behavior, **voxel-resolution and full-resolution prediction**.
 Some changes in the dependencies and repository structure are **not 
-backward-compatible**. If you were already using anterior code versions, this means we recommend re-installing your conda environment and re-running the preprocessing or your datasets❗
+backward-compatible**. If you were already using anterior code versions, this
+means we recommend re-installing your conda environment and re-running the 
+preprocessing or your datasets❗
 - **15.10.2023** Our paper **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704)** was accepted for an **oral** presentation at **[3DV 2024](https://3dvconf.github.io/2024/)** 🥳
 - **06.10.2023** Come see our poster for **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045)** at **[ICCV 2023](https://iccv2023.thecvf.com/)**
 - **14.07.2023** Our paper **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045)** was accepted at **[ICCV 2023](https://iccv2023.thecvf.com/)** 🥳
@@ -154,12 +188,21 @@ This project was tested with:
 <br>
 
 ## 🏗  Installation
-Simply run [`install.sh`](install.sh) to install all dependencies in a new conda environment 
-named `spt`. 
+Simply run [`install.sh`](install.sh) to install all dependencies in a new 
+conda environment named `spt`. 
 ```bash
 # Creates a conda env named 'spt' env and installs dependencies
 ./install.sh
 ```
+
+**Optional dependency**: [TorchSparse](https://github.com/mit-han-lab/torchsparse) 
+is an optional dependency that enables sparse 3D convolutions, used in the 
+EZ-SP models. To install an environment with this, use:
+```bash
+# Creates a conda env named 'spt' env and installs all dependencies + TorchSparse
+./install.sh with_torchsparse
+```
+
 
 > **Note**: See the [Datasets page](docs/datasets.md) for setting up your dataset
 > path and file structure.
@@ -274,6 +317,9 @@ python src/eval.py experiment=panoptic/kitti360  ckpt_path=/path/to/your/checkpo
 
 # Evaluate SuperCluster on DALES
 python src/eval.py experiment=panoptic/dales ckpt_path=/path/to/your/checkpoint.ckpt
+
+# Evaluate EZ-SP on DALES
+python src/eval.py experiment=semantic/dales_ezsp ckpt_path=/path/to/your/checkpoint.ckpt datamodule.pretrained_cnn_ckpt_path=/path/to/your/partition_checkpoint.ckpt
 ```
 
 > **Note**: 
@@ -287,8 +333,13 @@ python src/eval.py experiment=panoptic/dales ckpt_path=/path/to/your/checkpoint.
 >**S3DIS 6-Fold**, **S3DIS 6-Fold with stuff**, **ScanNet Val**, **KITTI-360 Val**, and **DALES** are available at:
 >
 > [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10689037.svg)](https://doi.org/10.5281/zenodo.10689037)
+>
+> The pretrained weights of the **EZ-SP** models for **S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
+>
+> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642503.svg)](https://doi.org/10.5281/zenodo.17642503)
 
 ### Training
+#### SPT & SuperCluster
 Use the following command structure for **train our models on a 32G-GPU**, 
 where `<task>` should be `semantic` for using SPT and `panoptic` for using 
 SuperCluster:
@@ -376,6 +427,44 @@ python src/train.py experiment=panoptic/dales_11g
 >[`configs/logger/`](configs/logger). See 
 >[Lightning-Hydra](https://github.com/ashleve/lightning-hydra-template) for more
 >information on the logging options.
+
+NB: Current EZ-SP implementation supports `<dataset>` among `s3dis`, `kitti360` and `dales`.
+
+#### EZ-SP
+
+To train an EZ-SP model for semantic segmentation, you can either :
+  - a) first train the small backbone for partition, then train the full model for segmentation,
+
+  - b) use a checkpoint for the partition model and directly train the full model for segmentation
+
+##### a) Train partition & semantic model
+1. **Train the partition model:**
+   ```bash
+   python src/train.py experiment=partition/<dataset>_ezsp
+   ```
+   The checkpoint path will be logged (usually in `logs/train/runs/<run_dir>/checkpoints/last.ckpt`).
+
+2. **Train the semantic model with the learned partition:**
+   ```bash
+   python src/train.py experiment=semantic/<dataset>_ezsp datamodule.pretrained_cnn_ckpt_path=<partition_ckpt_path>
+   ```
+   Replace `<partition_ckpt_path>` with the checkpoint from step 1.
+
+##### b) Train directly a semantic model
+1. **Set partition model checkpoints:** Download our [released checkpoints](https://zenodo.org/records/17642503) of the partition model (named `ezsp_partition_<dataset>.ckpt`) and place the checkpoints in the `ckpt/` folder at the root of the project (and run `python src/train.py experiment=semantic/<dataset>_ezsp`).
+2. **Train the semantic model:**
+   ```bash
+   python src/train.py experiment=semantic/<dataset>_ezsp
+   ```
+
+##### c) Details
+The following provides technical details about the two stages described above:
+
+1. Launching an experiment from `config/experiments/partition` trains a small sparse CNN for EZ-SP that embeds every point into a low-dimensional space where adjacent points from different semantic classes are pushed apart. This first training stage is controlled by the `model.training_partition_stage` parameter.
+
+2. Launching an experiment from `config/experiments/semantic` that ends with `_ezsp` trains the full EZ-SP model for semantic segmentation. Note that these configurations require a checkpoint path to a partition model, specified via the `datamodule.pretrained_cnn_ckpt_path` parameter. The pretrained partition model is used to compute the hierarchical superpoint partition during preprocessing, on which the full model reasons during training.
+
+
 
 ### PyTorch Lightning `predict()`
 Both SPT and SuperCluster inherit from `LightningModule` and implement `predict_step()`, which permits using 
@@ -566,17 +655,7 @@ with to mitigate GPU memory use, based on when the error occurs.
 
 <br>
 
-## 💳  Credits
-- This project was built using [Lightning-Hydra template](https://github.com/ashleve/lightning-hydra-template).
-- The main data structures of this work rely on [PyTorch Geometric](https://github.com/pyg-team/pytorch_geometric)
-- Some point cloud operations were inspired from the [Torch-Points3D framework](https://github.com/nicolas-chaulet/torch-points3d), although not merged with the official project at this point. 
-- For the KITTI-360 dataset, some code from the official [KITTI-360](https://github.com/autonomousvision/kitti360Scripts) was used.
-- Some superpoint-graph-related operations were inspired from [Superpoint Graph](https://github.com/loicland/superpoint_graph)
-- The hierarchical superpoint partition and graph clustering are computed using [Parallel Cut-Pursuit](https://gitlab.com/1a7r0ch3/parallel-cut-pursuit)
-
-<br>
-
-## Citing our work
+## 💬 Citing our work
 If your work uses all or part of the present code, please include the following a citation:
 
 ```
@@ -593,9 +672,50 @@ If your work uses all or part of the present code, please include the following 
   journal={Proceedings of the IEEE International Conference on 3D Vision},
   year={2024}
 }
+
+@article{geist2025ezsp,
+  title={EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation},
+  author={Geist, Louis and Landrieu, Loic and Robert, Damien},
+  journal={arXiv},
+  year={2025},
+}
 ```
 
-You can find our [SPT paper 📄](https://arxiv.org/abs/2306.08045) and [SuperCluster paper 📄](https://arxiv.org/abs/2401.06704) on arxiv.
+📄 You can find our papers on arxiv:
+- [SPT](https://arxiv.org/abs/2306.08045)
+- [SuperCluster](https://arxiv.org/abs/2401.06704)
+- [EZ-SP](https://arxiv.org/abs/TODO@Geist)
 
 Also, **if you ❤️ or simply use this project, don't forget to give the 
 repository a ⭐, it means a lot to us !**
+
+<br>
+
+## 💳  Credits
+- This project was built using [Lightning-Hydra template](https://github.com/ashleve/lightning-hydra-template).
+- The main data structures of this work rely on [PyTorch Geometric](https://github.com/pyg-team/pytorch_geometric)
+- Some point cloud operations were inspired from the 
+[Torch-Points3D framework](https://github.com/nicolas-chaulet/torch-points3d), although not merged with the official project
+at this point. 
+- For the KITTI-360 dataset, some code from the official [KITTI-360](https://github.com/autonomousvision/kitti360Scripts) was 
+used.
+- Some superpoint-graph-related operations were inspired from
+[Superpoint Graph](https://github.com/loicland/superpoint_graph).
+- [Parallel Cut-Pursuit](https://gitlab.com/1a7r0ch3/parallel-cut-pursuit) was used in SPT and SPC to compute the 
+hierarchical superpoint partition and graph clustering. Note that this step is 
+replaced by our GPU-based algorithm in EZ-SP.
+
+This project has greatly benefited from the support of **Romain Janvier** 
+(https://github.com/rjanvier). This collaboration was made possible thanks to
+the [3DFin](https://github.com/3DFin) project.
+
+**3DFin** has been developed at the Centre of Wildfire Research of Swansea 
+University (UK) in collaboration with the Research Institute of Biodiversity 
+(CSIC, Spain) and the Department of Mining Exploitation of the University of 
+Oviedo (Spain). Funding provided by the UK NERC project (NE/T001194/1):
+_Advancing 3D Fuel Mapping for Wildfire Behaviour and Risk Mitigation Modelling_
+and by the Spanish Knowledge Generation project (PID2021-126790NB-I00):
+_Advancing carbon emission estimations from wildfires applying artificial 
+intelligence to 3D terrestrial point clouds_.
+
+This project has also benefited from contributions by **[Louis Geist](https://louisgeist.github.io)**, whose work was funded by the [PEPR IA SHARP](https://www.pepr-ia.fr/en/projet/sharp-english/).

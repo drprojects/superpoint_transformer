@@ -8,6 +8,7 @@ import logging
 import hashlib
 import warnings
 from tqdm import tqdm
+from time import time
 from datetime import datetime
 from itertools import product
 from tqdm.auto import tqdm as tq
@@ -18,9 +19,15 @@ from torch_geometric.data.makedirs import makedirs
 from torch_geometric.data.dataset import _repr
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
 
-from src.data import NAG
-from src.transforms import Transform, NAGSelectByKey, NAGRemoveKeys, \
-    SampleXYTiling, SampleRecursiveMainXYAxisTiling
+import src
+from src.data import NAG, Data
+from src.transforms import (
+    Transform,
+    NAGSelectByKey,
+    NAGRemoveKeys,
+    RemoveKeys,
+    SampleXYTiling,
+    SampleRecursiveMainXYAxisTiling)
 from src.visualization import show
 
 DIR = os.path.dirname(os.path.realpath(__file__))
@@ -83,41 +90,100 @@ class BaseDataset(InMemoryDataset):
     ```
 
 
-    Parameters
-    ----------
-    root : `str`
+    :param root: str
         Root directory where the dataset should be saved.
-    stage : {'train', 'val', 'test', 'trainval'}
-    transform : `callable`
-        transform function operating on data.
-    pre_transform : `callable`
-        pre_transform function operating on data.
-    pre_filter : `callable`
-        pre_filter function operating on data.
-    on_device_transform: `callable`
-        on_device_transform function operating on data, in the
-        'on_after_batch_transfer' hook. This is where GPU-based
+    :param stage : {'train', 'val', 'test', 'trainval'}
+    :param transform: Transform
+        Function operating on data. This is executed in the
+        dataloader, on CPU. In order to maximize dataloader throughput,
+        we tend to postpone all costly operations to rather happen
+        on-device with `on_device_transform`. If you still prefer
+        running some things on CPU, be careful of what you put in
+        `transform`. In case `in_memory=True`, the `transform` will only
+        be executed once upon initial data loading to RAM (see
+        `in_memory`)
+    :param pre_transform: Transform
+        Function operating on data. This is called only once at dataset
+        preprocessing time to do all the heavy lifting of data
+        preparation once and for all
+    :param pre_filter: Transform
+        Function operating on data. This is called only once at dataset
+        preprocessing time, after `pre_transform`, to fiter out some
+        data objects before saving
+    :param on_device_transform: Transform
+        Function operating on data, called in the
+        'on_after_batch_transfer' hook. This is where device-based
         augmentations should be, as well as any Transform you do not
-        want to run in CPU-based DataLoaders
-    val_mixed_in_train: bool
-        whether the 'val' stage data is saved in the same clouds as the
+        want to run in CPU-based DataLoaders (see `transform`)
+    :param save_y_to_csr: bool
+        Whether to save 'y' semantic segmentation label histograms using
+        a custom CSR format to save memory and I/O time
+    :param save_pos_dtype: torch.dtype
+        Torch dtype to which 'pos' should be saved to disk. By default,
+        we use float32 precision. This is usually sufficient even for
+        dealing with high-resolution point clouds. Importantly, if the
+        point coordinates in your raw point clouds are expressed as
+        float64, it is possible to maintain high-precision localization
+        without manipulating float64 coordinates. To this end, we use a
+        small float64 'pos_offset' tensor attribute in your Data objects
+        (see how this is done in `read_dales_tile`, for instance)
+    :param save_fp_dtype: torch.dtype
+        Torch dtype to which all floating point tensors (other than
+        'pos' and 'pos_offset') should be saved to disk. Unless the
+        associated tensors require very high precision, we recommend
+        using float16 to save memory and I/O time
+    :param save_rgb_to_byte: bool
+        Whether to cast the 'rgb' and 'mean_rgb' attributes to byte
+        (uint8) before saving.
+    :param load_non_fp_to_long: bool
+        Non-floating-point tensors are saved with the smallest
+        precision-preserving dtype possible. `load_non_fp_to_long` rules
+        whether these should be cast back to int64 upon reading. To save
+        memory and I/O time, we recommend setting
+        `load_non_fp_to_long=False` and using the `Cast` or `NAGCast`
+        Transform in your `on_device_transform`. This allows postponing
+        the casting to GPU and accelerates reading from disk and CPU-GPU
+        transfer for the DataLoader
+    :param xy_tiling: int
+        If provided, the raw point cloud tiles will be split into
+        smaller sub-tiles before calling `pre_transform` at
+        preprocessing time. This allows chunking very large clouds into
+        more manageable pieces, which can alleviate the memory cost of
+        some preprocessing and inference operations when CPU/GPU RAM is
+        scarce. When using `xy_tiling`, each raw input cloud will be
+        split into `xy_tiling * xy_tiling` tiles, based on a regular XY
+        grid. Note that this is blind to the orientation and shape of
+        your cloud and is typically recommended for densely sampled,
+        square cloud tiles (e.g. the DALES dataset). For a tiling that
+        better follows the XY structure of a cloud, see `pc_tiling`
+    :param pc_tiling: int
+        If provided, the raw point cloud tiles will be split into
+        smaller sub-tiles before calling `pre_transform` at
+        preprocessing time. This allows chunking very large clouds into
+        more manageable pieces, which can alleviate the memory cost of
+        some preprocessing and inference operations when CPU/GPU RAM is
+        scarce. When using `pc_tiling`, each raw input cloud will be
+        recursively split into `2^pc_tiling` tiles of point counts,
+        based on the principal component of the cloud's XY coordinates
+    :param val_mixed_in_train: bool
+        Whether the 'val' stage data is saved in the same clouds as the
         'train' stage. This may happen when the stage splits are
         performed inside the clouds. In this case, an
         `on_device_transform` will be automatically created to separate
         stage-specific data upon reading
-    test_mixed_in_val: bool
-        whether the 'test' stage data is saved in the same clouds as the
+    :param test_mixed_in_val: bool
+        Whether the 'test' stage data is saved in the same clouds as the
         'val' stage. This may happen when the stage splits are
         performed inside the clouds. In this case, an
         `on_device_transform` will be automatically created to separate
         stage-specific data upon reading
-    custom_hash: str
+    :param custom_hash: str
         A user-chosen hash to be used for the dataset data directory.
         This will bypass the default behavior where the pre_transforms
         are used to generate a hash. It can be used, for instance, when
         one wants to instantiate a dataset with already-processed data,
         without knowing the exact config that was used to generate it
-    in_memory: bool
+    :param in_memory: bool
         If True, the processed dataset will be entirely loaded in RAM
         upon instantiation. This will accelerate training and inference
         but requires large memory. WARNING: __getitem__ directly
@@ -125,26 +191,29 @@ class BaseDataset(InMemoryDataset):
         object will affect the `in_memory_data` too. Be careful to clone
         the object before modifying it. Besides, the `transform` are
         pre-applied to the in_memory data
-    point_save_keys: list[str]
-        List of point (ie level-0) attribute keys to save to disk at 
-        the end of preprocessing. Leaving to `None` will save all 
+    :param point_save_keys: list[str]
+        List of point (ie level-0) attribute keys to save to disk at
+        the end of preprocessing. Leaving to `None` will save all
         attributes by default
-    point_no_save_keys: list[str]
+    :param point_no_save_keys: list[str]
         List of point (ie level-0) attribute keys to NOT save to disk at
         the end of preprocessing
-    point_load_keys: list[str]
-        List of point (ie level-0) attribute keys to load when reading 
+    :param point_load_keys: list[str]
+        List of point (ie level-0) attribute keys to load when reading
         data from disk
-    segment_save_keys: list[str]
-        List of segment (ie level-1+) attribute keys to save to disk 
-        at the end of preprocessing. Leaving to `None` will save all 
+    :param segment_save_keys: list[str]
+        List of segment (ie level-1+) attribute keys to save to disk
+        at the end of preprocessing. Leaving to `None` will save all
         attributes by default
-    segment_no_save_keys: list[str]
-        List of segment (ie level-1+) attribute keys to NOT save to disk 
+    :param segment_no_save_keys: list[str]
+        List of segment (ie level-1+) attribute keys to NOT save to disk
         at the end of preprocessing
-    segment_load_keys: list[str]
-        List of segment (ie level-1+) attribute keys to load when 
-        reading data from disk 
+    :param segment_load_keys: list[str]
+        List of segment (ie level-1+) attribute keys to load when
+        reading data from disk
+    :param nano: bool
+        Wether the Module used with the dataset is in nano mode. This is used
+        to determine wether the atom level should be loaded or not.
     """
 
     def __init__(
@@ -158,6 +227,9 @@ class BaseDataset(InMemoryDataset):
             save_y_to_csr: bool = True,
             save_pos_dtype: torch.dtype = torch.float,
             save_fp_dtype: torch.dtype = torch.half,
+            save_rgb_to_byte: bool = True,
+            load_non_fp_to_long: bool = False,
+            load_rgb_to_float: bool = False,
             xy_tiling: int = None,
             pc_tiling: int = None,
             val_mixed_in_train: bool = False,
@@ -170,6 +242,7 @@ class BaseDataset(InMemoryDataset):
             segment_save_keys: List[str] = None,
             segment_no_save_keys: List[str] = None,
             segment_load_keys: List[str] = None,
+            nano: bool = False,
             **kwargs):
 
         assert stage in ['train', 'val', 'trainval', 'test']
@@ -181,6 +254,9 @@ class BaseDataset(InMemoryDataset):
         self._save_y_to_csr = save_y_to_csr
         self._save_pos_dtype = save_pos_dtype
         self._save_fp_dtype = save_fp_dtype
+        self._save_rgb_to_byte = save_rgb_to_byte
+        self._load_non_fp_to_long = load_non_fp_to_long
+        self._load_rgb_to_float = load_rgb_to_float
         self._on_device_transform = on_device_transform
         self._val_mixed_in_train = val_mixed_in_train
         self._test_mixed_in_val = test_mixed_in_val
@@ -192,6 +268,7 @@ class BaseDataset(InMemoryDataset):
         self._segment_save_keys = segment_save_keys
         self._segment_no_save_keys = segment_no_save_keys
         self._segment_load_keys = segment_load_keys
+        self._nano = nano
 
         if in_memory:
             log.warning(
@@ -235,9 +312,12 @@ class BaseDataset(InMemoryDataset):
         super().__init__(root, transform, pre_transform, pre_filter)
 
         # Display the dataset pre_transform_hash and full path
-        path = osp.join(self.processed_dir, "<stage>", self.pre_transform_hash)
         log.info(f'Dataset hash: "{self.pre_transform_hash}"')
-        log.info(f'Preprocessed data can be found at: "{path}"')
+        log.info(f'Preprocessed data can be found at: \
+                 \n - {osp.join(self.processed_dir, "train", self.pre_transform_hash)} \
+                 \n - {osp.join(self.processed_dir, "val", self.pre_transform_hash)} \
+                 \n - {osp.join(self.processed_dir, "test", self.pre_transform_hash)} \
+                 ')
 
         # If `val_mixed_in_train` or `test_mixed_in_val`, we will need
         # to separate some stage-related data at reading time.
@@ -258,7 +338,7 @@ class BaseDataset(InMemoryDataset):
 
         # Make sure a NAGRemoveKeys for `is_val` does not already exist
         # in the `on_device_transform` before prepending the transform
-        if not any(
+        if self._on_device_transform is not None and not any(
                 isinstance(odt, NAGSelectByKey) and odt.key == 'is_val'
                 for odt in self.on_device_transform.transforms):
             self._on_device_transform.transforms = \
@@ -269,9 +349,13 @@ class BaseDataset(InMemoryDataset):
             in_memory_data = [
                 NAG.load(
                     self.processed_paths[i],
-                    keys_low=self.point_load_keys,
-                    keys=self.segment_load_keys)
+                    low=int(self._nano),
+                    keys_low=self.point_load_keys if not self._nano else self.segment_load_keys,
+                    keys=self.segment_load_keys,
+                    non_fp_to_long=self.load_non_fp_to_long,
+                    rgb_to_float=self.load_rgb_to_float)
                 for i in range(len(self))]
+            
             if self.transform is not None:
                 in_memory_data = [self.transform(x) for x in in_memory_data]
             self._in_memory_data = in_memory_data
@@ -386,6 +470,18 @@ class BaseDataset(InMemoryDataset):
     @property
     def save_fp_dtype(self) -> bool:
         return self._save_fp_dtype
+
+    @property
+    def save_rgb_to_byte(self) -> bool:
+        return self._save_rgb_to_byte
+
+    @property
+    def load_non_fp_to_long(self) -> bool:
+        return self._load_non_fp_to_long
+
+    @property
+    def load_rgb_to_float(self) -> bool:
+        return self._load_rgb_to_float
 
     @property
     def on_device_transform(self) -> Transform:
@@ -664,7 +760,7 @@ class BaseDataset(InMemoryDataset):
         if self.log and 'pytest' not in sys.modules:
             print('Done!', file=sys.stderr)
 
-    def process(self) -> None:
+    def process(self, verbose: bool = False) -> None:
         # If some stages have mixed clouds (they rely on the same cloud
         # files and the split is operated at reading time by
         # `on_device_transform`), we create symlinks between the
@@ -691,9 +787,13 @@ class BaseDataset(InMemoryDataset):
 
         # Process clouds one by one
         for p in tq(self.processed_paths):
-            self._process_single_cloud(p)
+            self._process_single_cloud(p, verbose=verbose)
 
-    def _process_single_cloud(self, cloud_path: str) -> None:
+    def _process_single_cloud(
+            self,
+            cloud_path: str,
+            verbose: bool = False
+    ) -> None:
         """Internal method called by `self.process` to preprocess a
         single cloud of 3D points.
         """
@@ -706,46 +806,104 @@ class BaseDataset(InMemoryDataset):
 
         # Read the raw cloud corresponding to the final processed
         # `cloud_path` and convert it to a Data object
+        if verbose or src.is_debug_enabled():
+            times = {}
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            start = time()
         raw_path = self.processed_to_raw_path(cloud_path)
         data = self.sanitized_read_single_raw_cloud(raw_path)
+        if verbose or src.is_debug_enabled():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            times['reading'] = time() - start
 
         # If the cloud path indicates a tiling is needed, apply it here
+        if verbose or src.is_debug_enabled():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            start = time()
         if self.xy_tiling is not None:
             tile = self.get_tile_from_path(cloud_path)[0]
             data = SampleXYTiling(x=tile[0], y=tile[1], tiling=tile[2])(data)
         elif self.pc_tiling is not None:
             tile = self.get_tile_from_path(cloud_path)[0]
             data = SampleRecursiveMainXYAxisTiling(x=tile[0], steps=tile[1])(data)
+        if verbose or src.is_debug_enabled():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            times['tiling'] = time() - start
 
         # Apply pre_transform
+        if verbose or src.is_debug_enabled():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            start = time()
         if self.pre_transform is not None:
-            nag = self.pre_transform(data)
+            output = self.pre_transform(data)
         else:
-            nag = NAG([data])
+            output = NAG([data])
+        if verbose or src.is_debug_enabled():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            times['pre_transform'] = time() - start
 
         # To save some disk space, we discard some level-0 attributes
-        if self.point_save_keys is not None:
-            keys = set(nag[0].keys) - set(self.point_save_keys)
-            nag = NAGRemoveKeys(level=0, keys=keys)(nag)
-        elif self.point_no_save_keys is not None:
-            nag = NAGRemoveKeys(level=0, keys=self.point_no_save_keys)(nag)
-        if self.segment_save_keys is not None:
-            keys = set(nag[1].keys) - set(self.segment_save_keys)
-            nag = NAGRemoveKeys(level='1+', keys=keys)(nag)
-        elif self.segment_no_save_keys is not None:
-            nag = NAGRemoveKeys(level='1+', keys=self.segment_no_save_keys)(nag)
+        if verbose or src.is_debug_enabled():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            start = time()
+        if isinstance(output, NAG):
+            nag = output
+            if self.point_save_keys is not None:
+                keys = set(nag[0].keys) - set(self.point_save_keys)
+                nag = NAGRemoveKeys(level=0, keys=keys)(nag)
+            elif self.point_no_save_keys is not None:
+                nag = NAGRemoveKeys(level=0, keys=self.point_no_save_keys)(nag)
+            if self.segment_save_keys is not None:
+                keys = set(nag[1].keys) - set(self.segment_save_keys)
+                nag = NAGRemoveKeys(level='1+', keys=keys)(nag)
+            elif self.segment_no_save_keys is not None:
+                nag = NAGRemoveKeys(level='1+', keys=self.segment_no_save_keys)(nag)
 
-        # Save pre_transformed data to the processed dir/<path>
-        # TODO: is you do not throw away level-0 neighbors, make sure
-        #  that they contain no '-1' empty neighborhoods, because if
-        #  you load them for batching, the pyg reindexing mechanism will
-        #  break indices will not index update
-        nag.save(
-            cloud_path,
-            y_to_csr=self.save_y_to_csr,
-            pos_dtype=self.save_pos_dtype,
-            fp_dtype=self.save_fp_dtype)
-        del nag
+            # Save pre_transformed data to the processed dir/<path>
+            # TODO: is you do not throw away level-0 neighbors, make sure
+            #  that they contain no '-1' empty neighborhoods, because if
+            #  you load them for batching, the pyg reindexing mechanism will
+            #  break indices will not index update
+            nag.save(
+                cloud_path,
+                y_to_csr=self.save_y_to_csr,
+                pos_dtype=self.save_pos_dtype,
+                fp_dtype=self.save_fp_dtype,
+                rgb_to_byte=self.save_rgb_to_byte)
+            del nag
+        else:
+            data = output
+            if self.point_save_keys is not None:
+                keys = set(data[0].keys) - set(self.point_save_keys)
+                data = RemoveKeys(keys=keys)(data)
+            elif self.point_no_save_keys is not None:
+                data = RemoveKeys(keys=self.point_no_save_keys)(data)
+
+            # Save pre_transformed data to the processed dir/<path>
+            data.save(
+                cloud_path,
+                y_to_csr=self.save_y_to_csr,
+                pos_dtype=self.save_pos_dtype,
+                fp_dtype=self.save_fp_dtype,
+                rgb_to_byte=self.save_rgb_to_byte)
+            del data
+
+        if verbose or src.is_debug_enabled():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            times['saving'] = time() - start
+
+            message = f"{self.__repr__()} preprocessing times"
+            for k, t in times.items():
+                message = f"{message}\n    {k:<16}: {t:0.5f}"
+            log.info(message)
 
     @staticmethod
     def get_tile_from_path(path: str) -> Tuple[Tuple, str, str]:
@@ -863,23 +1021,39 @@ class BaseDataset(InMemoryDataset):
 
         # Read the first NAG just to know how many levels we have in the
         # preprocessed NAGs.
-        nag = self[0]
-        low = nag.num_levels - 1
+        sample = self[0]
+        sample_is_nag = isinstance(sample, NAG)
+        low = sample.end_i_level if sample_is_nag else None
 
         # Make sure the dataset has labels
-        if nag[low].y is None:
-            return None
-        del nag
+        if low:
+            if sample[low].y is None:
+                return None
+            del sample
+        else:
+            if sample.y is None:
+                return None
+            del sample
 
         # To be as fast as possible, we read only the last level of each
         # NAG, and accumulate the class counts from the label histograms
         counts = torch.zeros(self.num_classes)
         for i in range(len(self)):
             if self.in_memory:
-                y = self.in_memory_data[i][low].y
+                sample = self.in_memory_data[i]
+                y = sample[low].y if sample_is_nag else sample.y
             else:
-                y = NAG.load(
-                    self.processed_paths[i], low=low, keys_low=['y'])[0].y
+                if sample_is_nag:
+                    y = NAG.load(
+                        self.processed_paths[i],
+                        low=low,
+                        keys_low=['y'],
+                        non_fp_to_long=True)[low].y
+                else:
+                    y = Data.load(
+                        self.processed_paths[i],
+                        keys=['y'],
+                        non_fp_to_long=True).y
             counts += y.sum(dim=0)[:self.num_classes]
 
         # Compute the class weights. Optionally, a 'smooth' function may
@@ -920,16 +1094,23 @@ class BaseDataset(InMemoryDataset):
             #  transforms...
             return self.in_memory_data[idx]
 
-        # Read the NAG from HDD
-        nag = NAG.load(
+        # Read the sample from HDD
+        sample = NAG.load(
             self.processed_paths[idx],
-            keys_low=self.point_load_keys,
-            keys=self.segment_load_keys)
+            low=int(self._nano),
+            keys_low=self.point_load_keys if not self._nano else self.segment_load_keys,
+            keys=self.segment_load_keys,
+            non_fp_to_long=self.load_non_fp_to_long,
+            rgb_to_float=self.load_rgb_to_float)
 
         # Apply transforms
-        nag = nag if self.transform is None else self.transform(nag)
+        # In order to maximize dataloader throughput, we actively
+        # postpone all costly operations to happen on-device with
+        # self.on_device_transform. If you still prefer running some
+        # things on CPU, be careful of what you put in self.transform...
+        sample = sample if self.transform is None else self.transform(sample)
 
-        return nag
+        return sample
 
     def make_submission(
             self,

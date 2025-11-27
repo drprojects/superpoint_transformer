@@ -124,6 +124,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
             ckpt_path = None
         trainer.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
         log.info(f"Best ckpt path: {ckpt_path}")
+        log.info(f"Last ckpt path: {trainer.checkpoint_callback.last_model_path}")
 
     test_metrics = trainer.callback_metrics
 

@@ -5,8 +5,9 @@ from typing import Any, Dict, List, Tuple, Union
 
 from src.transforms import *
 from src.loader import DataLoader
-from src.data import NAGBatch
+from src.data import NAGBatch, NAG, Data, Batch
 
+import torch_geometric.transforms as pygT
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ class BaseDataModule(LightningDataModule):
             tta_runs: int = None,
             tta_val: bool = False,
             submit: bool = False,
+            prepare_only_test: bool = False,
             **kwargs):
         super().__init__()
 
@@ -155,19 +157,20 @@ class BaseDataModule(LightningDataModule):
         it will not be preserved outside this scope.
         """
         self.dataset_class(
-            self.hparams.data_dir, stage=self.train_stage,
-            transform=self.train_transform, pre_transform=self.pre_transform,
-            on_device_transform=self.on_device_train_transform, **self.kwargs)
-
-        self.dataset_class(
-            self.hparams.data_dir, stage=self.val_stage,
-            transform=self.val_transform, pre_transform=self.pre_transform,
-            on_device_transform=self.on_device_val_transform, **self.kwargs)
-
-        self.dataset_class(
             self.hparams.data_dir, stage='test',
             transform=self.test_transform, pre_transform=self.pre_transform,
             on_device_transform=self.on_device_test_transform, **self.kwargs)
+        
+        if not self.hparams.prepare_only_test:
+            self.dataset_class(
+                self.hparams.data_dir, stage=self.train_stage,
+                transform=self.train_transform, pre_transform=self.pre_transform,
+                on_device_transform=self.on_device_train_transform, **self.kwargs)
+
+            self.dataset_class(
+                self.hparams.data_dir, stage=self.val_stage,
+                transform=self.val_transform, pre_transform=self.pre_transform,
+                on_device_transform=self.on_device_val_transform, **self.kwargs)
 
     def setup(self, stage=None) -> None:
         """Load data. Set variables: `self.train_dataset`,
@@ -177,20 +180,25 @@ class BaseDataModule(LightningDataModule):
         and `trainer.test()`, so be careful not to execute things like
         random split twice!
         """
-        self.train_dataset = self.dataset_class(
-            self.hparams.data_dir, stage=self.train_stage,
-            transform=self.train_transform, pre_transform=self.pre_transform,
-            on_device_transform=self.on_device_train_transform, **self.kwargs)
-
-        self.val_dataset = self.dataset_class(
-            self.hparams.data_dir, stage=self.val_stage,
-            transform=self.val_transform, pre_transform=self.pre_transform,
-            on_device_transform=self.on_device_val_transform, **self.kwargs)
-
+        
         self.test_dataset = self.dataset_class(
             self.hparams.data_dir, stage='test',
             transform=self.test_transform, pre_transform=self.pre_transform,
             on_device_transform=self.on_device_test_transform, **self.kwargs)
+
+        if not self.hparams.prepare_only_test:
+            self.train_dataset = self.dataset_class(
+                self.hparams.data_dir, stage=self.train_stage,
+                transform=self.train_transform, pre_transform=self.pre_transform,
+                on_device_transform=self.on_device_train_transform, **self.kwargs)
+
+            self.val_dataset = self.dataset_class(
+                self.hparams.data_dir, stage=self.val_stage,
+                transform=self.val_transform, pre_transform=self.pre_transform,
+                on_device_transform=self.on_device_val_transform, **self.kwargs)
+            
+            if getattr(self.hparams, 'train_on_val', False):
+                self.train_dataset = self.val_dataset
 
     def set_transforms(self) -> None:
         """Parse in self.hparams in search for '*transform*' keys and
@@ -297,10 +305,42 @@ class BaseDataModule(LightningDataModule):
         """Things to do when loading checkpoint."""
         pass
 
+    def transfer_batch_to_device(
+            self,
+            batch: Any,
+            device: torch.device,
+            dataloader_idx: int
+    ) -> Any:
+        """Overwrite lightning's default behavior to be sure we properly
+        handle the transfer of our custom data types.
+        """
+        supported_dtypes = (Data, NAG)
+
+        # Don't issue non-blocking transfers to CPU
+        # Same with MPS due to a race condition bug: https://github.com/pytorch/pytorch/issues/83015
+        _BLOCKING_DEVICE_TYPES = ("cpu", "mps")
+        non_blocking = (
+                self.hparams.non_blocking
+                and isinstance(device, torch.device)
+                and device.type not in _BLOCKING_DEVICE_TYPES)
+
+        if isinstance(batch, supported_dtypes):
+            return batch.to(device, non_blocking=non_blocking)
+        if batch.__class__ is list and all(isinstance(x, supported_dtypes) for x in batch):
+            return [x.to(device, non_blocking=non_blocking) for x in batch]
+        if batch.__class__ is tuple and all(isinstance(x, supported_dtypes) for x in batch):
+            return tuple(x.to(device, non_blocking=non_blocking) for x in batch)
+        if batch.__class__ is dict and all(isinstance(x, supported_dtypes) for x in batch.values()):
+            return {k: v.to(device, non_blocking=non_blocking) for k, v in batch.items()}
+
+        raise NotImplementedError(
+            "Our custom device transfer only supports input NAG, Data, "
+            "and List, Tuple, or Dict of these.")
+
     @torch.no_grad()
     def on_after_batch_transfer(
             self,
-            nag_list: List['NAG'],
+            sample_list: List['NAG'],
             dataloader_idx: int,
     ) -> Union['NAG', Tuple['NAG', Transform, int]]:
         """Intended to call on-device operations. Typically,
@@ -313,8 +353,10 @@ class BaseDataModule(LightningDataModule):
         # Since NAGBatch.from_nag_list takes a bit of time, we asked
         # src.loader.DataLoader to simply pass a list of NAG objects,
         # waiting for to be batched on device.
-        nag = NAGBatch.from_nag_list(nag_list)
-        del nag_list
+        from_list = NAGBatch.from_nag_list if isinstance(sample_list[0], NAG) \
+            else Batch.from_data_list
+        batch = from_list(sample_list)
+        del sample_list
 
         # Here we run on_device_transform, which contains NAG transforms
         # that we could not / did not want to run using CPU-based
@@ -339,7 +381,7 @@ class BaseDataModule(LightningDataModule):
 
         # Skip on_device_transform if None
         if on_device_transform is None:
-            return nag
+            return batch
 
         # Apply on_device_transform only once when in training mode and
         # if no test-time augmentation is required
@@ -347,12 +389,12 @@ class BaseDataModule(LightningDataModule):
                 or self.hparams.tta_runs is None \
                 or self.hparams.tta_runs == 1 or \
                 (self.trainer.validating and not self.hparams.tta_val):
-            return on_device_transform(nag)
+            return on_device_transform(batch)
 
         # We return the input NAG as well as the augmentation transform
         # and the number of runs. Those will be used by
         # `LightningModule.step` to accumulate multiple augmented runs
-        return nag, on_device_transform, self.hparams.tta_runs
+        return batch, on_device_transform, self.hparams.tta_runs
 
     def __repr__(self):
         return f'{self.__class__.__name__}'

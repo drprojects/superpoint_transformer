@@ -1,13 +1,22 @@
-from torch.optim.lr_scheduler import _LRScheduler, StepLR, MultiStepLR, \
-    ExponentialLR, CosineAnnealingLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import (
+    _LRScheduler,
+    StepLR,
+    MultiStepLR,
+    ExponentialLR,
+    CosineAnnealingLR,
+    ReduceLROnPlateau)
 import math
 import warnings
 
 
 __all__ = [
-    'CosinePowerAnnealingLR', 'StepLRWithWarmup', 'MultiStepLRWithWarmup',
-    'ExponentialLRWithWarmup', 'CosineAnnealingLRWithWarmup',
-    'CosinePowerAnnealingLRWithWarmup', 'ReduceLROnPlateauWithWarmup']
+    'CosinePowerAnnealingLR',
+    'StepLRWithWarmup',
+    'MultiStepLRWithWarmup',
+    'ExponentialLRWithWarmup',
+    'CosineAnnealingLRWithWarmup',
+    'CosinePowerAnnealingLRWithWarmup',
+    'ReduceLROnPlateauWithWarmup']
 
 
 class _WarmupLR(_LRScheduler):

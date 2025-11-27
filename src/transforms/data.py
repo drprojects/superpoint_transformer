@@ -1,25 +1,43 @@
 import torch
+from torch_geometric.data.storage import recursive_apply
 from src.data import Data, NAG, CSRData
+from src.data.tensor_holder import TensorHolderMixIn
 from src.transforms import Transform
 from src.utils import tensor_idx, to_float_rgb, to_byte_rgb, dropout, \
-    sanitize_keys
+    sanitize_keys, cast_tensor, fill_list_with_string_indexing, string_to_dtype
 
 
 __all__ = [
-    'DataToNAG', 'NAGToData', 'Cast', 'NAGCast', 'RemoveKeys', 'NAGRemoveKeys',
-    'AddKeysTo', 'NAGAddKeysTo', 'NAGSelectByKey', 'SelectColumns',
-    'NAGSelectColumns', 'DropoutColumns', 'NAGDropoutColumns', 'DropoutRows',
-    'NAGDropoutRows', 'NAGJitterKey']
+    'DataToNAG',
+    'NAGToData',
+    'Cast',
+    'NAGCast',
+    'RemoveKeys',
+    'NAGRemoveKeys',
+    'AddKeysTo',
+    'NAGAddKeysTo',
+    'NAGSelectByKey',
+    'SelectColumns',
+    'NAGSelectColumns',
+    'DropoutColumns',
+    'NAGDropoutColumns',
+    'DropoutRows',
+    'NAGDropoutRows',
+    'NAGJitterKey']
 
+import time
 
 class DataToNAG(Transform):
     """Convert Data to a single-level NAG."""
 
     _IN_TYPE = Data
     _OUT_TYPE = NAG
+    
+    def __init__(self, i_level = 0):
+        self.i_level = i_level
 
     def _process(self, data):
-        return NAG([data])
+        return NAG([data], start_i_level = self.i_level)
 
 
 class NAGToData(Transform):
@@ -37,44 +55,82 @@ class Cast(Transform):
     """Cast Data attributes to the provided integer and floating point
     dtypes. In case 'rgb' or 'mean_rgb' is found, `rgb_to_float` will
     decide whether it should be cast to 'fp_dtype' or 'uint8'.
+    
+    If pos_dtype is provided, it will be used to cast the 'pos' attribute (instead of 'fp_dtype')
     """
 
     def __init__(
             self,
             fp_dtype=torch.float,
             int_dtype=torch.long,
-            rgb_to_float=True):
+            pos_dtype=None,
+            rgb_to_float=True,
+            optimal_int_dtype=False,
+            ):
+
+        if isinstance(fp_dtype, str):
+            fp_dtype = string_to_dtype(fp_dtype)
+        if isinstance(int_dtype, str):
+            int_dtype = string_to_dtype(int_dtype)
+            
         self.fp_dtype = fp_dtype
         self.int_dtype = int_dtype
+        self.pos_dtype = pos_dtype
         self.rgb_to_float = rgb_to_float
-
+        self.optimal_int_dtype = optimal_int_dtype
+        
     def _process(self, data):
+        # Isolate the tensor casting function as a lambda function to be
+        # passed to torch_geometric's recursive_apply later on. This will
+        # allow seamlessly running the casting on basic data structures
+        # holding Tensors
+        cast = lambda x: cast_tensor(
+            x, fp_dtype=self.fp_dtype, int_dtype=self.int_dtype, optimal_int_dtype=self.optimal_int_dtype)
+
         for k in data.keys:
 
-            # Recursively deal with CSRData attributes (e.g. Cluster for
-            # 'sub' key)
-            if isinstance(data[k], CSRData):
-                values = []
-                for v in data[k].values:
-                    values.append(self._process(Data(foo=v)).foo)
-                data[k].values = values
-                data[k].pointers = data[k].pointers.long()
-                continue
-
-            # Deal with 'rgb' and 'mean_rgb' attribute
+            # Specific behavior for casting 'rgb' and 'mean_rgb'
+            # attributes
             if k in ['rgb', 'mean_rgb']:
-                data[k] = to_float_rgb(data[k]).to(self.fp_dtype)\
+                data[k] = to_float_rgb(data[k]).to(self.fp_dtype) \
                     if self.rgb_to_float else to_byte_rgb(data[k])
                 continue
 
-            # Deal with Tensor attributes
-            if isinstance(data[k], torch.Tensor):
-                data[k] = data[k].to(self.fp_dtype) \
-                    if data[k].is_floating_point() \
-                    else data[k].to(self.int_dtype)
+            # Specific behavior for 'pos_offset', which is used for
+            # keeping high-precision coordinates in conjunction with
+            # 'pos'. In this specific case, we prefer leaving
+            # the dtype of 'pos_offset' untouched
+            if k == 'pos_offset':
                 continue
 
-            # Other objects are left untouched
+            if k == 'pos':
+                if self.pos_dtype is not None:
+                    data[k] = data[k].to(self.pos_dtype)
+                else:
+                    data[k] = data[k].to(self.fp_dtype)
+                continue
+
+            # Cast TensorHolderMixIn attributes such as Cluster,
+            # InstanceData, etc
+            if isinstance(data[k], TensorHolderMixIn):
+                data[k] = data[k].apply(cast)
+                continue
+
+            # Cast Tensor attributes and native python objects holding
+            # Tensors.
+            # NB: we could directly use the Data.apply() mechanism for
+            # this but since we also need to deal with the above edge
+            # cases for 'rgb' and TensorHolderMixIn attributes, we do
+            # this instead
+            data[k] = recursive_apply(data[k], cast)
+
+        # Need to additionally process attributes allowing to maintain
+        # the batching mechanism throughout serialization
+        for key in ['_slice_dict', '_inc_dict', '_num_graphs']:
+            attr = getattr(data, key, None)
+            if attr is None:
+                continue
+            setattr(data, key, recursive_apply(attr, cast))
 
         return data
 
@@ -90,14 +146,8 @@ class NAGCast(Cast):
     _OUT_TYPE = NAG
 
     def _process(self, nag):
-        transform = Cast(
-            fp_dtype=self.fp_dtype,
-            int_dtype=self.int_dtype,
-            rgb_to_float=self.rgb_to_float)
-
-        for i_level in range(nag.num_levels):
-            nag._list[i_level] = transform(nag[i_level])
-
+        for i_level_relative in range(nag.num_levels):
+            nag._list[i_level_relative] = super()._process(nag._list[i_level_relative])
         return nag
 
 
@@ -153,26 +203,18 @@ class NAGRemoveKeys(Transform):
 
     def _process(self, nag):
 
-        level_keys = [[]] * nag.num_levels
-        if isinstance(self.level, int):
-            level_keys[self.level] = self.keys
-        elif self.level == 'all':
-            level_keys = [self.keys] * nag.num_levels
-        elif self.level[-1] == '+':
-            i = int(self.level[:-1])
-            level_keys[i:] = [self.keys] * (nag.num_levels - i)
-        elif self.level[-1] == '-':
-            i = int(self.level[:-1])
-            level_keys[:i] = [self.keys] * i
-        else:
-            raise ValueError(f'Unsupported level={self.level}')
+        level_keys = fill_list_with_string_indexing(
+            level=self.level,
+            default=[],
+            value=self.keys,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
 
         transforms = [
             RemoveKeys(keys=k, strict=self.strict) for k in level_keys]
 
-        for i_level in range(nag.num_levels):
-            nag._list[i_level] = transforms[i_level](nag._list[i_level])
-
+        nag.apply_data_transform(transforms)
+        
         return nag
 
 
@@ -198,55 +240,13 @@ class AddKeysTo(Transform):
         self.strict = strict
         self.delete_after = delete_after
 
-    def _process_single_key(self, data, key, to):
-        # Read existing features and the attribute of interest
-        feat = getattr(data, key, None)
-        x = getattr(data, to, None)
-
-        # Skip if the attribute is None
-        if feat is None:
-            if self.strict:
-                raise Exception(f"Data should contain the attribute '{key}'")
-            else:
-                return data
-
-        # Remove the attribute from the Data, if required
-        if self.delete_after:
-            delattr(data, key)
-
-        # In case Data has no features yet
-        if x is None:
-            if self.strict and data.num_nodes != feat.shape[0]:
-                raise Exception(f"Data should contain the attribute '{to}'")
-            if feat.dim() == 1:
-                feat = feat.unsqueeze(-1)
-            data[to] = feat
-            return data
-
-        # Make sure shapes match
-        if x.shape[0] != feat.shape[0]:
-            raise Exception(
-                f"The tensors '{to}' and '{key}' can't be concatenated, "
-                f"'{to}': {x.shape[0]}, '{key}': {feat.shape[0]}")
-
-        # Concatenate x and feat
-        if x.dim() == 1:
-            x = x.unsqueeze(-1)
-        if feat.dim() == 1:
-            feat = feat.unsqueeze(-1)
-        data[to] = torch.cat([x, feat], dim=-1)
-
-        return data
-
     def _process(self, data):
-        if self.keys is None or len(self.keys) == 0:
-            return data
-
-        for key in self.keys:
-            data = self._process_single_key(data, key, self.to)
-
+        data.add_keys_to(
+            keys=self.keys, 
+            to=self.to, 
+            strict=self.strict, 
+            delete_after=self.delete_after)
         return data
-
 
 class NAGAddKeysTo(Transform):
     """Get attributes from their keys and concatenate them to x.
@@ -280,29 +280,21 @@ class NAGAddKeysTo(Transform):
         self.delete_after = delete_after
 
     def _process(self, nag):
-
-        level_keys = [[]] * nag.num_levels
-        if isinstance(self.level, int):
-            level_keys[self.level] = self.keys
-        elif self.level == 'all':
-            level_keys = [self.keys] * nag.num_levels
-        elif self.level[-1] == '+':
-            i = int(self.level[:-1])
-            level_keys[i:] = [self.keys] * (nag.num_levels - i)
-        elif self.level[-1] == '-':
-            i = int(self.level[:-1])
-            level_keys[:i] = [self.keys] * i
-        else:
-            raise ValueError(f'Unsupported level={self.level}')
-
+        level_keys = fill_list_with_string_indexing(
+            level=self.level,
+            default=[],
+            value=self.keys,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
         transforms = [
             AddKeysTo(
-                keys=k, to=self.to, strict=self.strict,
+                keys=k,
+                to=self.to,
+                strict=self.strict,
                 delete_after=self.delete_after)
             for k in level_keys]
 
-        for i_level in range(nag.num_levels):
-            nag._list[i_level] = transforms[i_level](nag._list[i_level])
+        nag.apply_data_transform(transforms)
 
         return nag
 
@@ -342,7 +334,8 @@ class NAGSelectByKey(Transform):
         self.delete_after = delete_after
 
     def _process(self, nag):
-        # Ensure the key exists
+        nag.assert_level_in_nag(self.level)
+        
         if self.key not in nag[self.level].keys:
             if self.strict:
                 raise ValueError(
@@ -397,12 +390,12 @@ class SelectColumns(Transform):
     def __init__(self, key=None, idx=None):
         assert key is not None, f"A Data key must be specified"
         self.key = key
-        self.idx = tensor_idx(idx) if idx is not None else None
+        self.idx = idx
 
     def _process(self, data):
         if self.idx is None or getattr(data, self.key, None) is None:
             return data
-        idx = tensor_idx(torch.as_tensor(self.idx, device=data.device))
+        idx = tensor_idx(self.idx, device=data.device)
         data[self.key] = data[self.key][:, idx]
         return data
 
@@ -431,25 +424,15 @@ class NAGSelectColumns(Transform):
         self.idx = idx
 
     def _process(self, nag):
-
-        level_idx = [None] * nag.num_levels
-        if isinstance(self.level, int):
-            level_idx[self.level] = self.idx
-        elif self.level == 'all':
-            level_idx = [self.idx] * nag.num_levels
-        elif self.level[-1] == '+':
-            i = int(self.level[:-1])
-            level_idx[i:] = [self.idx] * (nag.num_levels - i)
-        elif self.level[-1] == '-':
-            i = int(self.level[:-1])
-            level_idx[:i] = [self.idx] * i
-        else:
-            raise ValueError(f'Unsupported level={self.level}')
-
+        level_idx = fill_list_with_string_indexing(
+            default=None,
+            value=self.idx,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
+        
         transforms = [SelectColumns(key=self.key, idx=idx) for idx in level_idx]
 
-        for i_level in range(nag.num_levels):
-            nag._list[i_level] = transforms[i_level](nag._list[i_level])
+        nag.apply_data_transform(transforms)
 
         return nag
 
@@ -459,7 +442,7 @@ class DropoutColumns(Transform):
 
     :param p: float
         Probability of a column to be dropped
-    :param key: str
+    :param key: str or list(str)
         The Data attribute whose columns should be selected
     :param inplace: bool
         Whether the dropout should be performed directly on the input
@@ -470,7 +453,9 @@ class DropoutColumns(Transform):
     """
 
     def __init__(self, p=0.5, key=None, inplace=False, to_mean=False):
-        assert key is not None, f"A Data key must be specified"
+        assert key is not None, f"A Data key or list of keys must be specified"
+        if isinstance(key, str):
+            key = [key]
         self.p = p
         self.key = key
         self.inplace = inplace
@@ -482,13 +467,14 @@ class DropoutColumns(Transform):
             return data
 
         # Skip dropout if the attribute is not present in the input Data
-        if getattr(data, self.key, None) is None:
-            return data
+        for key in self.key:
+            if getattr(data, key, None) is None:
+                return data
 
-        # Apply dropout on each column, inplace
-        data[self.key] = dropout(
-            data[self.key], p=self.p, dim=1, inplace=self.inplace,
-            to_mean=self.to_mean)
+            # Apply dropout on each column, inplace
+            data[key] = dropout(
+                data[key], p=self.p, dim=1, inplace=self.inplace,
+                to_mean=self.to_mean)
 
         return data
 
@@ -521,6 +507,8 @@ class NAGDropoutColumns(Transform):
                or level.endswith('+')
         self.level = level
         self.p = p
+        if isinstance(key, str):
+            key = [key]
         self.key = key
         self.inplace = inplace
         self.to_mean = to_mean
@@ -530,27 +518,28 @@ class NAGDropoutColumns(Transform):
         if self.p <= 0:
             return nag
 
-        if isinstance(self.level, int):
-            levels = [self.level]
-        elif self.level == 'all':
-            levels = range(0, nag.num_levels)
-        elif self.level[-1] == '+':
-            levels = range(int(self.level[:-1]), nag.num_levels)
-        elif self.level[-1] == '-':
-            levels = range(0, int(self.level[:-1]) + 1)
-        else:
-            return nag
+        levels = fill_list_with_string_indexing(
+            level=self.level,
+            default=False,
+            value=True,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
 
-        for i_level in levels:
-            # Skip dropout if the attribute is not present in the Data
-            if getattr(nag[i_level], self.key, None) is None:
-                continue
-
-            # Apply dropout on each column, inplace
-            nag[i_level][self.key] = dropout(
-                nag[i_level][self.key], p=self.p, dim=1, inplace=self.inplace,
-                to_mean=self.to_mean)
-
+        transforms = []
+        # levels is of length nag.absolute_num_levels
+        for i_level, do_transform in enumerate(levels):
+            if do_transform :
+                transforms.append(
+                    DropoutColumns(
+                        p=self.p,
+                        key=self.key,
+                        inplace=self.inplace,
+                        to_mean=self.to_mean))
+            else :
+                transforms.append(None)
+                
+        nag.apply_data_transform(transforms)
+        
         return nag
 
 
@@ -622,6 +611,8 @@ class NAGDropoutRows(Transform):
                or level.endswith('+')
         self.level = level
         self.p = p
+        if isinstance(key, str):
+            key = [key]
         self.key = key
         self.inplace = inplace
         self.to_mean = to_mean
@@ -631,26 +622,28 @@ class NAGDropoutRows(Transform):
         if self.p <= 0:
             return nag
 
-        if isinstance(self.level, int):
-            levels = [self.level]
-        elif self.level == 'all':
-            levels = range(0, nag.num_levels)
-        elif self.level[-1] == '+':
-            levels = range(int(self.level[:-1]), nag.num_levels)
-        elif self.level[-1] == '-':
-            levels = range(0, int(self.level[:-1]) + 1)
-        else:
-            return nag
-
-        for i_level in levels:
-            # Skip dropout if the attribute is not present in the Data
-            if getattr(nag[i_level], self.key, None) is None:
-                continue
-
-            # Apply dropout on each column, inplace
-            nag[i_level][self.key] = dropout(
-                nag[i_level][self.key], p=self.p, dim=0, inplace=self.inplace,
-                to_mean=self.to_mean)
+        levels = fill_list_with_string_indexing(
+            level=self.level,
+            default=False,
+            value=True,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
+        transforms = []
+        
+        for i_level, do_transform in enumerate(levels):
+            for k in self.key:
+                if do_transform and getattr(nag[i_level], k, None) is not None:
+                    transforms.append(
+                        DropoutRows(
+                            p=self.p,
+                            key=k,
+                            inplace=self.inplace,
+                            to_mean=self.to_mean))
+                    
+                else :
+                    transforms.append(None)
+                
+        nag.apply_data_transform(transforms)
 
         return nag
 
@@ -658,7 +651,7 @@ class NAGDropoutRows(Transform):
 class NAGJitterKey(Transform):
     """Add some gaussian noise to Data['key'] for all data in a NAG.
 
-    :param key: str
+    :param key: str or list(str)
         The attribute on which to apply jittering
     :param sigma: float or List(float)
         Standard deviation of the gaussian noise. A list may be passed
@@ -677,9 +670,11 @@ class NAGJitterKey(Transform):
     _OUT_TYPE = NAG
 
     def __init__(self, key=None, sigma=0.01, trunc=0.05, strict=False):
-        assert key is not None, "A key must be specified"
+        assert key is not None, "A key or list of keys must be specified"
         assert isinstance(sigma, (int, float, list))
         assert isinstance(trunc, (int, float, list))
+        if isinstance(key, str):
+            key = [key]
         self.key = key
         self.sigma = sigma
         self.trunc = trunc
@@ -687,38 +682,40 @@ class NAGJitterKey(Transform):
 
     def _process(self, nag):
         if not isinstance(self.sigma, list):
-            sigma = [self.sigma] * nag.num_levels
+            sigma = [self.sigma] * nag.absolute_num_levels
         else:
             sigma = self.sigma
 
         if not isinstance(self.trunc, list):
-            trunc = [self.trunc] * nag.num_levels
+            trunc = [self.trunc] * nag.absolute_num_levels
         else:
             trunc = self.trunc
 
-        for i_level in range(nag.num_levels):
+        for i_level in nag.level_range:
 
             if sigma[i_level] <= 0:
                 continue
 
-            if getattr(nag[i_level], self.key, None) is None:
-                if self.strict:
-                    raise ValueError(
-                        f"Input data does not have any '{self.key} attribute")
+
+            for k in self.key:
+                if getattr(nag[i_level], k, None) is None:
+                    if self.strict:
+                        raise ValueError(
+                            f"Input data does not have any '{k} attribute")
+                    else:
+                        continue
+
+                if trunc[i_level] > 0:
+                    noise = torch.nn.init.trunc_normal_(
+                        torch.empty_like(nag[i_level][k]),
+                        mean=0.,
+                        std=sigma[i_level],
+                        a=-trunc[i_level],
+                        b=trunc[i_level])
                 else:
-                    continue
+                    noise = torch.randn_like(
+                        nag[i_level][k]) * sigma[i_level]
 
-            if trunc[i_level] > 0:
-                noise = torch.nn.init.trunc_normal_(
-                    torch.empty_like(nag[i_level][self.key]),
-                    mean=0.,
-                    std=sigma[i_level],
-                    a=-trunc[i_level],
-                    b=trunc[i_level])
-            else:
-                noise = torch.randn_like(
-                    nag[i_level][self.key]) * sigma[i_level]
-
-            nag[i_level][self.key] += noise
+                nag[i_level][k] += noise
 
         return nag

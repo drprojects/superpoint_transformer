@@ -4,20 +4,28 @@ import os.path as osp
 from torch.nn import ModuleList
 import logging
 from copy import deepcopy
-from typing import Any, List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from pytorch_lightning import LightningModule
-from torchmetrics import MaxMetric, MeanMetric
+from torchmetrics import MaxMetric, MeanMetric, SumMetric, CatMetric
 from pytorch_lightning.loggers.wandb import WandbLogger
 
+import src
 from src.metrics import ConfusionMatrix
-from src.utils import loss_with_target_histogram, atomic_to_histogram, \
-    init_weights, wandb_confusion_matrix, knn_2, garbage_collection_cuda, \
-    SemanticSegmentationOutput
+from src.utils import (
+    loss_with_target_histogram,
+    atomic_to_histogram,
+    init_weights,
+    wandb_confusion_matrix,
+    knn_2,
+    garbage_collection_cuda,
+    SemanticSegmentationOutput,
+    PartitionOutput,
+    get_commit_hash)
 from src.nn import Classifier
 from src.loss import MultiLoss
 from src.optim.lr_scheduler import ON_PLATEAU_SCHEDULERS
-from src.data import NAG
-from src.transforms import Transform, NAGSaveNodeIndex
+from src.data import NAG, Data
+from src.transforms import Transform, NAGSaveNodeIndex, PretrainedCNN
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +55,9 @@ class SemanticSegmentationModule(LightningModule):
         used for dropping some points or superpoints. If False, the
         target labels will be based on exact superpoint-wise
         histograms of labels computed at preprocessing time,
-        disregarding potential level-0 point down-sampling
+        disregarding potential level-0 point down-sampling.
+        Not compatible with `net.nano=True` which avoids loading
+        atom level.
     :param loss_type: str
         Type of loss applied.
         'ce': cross-entropy (if `multi_stage_loss_lambdas` is used,
@@ -111,7 +121,11 @@ class SemanticSegmentationModule(LightningModule):
         Kwargs will be passed to `_load_from_checkpoint()`
     """
 
-    _IGNORED_HYPERPARAMETERS = ['net', 'criterion']
+    _IGNORED_HYPERPARAMETERS = [
+        'net',
+        'criterion',
+        'partition',
+        'partition_criterion']
 
     def __init__(
             self,
@@ -139,6 +153,7 @@ class SemanticSegmentationModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(
             logger=False, ignore=self._IGNORED_HYPERPARAMETERS)
+    
 
         # Store the number of classes and the class names
         self.num_classes = num_classes
@@ -191,6 +206,13 @@ class SemanticSegmentationModule(LightningModule):
         self.net.apply(init)
         self.head.apply(init)
 
+        # If applicable, initialization of the CNN
+        self.cnn_weights_initialization()
+        
+        # # Update version in the network for easier access during training 
+        # # and inference.
+        # self.net.version = src.__version__
+
         # Metric objects for calculating scores on each dataset split.
         # We add `ignore_index=num_classes` to account for
         # void/unclassified/ignored points, which are given
@@ -209,6 +231,18 @@ class SemanticSegmentationModule(LightningModule):
         self.val_oa_best = MaxMetric()
         self.val_macc_best = MaxMetric()
 
+        # For tracking number of points andsuperpoints     
+        self.val_n_p = SumMetric()
+        self.test_n_p = SumMetric()
+        
+        self.val_n_sp = SumMetric()
+        self.test_n_sp = SumMetric()
+        
+        # For tracking superpoint size histogram
+        # It is suboptimal to use a CatMetric here, we could
+        # use a Histogram instead, but torchmetrics does not support
+        # histograms yet.
+
         # For tracking whether the test set has target labels. By
         # default, we assume the test set to have labels. But if a
         # single test batch misses labels, this will be set to False and
@@ -219,11 +253,53 @@ class SemanticSegmentationModule(LightningModule):
         # of steps
         self.gc_every_n_steps = int(gc_every_n_steps)
 
+    def cnn_weights_initialization(self) -> None:
+        if not getattr(self.net.first_stage, 'cnn_blocks', False):
+            log.info("The first stage does not use a CNN.")
+            return
+
+        # Random initialization of the CNN
+        if getattr(self.hparams, 'train_cnn_from_scratch', False):
+            assert not (getattr(self.hparams, 'freeze_cnn', False)), \
+                "Are you sure you want to freeze a randomly initialized CNN ?"
+            log.info("The CNN is trained from scratch")
+            return
+
+        # Initialization of the CNN from a pretrained checkpoint
+        pretrained_cnn_ckpt_path = getattr(
+            self.hparams, 'pretrained_cnn_ckpt_path', None)
+
+        assert pretrained_cnn_ckpt_path is not None, \
+            ("A pretrained CNN checkpoint must be provided if "
+             "you don't want to train the CNN from scratch. "
+             "Currently, `model.train_cnn_from_scratch` is False")
+
+        log.info(f"Initializing CNN of semantic module with the pretrained "
+                 f"checkpoint (produced by the partition training): "
+                 f"{pretrained_cnn_ckpt_path}")
+        self.net.first_stage = PretrainedCNN.load_checkpoint(
+            self.net.first_stage,
+            pretrained_cnn_ckpt_path,
+            self.device,
+            verbose=False)
+
+        if getattr(self.hparams, 'freeze_cnn', False):
+            log.info("The pretrained CNN will be frozen during training.")
+            self.net.first_stage.cnn_blocks.freeze()
+        else :
+            log.info("The pretrained CNN will NOT be frozen during training.")
+
     def forward(self, nag: NAG) -> SemanticSegmentationOutput:
         x = self.net(nag)
         logits = [head(x_) for head, x_ in zip(self.head, x)] \
             if self.multi_stage_loss else self.head(x)
-        return SemanticSegmentationOutput(logits)
+
+        output = SemanticSegmentationOutput(logits)
+
+        if self.net.store_features:
+            output.x = x
+
+        return output
 
     @property
     def multi_stage_loss(self) -> bool:
@@ -241,12 +317,13 @@ class SemanticSegmentationModule(LightningModule):
         # LightningModule with this new information, but it could easily
         # become tedious to track all places where num_classes affects
         # the LightningModule object.
-        num_classes = self.trainer.datamodule.train_dataset.num_classes
+        dataset = self.trainer.datamodule.test_dataset
+        num_classes = dataset.num_classes
         assert num_classes == self.num_classes, \
             f'LightningModule has {self.num_classes} classes while the ' \
             f'LightningDataModule has {num_classes} classes.'
 
-        self.class_names = self.trainer.datamodule.train_dataset.class_names
+        self.class_names = dataset.class_names
 
         if not self.hparams.weighted_loss:
             return
@@ -258,8 +335,10 @@ class SemanticSegmentationModule(LightningModule):
             return
 
         # Set class weights for the criterion
-        weight = self.trainer.datamodule.train_dataset.get_class_weight()
-        self.criterion.weight = weight.to(self.device)
+        if not self.trainer.datamodule.hparams.prepare_only_test:
+            weight = self.trainer.datamodule.train_dataset.get_class_weight(
+                smooth=getattr(self.hparams, 'weighted_loss_smooth', 'sqrt'))
+            self.criterion.weight = weight.to(self.device)
 
         # Check that the period of track_val_every_n_epoch` is a
         # multiple of check_val_every_n_epoch
@@ -443,7 +522,7 @@ class SemanticSegmentationModule(LightningModule):
             output_multi = self._update_output_multi(
                 output_multi, nag, output, nag_, key)
 
-            # Maintain the seen/unseen mask for level-1 nodes only
+            # Maintain the seen/unseen mask for first segment-level nodes only
             node_id = nag_[1][key]
             seen[node_id] = True
 
@@ -555,12 +634,17 @@ class SemanticSegmentationModule(LightningModule):
 
         If no labels are found in the NAG, `output.y_hist` will be None.
         """
+        assert not(self.hparams.sampling_loss and self.hparams.net.nano), \
+            ("Sampling loss is not supported with the `nano`, as fast nano "
+             "avoids loading the atom level, and sampling loss requires the "
+             "atom level.")
+
         # Return if the required labels cannot be found in the NAG
         if self.hparams.sampling_loss and nag[0].y is None:
             output.y_hist = None
             return output
         elif self.multi_stage_loss:
-            for i in range(1, nag.num_levels):
+            for i in range(1, nag.absolute_num_levels):
                 if nag[i].y is None:
                     output.y_hist = None
                     return output
@@ -576,7 +660,8 @@ class SemanticSegmentationModule(LightningModule):
             y_hist = [
                 atomic_to_histogram(
                     nag[0].y,
-                    nag.get_super_index(i_level), n_bins=self.num_classes + 1)
+                    nag.get_super_index(i_level, low = 0),
+                    n_bins=self.num_classes + 1)
                 for i_level in range(1, nag.num_levels)]
 
         elif self.hparams.sampling_loss:
@@ -624,34 +709,116 @@ class SemanticSegmentationModule(LightningModule):
         the output object.
         """
         self.train_loss(loss.detach())
-        self.train_cm(output.semantic_pred().detach(), output.semantic_target.detach())
+        self.train_cm(
+            output.semantic_pred().detach(),
+            output.semantic_target.detach())
 
     def train_step_log_metrics(self) -> None:
         """Log train metrics after a single step with the content of the
         output object.
         """
         self.log(
-            "train/loss", self.train_loss, on_step=False, on_epoch=True,
+            "train/loss",
+            self.train_loss,
+            on_step=False,
+            on_epoch=True,
             prog_bar=True)
 
     def on_train_epoch_end(self) -> None:
+        self._on_train_epoch_end(
+            cm=self.train_cm,
+            metric_category='superpoints_semantic_prediction')
+
+    def _on_train_epoch_end(
+            self,
+            cm: ConfusionMatrix,
+            metric_category: str) -> None:
+
+        # Retrieving the appropriate prefix for logging metrics
+        if metric_category == 'superpoints_semantic_prediction':
+            prefix = ''
+        elif metric_category == 'superpoints_purity':
+            prefix = 'o'
+        elif metric_category == 'edge_classification':
+            prefix = 'edge_classification_'
+        else:
+            raise ValueError(
+                f"Invalid metric_category: {metric_category}\n"
+                "Valid values are : superpoints_semantic_prediction, "
+                "superpoints_purity, edge_classification")
 
         if self.trainer.num_devices > 1:
-            epoch_cm = torch.sum(self.all_gather(self.train_cm.confmat), dim=0)
-            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
+            epoch_cm = torch.sum(self.all_gather(cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(
+                self.num_classes).from_confusion_matrix(epoch_cm)
         else:
-            epoch_cm = self.train_cm
+            epoch_cm = cm
 
         # Log metrics
-        self.log("train/miou", epoch_cm.miou(), prog_bar=True, rank_zero_only=True)
-        self.log("train/oa", epoch_cm.oa(), prog_bar=True, rank_zero_only=True)
-        self.log("train/macc", epoch_cm.macc(), prog_bar=True, rank_zero_only=True)
-        for iou, seen, name in zip(*epoch_cm.iou(), self.class_names):
-            if seen:
-                self.log(f"train/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
+        self.log(
+            f"train/{prefix}miou",
+            epoch_cm.miou(),
+            prog_bar=True,
+            rank_zero_only=True)
+        self.log(
+            f"train/{prefix}oa",
+            epoch_cm.oa(),
+            prog_bar=True,
+            rank_zero_only=True)
+        self.log(
+            f"train/{prefix}macc",
+            epoch_cm.macc(),
+            prog_bar=True,
+            rank_zero_only=True)
+
+        if getattr(self.hparams, 'extensive_logging', True):
+            class_names = (
+                self.class_names if prefix != 'edge_classification_'
+                else ['inter', 'intra'])
+            for iou, seen, name in zip(*epoch_cm.iou(), class_names):
+                if seen:
+                    self.log(
+                        f"train/{prefix}iou_{name}", iou, prog_bar=True,
+                        rank_zero_only=True)
+
+            if prefix == 'edge_classification_':
+                inter_index = 0
+
+                num_inter_target = (
+                    epoch_cm.confmat[inter_index, inter_index] +
+                    epoch_cm.confmat[inter_index, 1-inter_index])
+                num_inter_pred = (
+                    epoch_cm.confmat[inter_index, inter_index] +
+                    epoch_cm.confmat[1-inter_index, inter_index])
+
+                inter_recall = (
+                    epoch_cm.confmat[inter_index, inter_index] /
+                    num_inter_target)
+                inter_precision = (
+                    epoch_cm.confmat[inter_index, inter_index] /
+                    num_inter_pred)
+                inter_f1 = (
+                    2 * inter_precision * inter_recall /
+                    (inter_precision + inter_recall))
+                inter_prediction_rate = (
+                    num_inter_pred / (epoch_cm.confmat[:2, :2].sum()))
+
+                self.log(
+                    f"train/{prefix}inter_recall", inter_recall*100,
+                    prog_bar=True, rank_zero_only=True)
+                self.log(
+                    f"train/{prefix}inter_precision", inter_precision*100,
+                    prog_bar=True, rank_zero_only=True)
+                self.log(
+                    f"train/{prefix}inter_f1", inter_f1*100,
+                    prog_bar=True, rank_zero_only=True)
+                self.log(
+                    f"train/{prefix}inter_prediction_rate",
+                    inter_prediction_rate*100, prog_bar=True,
+                    rank_zero_only=True)
 
         # Reset metrics accumulated over the last epoch
-        self.train_cm.reset()
+        cm.reset()
         epoch_cm.reset()
 
     def validation_step(
@@ -698,7 +865,9 @@ class SemanticSegmentationModule(LightningModule):
         object.
         """
         self.val_loss(loss.detach())
-        self.val_cm(output.semantic_pred().detach(), output.semantic_target.detach())
+        self.val_cm(
+            output.semantic_pred().detach(),
+            output.semantic_target.detach())
 
     def validation_step_log_metrics(self) -> None:
         """Log validation metrics after a single step with the content
@@ -708,41 +877,157 @@ class SemanticSegmentationModule(LightningModule):
             "val/loss", self.val_loss, on_step=False, on_epoch=True,
             prog_bar=True)
 
-    def on_validation_epoch_end(self) -> None:
+    def _on_eval_epoch_end(
+            self,
+            stage: str,
+            cm: ConfusionMatrix,
+            metric_category: str,
+            miou_best: MaxMetric = None,
+            oa_best: MaxMetric = None,
+            macc_best: MaxMetric = None,
+    ) -> None:
+        """Helper method to factorize validation and test epoch end logic.
+
+        :param stage: str
+            The current stage. It is used to know under which name
+            the metrics should be logged, and also to log `test` specific 
+            metrics.
+
+            The values must be one of the following:
+            - 'val' for validation epochs,
+            - 'test' for test epochs.
+
+        :param cm: ConfusionMatrix to compute metrics from
+
+        :param metric_category: str
+            The type of metrics to compute.
+            The values must be one of the following:
+            - 'superpoints_semantic_prediction' for semantic prediction of 
+            superpoints
+            - 'superpoints_purity' for purity of superpoints
+            - 'edge_classification' for edge classification
+            This is used to determine the correct name for logging metrics.
+            (should it be `omiou` or `miou`, etc.)
+
+        :param miou_best: MaxMetric
+            Metric tracking best mIoU
+            Only relevant and used for validation.
+        :param oa_best: MaxMetric
+            Metric tracking best OA
+            Only relevant and used for validation.
+        :param macc_best: MaxMetric
+            Metric tracking best mAcc
+            Only relevant and used for validation.
+
+        """
+        assert stage in ['val', 'test']
+
+        if metric_category == 'superpoints_semantic_prediction':
+            prefix = ''
+        elif metric_category == 'superpoints_purity':
+            prefix = 'o'
+        else:
+            raise ValueError(
+                f"Invalid metric_category: {metric_category}\n"
+                f"Valid values are : superpoints_semantic_prediction, "
+                f"superpoints_purity")
+
+        if stage == 'val' :
+            assert miou_best is not None
+            assert oa_best is not None
+            assert macc_best is not None
+
+        if stage == 'test':
+            # Finalize the submission
+            if self.trainer.datamodule.hparams.submit:
+                self.trainer.datamodule.test_dataset.finalize_submission(
+                    self.submission_dir)
+
+            if not self.test_has_target:
+                cm.reset()
+                return
 
         if self.trainer.num_devices > 1:
-            epoch_cm = torch.sum(self.all_gather(self.val_cm.confmat), dim=0)
-            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
+            epoch_cm = torch.sum(self.all_gather(cm.confmat), dim=0)
+            epoch_cm = ConfusionMatrix(
+                self.num_classes).from_confusion_matrix(epoch_cm)
         else:
-            epoch_cm = self.val_cm
+            epoch_cm = cm
 
         miou = epoch_cm.miou()
         oa = epoch_cm.oa()
         macc = epoch_cm.macc()
 
-        # Update best-so-far metrics
-        self.val_miou_best(miou)
-        self.val_oa_best(oa)
-        self.val_macc_best(macc)
-
         # Log metrics
-        self.log("val/miou", miou, prog_bar=True, rank_zero_only=True)
-        self.log("val/oa", oa, prog_bar=True, rank_zero_only=True)
-        self.log("val/macc", macc, prog_bar=True, rank_zero_only=True)
-        for iou, seen, name in zip(*epoch_cm.iou(), self.class_names):
-            if seen:
-                self.log(f"val/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
+        self.log(
+            f"{stage}/{prefix}miou",
+            miou,
+            prog_bar=True,
+            rank_zero_only=True)
+        self.log(
+            f"{stage}/{prefix}oa",
+            oa,
+            prog_bar=True,
+            rank_zero_only=True)
+        self.log(
+            f"{stage}/{prefix}macc",
+            macc,
+            prog_bar=True,
+            rank_zero_only=True)
 
-        # Log best-so-far metrics, using `.compute()` instead of passing
-        # the whole torchmetrics object, because otherwise metric would
-        # be reset by lightning after each epoch
-        self.log("val/miou_best", self.val_miou_best.compute(), prog_bar=True, rank_zero_only=True)
-        self.log("val/oa_best", self.val_oa_best.compute(), prog_bar=True, rank_zero_only=True)
-        self.log("val/macc_best", self.val_macc_best.compute(), prog_bar=True, rank_zero_only=True)
+        class_names = self.class_names
+        for iou, seen, name in zip(*epoch_cm.iou(), class_names):
+            if seen:
+                self.log(
+                    f"{stage}/{prefix}iou_{name}",
+                    iou,
+                    prog_bar=True,
+                    rank_zero_only=True)
+
+        if stage == 'val' :
+            # Update best-so-far metrics
+            miou_best(miou)
+            oa_best(oa)
+            macc_best(macc)
+
+            # Log best-so-far metrics, using `.compute()` instead of passing
+            # the whole torchmetrics object, because otherwise metric would
+            # be reset by lightning after each epoch
+            self.log(
+                f"val/{prefix}miou_best",
+                miou_best.compute(),
+                prog_bar=True,
+                rank_zero_only=True)
+            self.log(
+                f"val/{prefix}oa_best",
+                oa_best.compute(),
+                prog_bar=True,
+                rank_zero_only=True)
+            self.log(
+                f"val/{prefix}macc_best",
+                macc_best.compute(),
+                prog_bar=True,
+                rank_zero_only=True)
+
+        elif getattr(self.hparams, 'extensive_logging', True) and stage == 'test':
+            # Log confusion matrix to wandb
+            if isinstance(self.logger, WandbLogger):
+                self.logger.experiment.log({
+                    f"test/{prefix}cm": wandb_confusion_matrix(
+                        epoch_cm.confmat, class_names=self.class_names)})
 
         # Reset metrics accumulated over the last epoch
-        self.val_cm.reset()
+        cm.reset()
         epoch_cm.reset()
+
+    def on_validation_epoch_end(self) -> None:
+        self._on_eval_epoch_end(
+            stage='val',
+            cm=self.val_cm,
+            metric_category='superpoints_semantic_prediction',
+            miou_best=self.val_miou_best,
+            oa_best=self.val_oa_best,
+            macc_best=self.val_macc_best)
 
     def on_test_start(self) -> None:
         # Initialize the submission directory based on the time of the
@@ -807,7 +1092,9 @@ class SemanticSegmentationModule(LightningModule):
             return
 
         self.test_loss(loss.detach())
-        self.test_cm(output.semantic_pred().detach(), output.semantic_target.detach())
+        self.test_cm(
+            output.semantic_pred().detach(),
+            output.semantic_target.detach())
 
     def test_step_log_metrics(self) -> None:
         """Log test metrics after a single step with the content of the
@@ -817,45 +1104,24 @@ class SemanticSegmentationModule(LightningModule):
         # metrics computation on the test set
         if not self.test_has_target:
             return
+        
+        # As we don't prepare the train datasets, we cannot call
+        # train_dataset.get_class_weight(), so the loss computation without
+        # the proper weights is not possible.
+        if not self.trainer.datamodule.hparams.prepare_only_test:
+            self.log(
+                "test/loss", self.test_loss, on_step=False, on_epoch=True,
+                prog_bar=True)
 
         self.log(
             "test/loss", self.test_loss, on_step=False, on_epoch=True,
             prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
-        # Finalize the submission
-        if self.trainer.datamodule.hparams.submit:
-            self.trainer.datamodule.test_dataset.finalize_submission(
-                self.submission_dir)
-
-        # If test set misses target data, reset metrics and skip logging
-        if not self.test_has_target:
-            self.test_cm.reset()
-            return
-
-        if self.trainer.num_devices > 1:
-            epoch_cm = torch.sum(self.all_gather(self.test_cm.confmat), dim=0)
-            epoch_cm = ConfusionMatrix(self.num_classes).from_confusion_matrix(epoch_cm)
-        else:
-            epoch_cm = self.test_cm
-
-        # Log metrics
-        self.log("test/miou", epoch_cm.miou(), prog_bar=True, rank_zero_only=True)
-        self.log("test/oa", epoch_cm.oa(), prog_bar=True, rank_zero_only=True)
-        self.log("test/macc", epoch_cm.macc(), prog_bar=True, rank_zero_only=True)
-        for iou, seen, name in zip(*epoch_cm.iou(), self.class_names):
-            if seen:
-                self.log(f"test/iou_{name}", iou, prog_bar=True, rank_zero_only=True)
-
-        # Log confusion matrix to wandb
-        if isinstance(self.logger, WandbLogger):
-            self.logger.experiment.log({
-                "test/cm": wandb_confusion_matrix(
-                    epoch_cm.confmat, class_names=self.class_names)})
-
-        # Reset metrics accumulated over the last epoch
-        self.test_cm.reset()
-        epoch_cm.reset()
+        self._on_eval_epoch_end(
+            stage='test',
+            cm=self.test_cm,
+            metric_category='superpoints_semantic_prediction')
 
     def predict_step(
             self,
@@ -1062,6 +1328,50 @@ class SemanticSegmentationModule(LightningModule):
         return self.__class__.load_from_checkpoint(
             checkpoint_path, net=self.net, criterion=self.criterion, **kwargs)
 
+    def on_save_checkpoint(self, checkpoint: dict) -> None:
+        """
+        Save metadata (version and commit hash) in the checkpoint.
+        """
+        # Add metadata to the checkpoint
+        if 'metadata' not in checkpoint:
+            checkpoint['metadata'] = {}
+        
+        # Update the checkpoint metadata with the version  and commit hash
+        checkpoint['metadata']['__version__'] = self.net.version_holder.value
+        checkpoint['metadata']['commit_hash'] = self.net.version_holder.commit_hash
+
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        """
+        Called when loading a checkpoint.
+        Verifies version compatibility and logs information.
+        """
+        if 'metadata' not in checkpoint:
+            checkpoint['metadata'] = {}
+        
+        # Affect default version if not found
+        if '__version__' not in checkpoint['metadata']:
+            version = '2.1.0'
+            log.warning("⚠️ No `__version__` found in checkpoint metadata."\
+                "\nIt means the checkpoint was saved with a version of the code prior to 3.0.0."\
+                f"\nSetting the version {version}, "\
+                "so that the official weights of SPT and SPC are compatible."\
+                "\nIf you have weights from version 2.2.0, please use the migration script to set the version to 3.0.0."
+                "\n(see: src/utils/backwards_compatibility/add_version_to_checkpoint.py and CHANGELOG.md for more details)")
+            checkpoint['metadata']['__version__'] = version
+
+        # Affect default commit hash if not found
+        if 'commit_hash' not in checkpoint['metadata']:
+            commit_hash = 'unknown'
+            log.warning("⚠️ No `commit_hash` found in checkpoint metadata."\
+                "\nIt means the checkpoint was saved with a version of the code "\
+                "prior to 3.0.0."\
+                f"\nSetting the commit hash to {commit_hash}.")
+            checkpoint['metadata']['commit_hash'] = commit_hash
+        
+        # Update network version from checkpoint
+        self.net.version = checkpoint['metadata']['__version__']
+        self.net.version_holder.commit_hash = checkpoint['metadata']['commit_hash']
+
     @staticmethod
     def sanitize_step_output(out_dict: Dict) -> Dict:
         """Helper to be used for cleaning up the `_step` functions.
@@ -1074,6 +1384,312 @@ class SemanticSegmentationModule(LightningModule):
             k: v if ((k == "loss") or (not isinstance(v, torch.Tensor)))
             else v.detach().cpu()
             for k, v in out_dict.items()}
+
+
+class PartitionAndSemanticModule(SemanticSegmentationModule):
+    """A LightningModule for semantic segmentation with two training stages.
+
+    This module extends SemanticSegmentationModule to support two distinct training stages:
+        1. First stage: train the model to partition the point cloud (into superpoints)
+        2. Second stage: train the model to assign a semantic label to each superpoint.
+            The preprocessing of this second stage partitions the point cloud based
+            on the point features optimized during the first stage.
+
+    The phase can be controlled by the boolean parameter `training_partition_stage`.
+
+    :param training_partition_stage: bool
+        If True, the model learns point features to build a good partition.
+            The lightweight CNN computes point embeddings and is
+            optimized for detecting semantic transitions.
+            See the class PartitionCriterion for more details on
+            the loss function.
+        If False, the model is in the semantic segmentation stage.
+            See behaviour of `SemanticSegmentationModule`.
+    :param partition : torch.nn.Module
+        Module that computes a hierarchical partition.
+        It takes a `Data` object (having notably the attributes `x`, `edge_index`) and
+        returns a `NAG` object storing the partition.
+        It is typically an instance of `src.transforms.partition.GreedyContourPriorPartition`.
+    :param partition_criterion: torch.nn.Module
+        It should be an instance of `src.loss.partition_criterion.PartitionCriterion`.
+    :param partition_during_training: bool
+        If True, the partition is computed during the training step.
+        This is useful to get the partition metrics on the training set,
+        but it significantly slows down the training procedure.
+        Note: the partition is always computed during the validation step.
+    """
+
+    def __init__(
+            self,
+            net: torch.nn.Module,
+            criterion: 'torch.nn._Loss',
+            optimizer: torch.optim.Optimizer,
+            scheduler: torch.optim.lr_scheduler.LRScheduler,
+            num_classes: int,
+            class_names: List[str] = None,
+            sampling_loss: bool = False,
+            loss_type: str = 'ce_kl',
+            weighted_loss: bool = True,
+            init_linear: str = None,
+            init_rpe: str = None,
+            transformer_lr_scale: float = 1,
+            multi_stage_loss_lambdas: List[float] = None,
+            gc_every_n_steps: int = 0,
+            track_val_every_n_epoch: int = 1,
+            track_val_idx: int = None,
+            track_test_idx: int = None,
+
+            training_partition_stage: bool = True,
+
+            partition: torch.nn.Module = None,
+            partition_criterion: torch.nn.Module = None,
+            partition_during_training: bool = False,
+            **kwargs):
+        super().__init__(
+            net=net,
+            criterion=criterion,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            num_classes=num_classes,
+            class_names=class_names,
+            sampling_loss=sampling_loss,
+            loss_type=loss_type,
+            weighted_loss=weighted_loss,
+            init_linear=init_linear,
+            init_rpe=init_rpe,
+            transformer_lr_scale=transformer_lr_scale,
+            multi_stage_loss_lambdas=multi_stage_loss_lambdas,
+            gc_every_n_steps=gc_every_n_steps,
+            track_val_every_n_epoch=track_val_every_n_epoch,
+            track_val_idx=track_val_idx,
+            track_test_idx=track_test_idx,
+            **kwargs)
+
+        # Boolean flag to control the partition and classify phase
+        self.training_partition_stage = training_partition_stage
+
+        if self.training_partition_stage:
+            del self.head
+
+        # Module performing the partition
+        self.partition = partition
+        self.partition_criterion = partition_criterion
+        self.partition_during_training = partition_during_training
+
+        # Partition specific metrics
+        self.train_partition_loss = MeanMetric()
+        self.val_partition_loss = MeanMetric()
+        self.test_partition_loss = MeanMetric()
+
+        self.partition_train_cm = ConfusionMatrix(num_classes)
+        self.partition_val_cm = ConfusionMatrix(num_classes)
+        self.partition_test_cm = ConfusionMatrix(num_classes)
+
+        self.val_partition_omiou_best = MaxMetric()
+        self.val_partition_ooa_best = MaxMetric()
+        self.val_partition_omacc_best = MaxMetric()
+
+    def forward(self, sample: Union[NAG, Data]) -> Union[SemanticSegmentationOutput, PartitionOutput]:
+        # `sample` is a `Data` if the training_partition_stage is True
+        # `sample` is a `NAG` otherwise
+
+        if self.training_partition_stage:
+            sample.add_keys_to(keys=self.net.point_hf, 
+                               to='x', 
+                               delete_after=not self.net.store_features)
+
+            x, diameter = self.net.forward_first_stage(sample,
+                                                       first_stage=self.net.first_stage,
+                                                       use_node_hf=self.net.use_node_hf,
+                                                       norm_mode=self.net.norm_mode, )
+
+            # Store the features on the level to be partitioned
+            sample.x = x
+
+            if (not self.training) or (self.partition_during_training):
+                nag = self.partition(sample)  # self.partition is a Transform from data to NAG
+            else:
+                nag = None
+
+            # If the training procedure of the partition does not need to compute the partition,
+            # `PartitionOutput` won't actually hold a partition during training (unless
+            # `partition_during_training` is set to True).
+            # Therefore, the hard partition is given during validation epochs so that the partition metrics are computed
+            return PartitionOutput(
+                y=sample.y,
+                x=sample.x,
+                edge_index=sample.edge_index,
+
+                partition=nag[1] if nag is not None else None,
+            )
+
+        else:
+            return super().forward(sample)
+
+    def model_step(
+            self,
+            batch: NAG
+    ) -> Tuple[torch.Tensor, SemanticSegmentationOutput]:
+        """Model step that changes based on current phase"""
+
+        if self.training_partition_stage:
+
+            partition_output = self.forward(batch)
+
+            # If there are targets, compute the loss to train the partition
+            if partition_output.has_target:
+                loss, partition_output = self.partition_criterion(partition_output)
+                return loss, partition_output
+
+            else:
+                return None, partition_output
+
+
+        else:
+            return super().model_step(batch)
+
+    def train_step_update_metrics(self, loss, output) -> None:
+        if not self.training_partition_stage:
+            return super().train_step_update_metrics(loss, output)
+        else:
+            self.train_partition_loss(loss.detach())
+
+            if self.partition_during_training:
+                y_oracle = output.y_superpoint[:, :self.num_classes].argmax(dim=1)
+                self.partition_train_cm(
+                    pred=y_oracle,
+                    target=output.y_superpoint
+                )
+
+    def train_step_log_metrics(self) -> None:
+        if not self.training_partition_stage:
+            return super().train_step_log_metrics()
+        else:
+            self.log(
+                "train/partition_loss", self.train_partition_loss,
+                on_step=False, on_epoch=True, prog_bar=True)
+
+    def on_train_epoch_end(self) -> None:
+        if not self.training_partition_stage:
+            return super().on_train_epoch_end()
+        else:
+
+            if self.partition_during_training:
+                self._on_train_epoch_end(cm=self.partition_train_cm,
+                                         metric_category='superpoints_purity')
+
+    def validation_step_update_metrics(self, loss, output) -> None:
+
+        if not self.training_partition_stage:
+            return super().validation_step_update_metrics(loss, output)
+
+        else:
+            self.val_partition_loss(loss.detach())
+
+            y_oracle = output.y_superpoint[:, :self.num_classes].argmax(dim=1)
+            self.partition_val_cm(
+                pred=y_oracle,
+                target=output.y_superpoint
+            )
+
+            self.val_n_sp(output.partition.num_points)
+            self.val_n_p(output.x.shape[0])
+
+    def validation_step_log_metrics(self) -> None:
+        """Log validation metrics after a single step with the content
+        of the output object.
+        """
+        if not self.training_partition_stage:
+            return super().validation_step_log_metrics()
+
+        else:
+            self.log(
+                "val/partition_loss", self.val_partition_loss,
+                on_step=False, on_epoch=True, prog_bar=True)
+
+            self.log("val/n_sp", self.val_n_sp,
+                    on_step=False, on_epoch=True, prog_bar=True)
+
+    def on_validation_epoch_end(self) -> None:
+        if not self.training_partition_stage:
+            return super().on_validation_epoch_end()
+        else:
+            self._on_eval_epoch_end(
+                stage='val',
+                cm=self.partition_val_cm,
+                metric_category='superpoints_purity',
+                miou_best=self.val_partition_omiou_best,
+                oa_best=self.val_partition_ooa_best,
+                macc_best=self.val_partition_omacc_best,
+            )
+            # Log ratio at the end of epoch when all metrics are accumulated
+            n_p = self.val_n_p.compute()
+            n_sp = self.val_n_sp.compute()
+            if n_sp > 0:
+                self.log("val/points_per_superpoint", n_p / n_sp, prog_bar=True)
+
+    def test_step_update_metrics(self, loss, output) -> None:
+        if not self.training_partition_stage:
+            return super().test_step_update_metrics(loss, output)
+        else:
+            if not self.test_has_target:
+                return
+            self.test_partition_loss(loss.detach())
+
+            y_oracle = output.y_superpoint[:, :self.num_classes].argmax(dim=1)
+            self.partition_test_cm(
+                pred=y_oracle,
+                target=output.y_superpoint
+            )
+            
+            self.test_n_sp(output.partition.num_points)
+            self.test_n_p(output.x.shape[0])
+
+    def test_step_log_metrics(self) -> None:
+        if not self.training_partition_stage:
+            return super().test_step_log_metrics()
+        else:
+            # If the test set misses targets, we keep track of it, to skip
+            # metrics computation on the test set
+            if not self.test_has_target:
+                return
+
+            self.log(
+                "test/partition_loss", self.test_partition_loss,
+                on_step=False, on_epoch=True, prog_bar=True)
+
+            self.log("test/n_sp", self.test_n_sp,
+                    on_step=False, on_epoch=True, prog_bar=True)
+
+    def on_test_epoch_end(self) -> None:
+        if not self.training_partition_stage:
+            return super().on_test_epoch_end()
+        else:
+            self._on_eval_epoch_end(
+                stage='test',
+                cm=self.partition_test_cm,
+                metric_category='superpoints_purity',
+            )
+            # Log ratio at the end of epoch when all metrics are accumulated
+            n_p = self.test_n_p.compute()
+            n_sp = self.test_n_sp.compute()
+            if n_sp > 0:
+                self.log("test/points_per_superpoint", n_p / n_sp, prog_bar=True)
+
+    def _load_from_checkpoint(
+            self,
+            checkpoint_path: str,
+            **kwargs
+    ) -> 'SemanticSegmentationModule':
+        """
+        Add of `partition` to the `SemanticSegmentationModule.load_from_checkpoint()`
+        """
+        return self.__class__.load_from_checkpoint(
+            checkpoint_path, 
+            net=self.net, 
+            criterion=self.criterion, 
+            partition=self.partition, 
+            **kwargs)
 
 
 if __name__ == "__main__":

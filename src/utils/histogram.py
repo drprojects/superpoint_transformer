@@ -1,8 +1,13 @@
+import math
 import torch
-from torch_scatter import scatter_add
+from torch_scatter import scatter_sum
+from torch_geometric.nn.pool.consecutive import consecutive_cluster
 
 
-__all__ = ['histogram_to_atomic', 'atomic_to_histogram']
+__all__ = [
+    'histogram_to_atomic',
+    'atomic_to_histogram',
+    'split_histogram']
 
 
 def histogram_to_atomic(gt, pred):
@@ -52,41 +57,78 @@ def atomic_to_histogram(item, idx, n_bins=None):
         "2D tensors"
 
     # Initialization
+    N = idx.max() + 1
     n_bins = item.max() + 1 if n_bins is None else n_bins
+    device = item.device
 
-    # Temporarily convert input item to long
-    in_dtype = item.dtype
+    # Cast item to long values to avoid overflow, since we will be
+    # summing values
+    # TODO: a more memory efficient implementation could cast to the
+    #  optimal integer dtypes. But we leave this for later
     item = item.long()
 
     # Important: if values are already 2D, we consider them to
-    # be histograms and will simply scatter_add them
+    # be histograms and will simply scatter_sum them
     if item.ndim == 2:
-        return scatter_add(item, idx, dim=0)
+        return scatter_sum(item, idx, dim=0)
 
-    # Convert values to one-hot encoding. Values are temporarily offset
-    # to 0 to save some memory and compute in one-hot encoding and
-    # scatter_add
-    offset = item.min()
-    item = torch.nn.functional.one_hot(item - offset)
-
-    # Count number of occurrence of each value
-    hist = scatter_add(item, idx, dim=0)
-    N = hist.shape[0]
-    device = hist.device
-
-    # Prepend 0 columns to the histogram for bins removed due to
-    # offsetting
-    bins_before = torch.zeros(
-        N, offset, device=device, dtype=torch.long)
-    hist = torch.cat((bins_before, hist), dim=1)
+    # Aggregate the same-item same-idx values in a 2D histogram
+    hist_idx = n_bins * idx + item
+    hist_idx_2, perm = consecutive_cluster(hist_idx)
+    counts = hist_idx_2.bincount()
+    hist = torch.zeros((N, n_bins), dtype=torch.long, device=device)
+    i = hist_idx[perm] // n_bins
+    j = hist_idx[perm] % n_bins
+    hist[i, j] = counts
 
     # Append columns to the histogram for unobserved classes/bins
     bins_after = torch.zeros(
-        N, n_bins - hist.shape[1], device=device,
+        N, n_bins - hist.shape[1],
+        device=device,
         dtype=torch.long)
     hist = torch.cat((hist, bins_after), dim=1)
 
-    # Restore input dtype
-    hist = hist.to(in_dtype)
-
     return hist
+
+
+def split_histogram(hist: torch.Tensor, chunk_size: int):
+    """Search for the indices to partition the bins of a histogram such
+    that the resulting partition splits the histogram into groups of
+    chunk_size elements.
+
+    This can typically be useful for partitioning data in smaller chunks
+    based on an indexing tensor of integer.
+
+    Importantly, this algorithm does NOT guarantee that the produced
+    splits will have chunk_size at most. Actually, it can produce splits
+    of up to `chunk_size + max_bin_size` in the worst case scenario.
+
+    :param hist: torch.Tensor
+    :param chunk_size: int
+    """
+    device = hist.device
+    N = hist.sum()
+
+    # Compute the values at which we would ideally like to split the
+    # cumulative histogram
+    num_chunks = math.ceil(N / chunk_size)
+    v = torch.arange(0, num_chunks + 1, device=device) * chunk_size
+
+    # Find the indices at which we can cut the cumulative histogram
+    # NB: this does NOT guarantee that the produced splits will have
+    # chunk_size at most. Actually, it can produce splits of up to
+    # `chunk_size + max_bin_size` in the worst case scenario
+    idx = torch.searchsorted(hist.cumsum(dim=0), v, right=True)
+    # idx = idx[torch.where(idx[:-1] < idx[1:])]
+    # idx = idx[idx > 0]
+
+    # Compute the split indices, this is a list of tensor views
+    # Clean up by removing potentially empty splits
+    full_idx = torch.arange(hist.numel(), device=device)
+    splits = [
+        full_idx[start:end] for start, end in zip(
+            torch.cat([torch.tensor([0], device=device), idx]),
+            torch.cat([idx, torch.tensor([hist.numel()], device=device)])
+        ) if end - start > 0]
+
+    return splits

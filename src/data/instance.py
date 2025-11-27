@@ -58,7 +58,6 @@ class InstanceData(CSRData):
     """
 
     __value_keys__ = ['obj', 'count', 'y']
-    __is_index_value_serialization_key__ = None
 
     def __init__(
             self,
@@ -91,7 +90,11 @@ class InstanceData(CSRData):
             count = scatter_sum(count, cluster_obj_idx)
 
         super().__init__(
-            pointers, obj, count, y, dense=dense,
+            pointers,
+            obj,
+            count,
+            y,
+            dense=dense,
             is_index_value=[True, False, False])
 
     @classmethod
@@ -235,7 +238,7 @@ class InstanceData(CSRData):
         """
         # Make sure each cluster has a merge index and that the merge
         # indices are dense
-        idx = tensor_idx(idx)
+        idx = tensor_idx(idx, device=self.device)
         assert idx.shape == torch.Size([self.num_clusters]), \
             f"Expected indices of shape {torch.Size([self.num_clusters])}, " \
             f"but received shape {idx.shape} instead"

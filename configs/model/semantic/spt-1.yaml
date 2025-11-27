@@ -1,0 +1,9 @@
+# @package model
+defaults:
+  - /model/semantic/spt.yaml
+
+net:
+  down_dim: ${eval:'${model._down_dim}[:1]'}
+  down_in_mlp: ${eval:'[ [${model._node_injection_dim} + ${model._point_out_dim} * (not ${model.net.nano}) + ${datamodule.num_hf_segment} * (${model.net.nano} and not ${model.net.use_node_hf})] + [${model.net.down_dim}[0]] * ${model._mlp_depth} ]'}
+  up_dim: ${eval:'[]'}
+  up_in_mlp: ${eval:'[]'}

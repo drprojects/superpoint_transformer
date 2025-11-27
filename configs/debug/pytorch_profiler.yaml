@@ -1,0 +1,18 @@
+# @package _global_
+
+defaults: 
+  - override /logger: tensorboard.yaml
+
+
+trainer:
+  max_epochs: 10
+  profiler:
+    _target_: pytorch_lightning.profilers.PyTorchProfiler
+    schedule:
+      _target_: torch.profiler.schedule #https://pytorch.org/docs/stable/profiler.html#torch.profiler.schedule
+      wait: 0
+      active: 6
+      skip_first: 5
+      warmup: 5
+      repeat: 0
+    with_stack: false

@@ -1,14 +1,51 @@
 import torch
+from time import time
+
 import src
 from src.dependencies.FRNN import frnn
 from torch_scatter import scatter
 from torch_geometric.utils import coalesce
 from src.utils.scatter import scatter_nearest_neighbor
+from src.utils.sparse import sizes_to_pointers
 
 
 __all__ = [
-    'knn_1', 'knn_1_graph', 'knn_2', 'inliers_split', 'outliers_split',
-    'inliers_outliers_splits', 'cluster_radius_nn_graph']
+    'knn_1',
+    'knn_1_graph',
+    'knn_2',
+    'knn_brute_force',
+    'inliers_split',
+    'outliers_split',
+    'inliers_outliers_splits',
+    'cluster_radius_nn_graph',
+    'neighbors_dense_to_csr']
+
+
+def _frnn_grid_points(xyz_query, xyz_search, K=1, r=1):
+    """A wrapper around frnn.frnn_grid_points to facilitate the handling
+    ot K and r input formats.
+    """
+    device = xyz_query.device
+
+    if K > 1000:
+        print(
+            f"Warning: FRNN is not optimal for for K>1000. "
+            f"You may want to consider using brute force search with "
+            f"`knn_brute_force()` if your query set is not too large.")
+
+    # Make sure k and r are 1D tensors on the same device
+    if isinstance(r, torch.Tensor):
+        r = r.view(-1).to(device)
+    else:
+        r = torch.tensor([r], device=device)
+
+    if isinstance(K, torch.Tensor):
+        K = K.view(-1).to(device)
+    else:
+        K = torch.tensor([K], device=device)
+
+    # Run the actual FRNN search
+    return frnn.frnn_grid_points(xyz_query, xyz_search, K=K, r=r)
 
 
 def knn_1(
@@ -50,7 +87,7 @@ def knn_1(
 
     # KNN on GPU. Actual neighbor search now
     k_search = k if self_is_neighbor else k + 1
-    distances, neighbors, _, _ = frnn.frnn_grid_points(
+    distances, neighbors, _, _ = _frnn_grid_points(
         xyz_query, xyz_search, K=k_search, r=r_max)
 
     # Remove each point from its own neighborhood
@@ -163,12 +200,9 @@ def knn_2(
     assert x_search.dim() == 2
     assert x_query.dim() == 2
     assert x_query.shape[1] == x_search.shape[1]
-    assert bool(batch_search) == bool(batch_query)
+    assert (batch_search is None) == (batch_query is None)
     assert batch_search is None or batch_search.shape[0] == x_search.shape[0]
     assert batch_query is None or batch_query.shape[0] == x_query.shape[0]
-
-    k = torch.tensor([k])
-    r_max = torch.tensor([r_max])
 
     # To take the batch into account, we add an offset to the Z
     # coordinates. The offset is designed so that any points from two
@@ -185,15 +219,20 @@ def knn_2(
         batch_query_offset[:, 2] = batch_query * z_offset
 
     # Data initialization
-    device = x_search.device
-    xyz_query = (x_query + batch_query_offset).view(1, -1, 3).cuda()
-    xyz_search = (x_search + batch_search_offset).view(1, -1, 3).cuda()
+    xyz_query = (x_query + batch_query_offset).view(1, -1, 3)
+    xyz_search = (x_search + batch_search_offset).view(1, -1, 3)
+
+    # Move to GPU if need be
+    if not xyz_query.is_cuda:
+        xyz_query = xyz_query.cuda()
+        xyz_search = xyz_search.cuda()
 
     # KNN on GPU. Actual neighbor search now
-    distances, neighbors, _, _ = frnn.frnn_grid_points(
+    distances, neighbors, _, _ = _frnn_grid_points(
         xyz_query, xyz_search, K=k, r=r_max)
 
-    # Remove each point from its own neighborhood
+    # Move back to original device
+    device = x_search.device
     neighbors = neighbors[0].to(device)
     distances = distances[0].to(device)
     if k == 1:
@@ -203,8 +242,66 @@ def knn_2(
     return neighbors, distances
 
 
+def knn_brute_force(
+        x_search,
+        x_query,
+        k,
+        r_max=1,
+        batch_search=None,
+        batch_query=None):
+    """Search k-NN of x_query inside x_search, within radius `r_max`.
+    Optionally, passing `batch_search` and `batch_query` will ensure the
+    neighbor search does not mix up batch items. This is the same as
+    `knn_2()` but uses a brute force method, which does not scale.
+    """
+    assert isinstance(x_search, torch.Tensor)
+    assert isinstance(x_query, torch.Tensor)
+    assert k >= 1
+    assert x_search.dim() == 2
+    assert x_query.dim() == 2
+    assert x_query.shape[1] == x_search.shape[1]
+    assert (batch_search is None) == (batch_query is None)
+    assert batch_search is None or batch_search.shape[0] == x_search.shape[0]
+    assert batch_query is None or batch_query.shape[0] == x_query.shape[0]
+
+    # To take the batch into account, we add an offset to the Z
+    # coordinates. The offset is designed so that any points from two
+    # batch different batch items are separated by at least `r_max + 1`
+    batch_search_offset = 0
+    batch_query_offset = 0
+    if batch_search is not None:
+        hi = max(x_search[:, 2].max(), x_query[:, 2].max())
+        lo = min(x_search[:, 2].min(), x_query[:, 2].min())
+        z_offset = hi - lo + r_max + 1
+        batch_search_offset = torch.zeros_like(x_search)
+        batch_search_offset[:, 2] = batch_search * z_offset
+        batch_query_offset = torch.zeros_like(x_query)
+        batch_query_offset[:, 2] = batch_query * z_offset
+
+    # Data initialization
+    xyz_query = (x_query + batch_query_offset)
+    xyz_search = (x_search + batch_search_offset)
+
+    # Brute force compute all distances and neighbors for all query
+    # points
+    distances = (xyz_search.unsqueeze(0) - xyz_query.unsqueeze(1)).norm(dim=2)
+    distances, neighbors = distances.sort(dim=1)
+    distances = distances[:, :k]
+    neighbors = neighbors[:, :k]
+    mask = distances > r_max
+    distances[mask] = -1
+    neighbors[mask] = -1
+
+    return neighbors, distances
+
+
 def inliers_split(
-        xyz_query, xyz_search, k_min, r_max=1, recursive=False, q_in_s=False):
+        xyz_query,
+        xyz_search,
+        k_min,
+        r_max=1,
+        recursive=False,
+        q_in_s=False):
     """Optionally recursive inlier search. The `xyz_query` and
     `xyz_search`. Search for points with less than `k_min` neighbors
     within a radius of `r_max`.
@@ -216,12 +313,21 @@ def inliers_split(
     `r_max` whose points would all recursively end up as outliers.
     """
     return inliers_outliers_splits(
-        xyz_query, xyz_search, k_min, r_max=r_max, recursive=recursive,
+        xyz_query,
+        xyz_search,
+        k_min,
+        r_max=r_max,
+        recursive=recursive,
         q_in_s=q_in_s)[0]
 
 
 def outliers_split(
-        xyz_query, xyz_search, k_min, r_max=1, recursive=False, q_in_s=False):
+        xyz_query,
+        xyz_search,
+        k_min,
+        r_max=1,
+        recursive=False,
+        q_in_s=False):
     """Optionally recursive outlier search. The `xyz_query` and
     `xyz_search`. Search for points with less than `k_min` neighbors
     within a radius of `r_max`.
@@ -233,12 +339,21 @@ def outliers_split(
     `r_max` whose points would all recursively end up as outliers.
     """
     return inliers_outliers_splits(
-        xyz_query, xyz_search, k_min, r_max=r_max, recursive=recursive,
+        xyz_query,
+        xyz_search,
+        k_min,
+        r_max=r_max,
+        recursive=recursive,
         q_in_s=q_in_s)[1]
 
 
 def inliers_outliers_splits(
-        xyz_query, xyz_search, k_min, r_max=1, recursive=False, q_in_s=False):
+        xyz_query,
+        xyz_search,
+        k_min,
+        r_max=1,
+        recursive=False,
+        q_in_s=False):
     """Optionally recursive outlier search. The `xyz_query` and
     `xyz_search`. Search for points with less than `k_min` neighbors
     within a radius of `r_max`.
@@ -255,7 +370,7 @@ def inliers_outliers_splits(
     xyz_search = xyz_search.view(1, -1, 3).cuda()
 
     # KNN on GPU. Actual neighbor search now
-    neighbors = frnn.frnn_grid_points(
+    neighbors = _frnn_grid_points(
         xyz_query, xyz_search, K=k_min + q_in_s, r=r_max)[1]
 
     # If the Query points are included in the Search points, remove each
@@ -381,7 +496,8 @@ def cluster_radius_nn_graph(
         batch=None,
         trim=True,
         cycles=3,
-        chunk_size=100000):
+        chunk_size=100000,
+        verbose=False):
     """Compute the radius neighbors of clusters. Two clusters are
     considered neighbors if 2 of their points are distant of `gap` of
     less.
@@ -418,6 +534,10 @@ def cluster_radius_nn_graph(
 
     device = x_points.device
 
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        start = time()
+
     # Roughly estimate the diameter and center of each segment. Note we
     # do not use the centroid (center of mass) but rather the center of
     # the bounding box
@@ -425,6 +545,11 @@ def cluster_radius_nn_graph(
     bbox_high = scatter(x_points, idx, dim=0, reduce='max')
     diam = (bbox_high - bbox_low).max(dim=1).values
     center = (bbox_high + bbox_low) / 2
+
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | center: {time() - start:0.3f} sec")
+        start = time()
 
     # Conservative heuristic for the global search radius: we search the
     # segments whose centroids are separated by the largest segment
@@ -436,12 +561,22 @@ def cluster_radius_nn_graph(
     r_search = float(diam.max() + gap)
     neighbors, distances = knn_1(center, k_max, r_max=r_search, batch=batch)
 
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | knn_1: {time() - start:0.3f} sec")
+        start = time()
+
     # Build the corresponding edge_index
     num_clusters = idx.max() + 1
     source = torch.arange(num_clusters, device=device).repeat_interleave(k_max)
     target = neighbors.flatten()
     edge_index = torch.vstack((source, target))
     distances = distances.flatten()
+
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | edge_index: {time() - start:0.3f} sec")
+        start = time()
 
     # Trim edges based on the actual segment radii and not the
     # overly-conservative maximum radius used for the search. For this
@@ -460,10 +595,20 @@ def cluster_radius_nn_graph(
     edge_index = edge_index[:, in_gap_range]
     distances = distances[in_gap_range]
 
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | in_gap: {time() - start:0.3f} sec")
+        start = time()
+
     # Trim edges where points are missing (i.e. -1 neighbor indices)
     missing_point_edge = edge_index[1] == -1
     edge_index = edge_index[:, ~missing_point_edge]
     distances = distances[~missing_point_edge]
+
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | missing_point : {time() - start:0.3f} sec")
+        start = time()
 
     # Trim the graph. This is required before computing the actual
     # nearest points between all cluster pairs. Since this operation is
@@ -472,11 +617,20 @@ def cluster_radius_nn_graph(
     if trim:
         from src.utils import to_trimmed
         edge_index, distances = to_trimmed(
-            edge_index, edge_attr=distances, reduce='min')
+            edge_index,
+            edge_attr=distances,
+            reduce='min')
     # Coalesce edges to remove duplicates
     else:
         edge_index, distances = coalesce(
-            edge_index, edge_attr=distances, reduce='min')
+            edge_index,
+            edge_attr=distances,
+            reduce='min')
+
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | coalesce: {time() - start:0.3f} sec")
+        start = time()
 
     # For each cluster pair in edge_index, compute (approximately) the
     # two closest points (coined "anchors" here). The heuristic used
@@ -486,12 +640,45 @@ def cluster_radius_nn_graph(
     # TODO: scatter_nearest_neighbor is the bottleneck of cluster_nn_radius(),
     #  we could accelerate things by randomly sampling in the clusters
     anchors = scatter_nearest_neighbor(
-        x_points, idx, edge_index, cycles=cycles, chunk_size=chunk_size)[1]
+        x_points,
+        idx,
+        edge_index,
+        cycles=cycles,
+        chunk_size=chunk_size)[1]
     d_nn = (x_points[anchors[0]] - x_points[anchors[1]]).norm(dim=1)
+
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | scatter_nn: {time() - start:0.3f} sec")
+        start = time()
 
     # Trim edges wrt the anchor points distance
     in_gap_range = d_nn <= gap
     edge_index = edge_index[:, in_gap_range]
     distances = d_nn[in_gap_range]
 
+    if verbose or src.is_debug_enabled():
+        torch.cuda.synchronize()
+        print(f"    cluster_radius_nn_graph | final_filter: {time() - start:0.3f} sec")
+        start = time()
+
     return edge_index, distances
+
+
+def neighbors_dense_to_csr(nn):
+    """Convert to CSR format a [N, K] tensor of dense neighbor indices
+    containing -1 values to indicate missing/absent neighbors. This is
+    typically useful for efficiently representing spherical
+    neighborhoods with varying sizes.
+    """
+    k = nn.shape[1]
+
+    # Convert neighbor indices from 2D tensor to CSR format
+    # Check for missing neighbors (indicated by -1 indices)
+    mask = nn < 0
+    n_missing = mask.sum(dim=1)
+    sizes = k - n_missing
+    nn_val = nn[~mask]
+    nn_ptr = sizes_to_pointers(sizes)
+
+    return nn_ptr, nn_val, sizes

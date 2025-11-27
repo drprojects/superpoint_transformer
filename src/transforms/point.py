@@ -1,18 +1,41 @@
 import torch
 import numpy as np
-import pgeof
-from src.utils import rgb2hsv, rgb2lab, sizes_to_pointers, to_float_rgb, \
-    POINT_FEATURES, sanitize_keys, filter_by_z_distance_of_global_min, \
-    filter_by_local_z_min, filter_by_verticality, single_plane_model, \
-    neighbor_interpolation_model, mlp_model
+
+from src.utils import (
+    rgb2hsv,
+    rgb2lab,
+    sizes_to_pointers,
+    to_float_rgb,
+    POINT_FEATURES,
+    GEOMETRIC_FEATURES,
+    sanitize_keys,
+    filter_by_z_distance_of_global_min,
+    filter_by_local_z_min,
+    filter_by_verticality,
+    single_plane_model,
+    neighbor_interpolation_model,
+    mlp_model,
+    fill_list_with_string_indexing,
+    geometric_features,
+    filter_kwargs)
 from src.transforms import Transform
 from src.data import NAG
+from src.models.components.spt import SPT
 
+import logging
+log = logging.getLogger(__name__)
 
 __all__ = [
-    'PointFeatures', 'GroundElevation', 'RoomPosition', 'ColorAutoContrast',
-    'NAGColorAutoContrast', 'ColorDrop', 'NAGColorDrop', 'ColorNormalize',
-    'NAGColorNormalize']
+    'PointFeatures',
+    'GroundElevation',
+    'RoomPosition',
+    'ColorAutoContrast',
+    'NAGColorAutoContrast',
+    'ColorDrop',
+    'NAGColorDrop',
+    'ColorNormalize',
+    'NAGColorNormalize',
+    'PretrainedCNN']
 
 
 class PointFeatures(Transform):
@@ -48,17 +71,24 @@ class PointFeatures(Transform):
         Features to be computed. Attributes will be saved under `<key>`
     :param k_min: int
         Minimum number of neighbors to consider for geometric features
-        computation. Points with less than k_min neighbors will receive
+        computation. Points with fewer than k_min neighbors will receive
         0-features. Assumes ``Data.neighbor_index``.
     :param k_step: int
         Step size to take when searching for the optimal neighborhood
         size following:
         http://lareg.ensg.eu/labos/matis/pdf/articles_revues/2015/isprs_wjhm_15.pdf
         If k_step < 1, the optimal neighborhood will be computed based
-        on all the neighbors available for each point.
+        on all the neighbors available for each point
     :param k_min_search: int
         Minimum neighborhood size used when searching the optimal
-        neighborhood size. It is advised to use a value of 10 or higher.
+        neighborhood size. It is advised to use a value of 10 or higher
+    :param add_self_as_neighbor: bool
+    :param chunk_size: int, float
+        Allows mitigating memory use when the inputs are on GPU. If
+        `chunk_size > 1`, the input point cloud will be processed into
+        chunks of `chunk_size`. If `0 < chunk_size < 1`, then the point
+        cloud will be divided into parts of `xyz.shape[1] * chunk_size`
+        or smaller
     :param overwrite: bool
         When False, attributes of the input Data which are in `keys`
         will not be updated with the here-computed features. An
@@ -72,20 +102,20 @@ class PointFeatures(Transform):
             k_min=5,
             k_step=-1,
             k_min_search=25,
+            add_self_as_neighbor=True,
+            chunk_size=100000,
             overwrite=True):
         self.keys = sanitize_keys(keys, default=POINT_FEATURES)
         self.k_min = k_min
         self.k_step = k_step
         self.k_min_search = k_min_search
+        self.add_self_as_neighbor = add_self_as_neighbor
+        self.chunk_size = chunk_size
         self.overwrite = overwrite
 
     def _process(self, data):
-        assert data.has_neighbors, \
-            "Data is expected to have a 'neighbor_index' attribute"
         assert data.num_nodes < np.iinfo(np.uint32).max, \
             "Too many nodes for `uint32` indices"
-        assert data.neighbor_index.max() < np.iinfo(np.uint32).max, \
-            "Too high 'neighbor_index' indices for `uint32` indices"
 
         # Build the set of keys that must be computed/updated. In
         # particular, if `overwrite=False`, we do not modify
@@ -131,92 +161,23 @@ class PointFeatures(Transform):
             data.density = (k / dmax ** 2).view(-1, 1)
 
         # Add local geometric features
-        needs_geof = any((
-            'linearity' in keys,
-            'planarity' in keys,
-            'scattering' in keys,
-            'verticality' in keys,
-            'normal' in keys))
-        if needs_geof and data.pos is not None:
-
-            # Prepare data for numpy boost interface. Note: we add each
-            # point to its own neighborhood before computation
-            device = data.pos.device
-            xyz = data.pos.cpu().numpy()
-            nn = torch.cat(
-                (torch.arange(xyz.shape[0]).view(-1, 1), data.neighbor_index),
-                dim=1)
-            k = nn.shape[1]
-
-            # Check for missing neighbors (indicated by -1 indices)
-            n_missing = (nn < 0).sum(dim=1)
-            if (n_missing > 0).any():
-                sizes = k - n_missing
-                nn = nn[nn >= 0]
-                nn_ptr = sizes_to_pointers(sizes.cpu())
-            else:
-                nn = nn.flatten().cpu()
-                nn_ptr = torch.arange(xyz.shape[0] + 1) * k
-            nn = nn.numpy().astype('uint32')
-            nn_ptr = nn_ptr.numpy().astype('uint32')
-
-            # Make sure array are contiguous before moving to C++
-            xyz = np.ascontiguousarray(xyz)
-            nn = np.ascontiguousarray(nn)
-            nn_ptr = np.ascontiguousarray(nn_ptr)
-
-            # C++ geometric features computation on CPU
-            if self.k_step < 0:
-                f = pgeof.compute_features(
-                    xyz, 
-                    nn, 
-                    nn_ptr, 
-                    self.k_min, 
-                    verbose=False)
-            else:
-                f = pgeof.compute_features_optimal(
-                    xyz,
-                    nn,
-                    nn_ptr,
-                    self.k_min,
-                    self.k_step,
-                    self.k_min_search,
-                    verbose=False)
-            f = torch.from_numpy(f)
-
-            # Keep only required features
-            if 'linearity' in keys:
-                data.linearity = f[:, 0].view(-1, 1).to(device)
-
-            if 'planarity' in keys:
-                data.planarity = f[:, 1].view(-1, 1).to(device)
-
-            if 'scattering' in keys:
-                data.scattering = f[:, 2].view(-1, 1).to(device)
-
-            # Heuristic to increase importance of verticality in
-            # partition
-            if 'verticality' in keys:
-                data.verticality = f[:, 3].view(-1, 1).to(device)
-                data.verticality *= 2
-
-            if 'curvature' in keys:
-                data.curvature = f[:, 10].view(-1, 1).to(device)
-
-            if 'length' in keys:
-                data.length = f[:, 7].view(-1, 1).to(device)
-
-            if 'surface' in keys:
-                data.surface = f[:, 8].view(-1, 1).to(device)
-
-            if 'volume' in keys:
-                data.volume = f[:, 9].view(-1, 1).to(device)
-
-            # As a way to "stabilize" the normals' orientation, we
-            # choose to express them as oriented in the z+ half-space
-            if 'normal' in keys:
-                data.normal = f[:, 4:7].view(-1, 3).to(device)
-                data.normal[data.normal[:, 2] < 0] *= -1
+        geof_keys_needed = set(keys) & set(GEOMETRIC_FEATURES)
+        if len(geof_keys_needed) > 0 and data.pos is not None:
+            assert data.has_neighbors, \
+                "Data is expected to have a 'neighbor_index' attribute"
+            assert data.neighbor_index.max() < np.iinfo(np.uint32).max, \
+                "Too high 'neighbor_index' indices for `uint32` indices"
+            
+            features = geometric_features(
+                data.pos,
+                data.neighbor_index,
+                k_min=self.k_min,
+                k_step=self.k_step,
+                k_min_search=self.k_min_search,
+                add_self_as_neighbor=self.add_self_as_neighbor,
+                chunk_size=self.chunk_size)
+            for key in geof_keys_needed:
+                data[key] = features[key]
 
         return data
 
@@ -257,9 +218,27 @@ class GroundElevation(Transform):
         Bin all points into a regular XY grid of size `xy_grid` and
         isolate as candidate ground point for each cell the one with
         the lowest Z value
+    :param model: str
+        Model used for fitting the ground surface. Supports: 'ransac',
+        'knn', and 'mlp'.
+        'ransac':
+         Model the ground as a single plane using RANSAC.
+        'knn':
+        Model the ground based on a trimmed point cloud carrying ground
+        points only. At inference, a point is associated with its
+        nearest neighbors in L2 XY distance in the reference ground
+        cloud. The ground surface is estimated as a linear interpolation
+        of the neighboring reference points. The elevation is then
+        computed as the corresponding gap in Z-coordinates.
+        'mlp':
+        Fit an MLP to a point cloud. Assuming the point cloud mostly
+        contains ground points, this function will train an MLP to model
+        the ground surface as a piecewise-planar function.
     :param scale: float
         Scaling by which the computed elevation should be divided, for
-        the sake of normalization
+        the sake of normalization. NB: passing `scale <= 0` will
+        skip this transform altogether. This can typically be used for
+        bypassing it in the configs
     :param kwargs: dict
         Arguments that will be passed down to the surface modeling
         function
@@ -267,7 +246,7 @@ class GroundElevation(Transform):
 
     def __init__(
             self,
-            z_threshold=1.5,
+            z_threshold=None,
             verticality_threshold=None,
             xy_grid=None,
             model='ransac',
@@ -287,6 +266,10 @@ class GroundElevation(Transform):
         self.kwargs = kwargs
 
     def _process(self, data):
+        # Skip elevation computation
+        if self.scale <= 0:
+            return data
+
         # Recover the point positions
         pos = data.pos
 
@@ -294,9 +277,6 @@ class GroundElevation(Transform):
         # points as possible, to facilitate the subsequent search of the
         # ground surface in the point cloud
         mask = torch.ones(data.num_points, device=pos.device, dtype=torch.bool)
-
-        # TODO: test all combinations on multiple devices
-        # TODO: integrate voxelization as filtering
 
         # See `filter_by_z_distance_of_global_min` for more details
         if self.z_threshold is not None:
@@ -324,11 +304,17 @@ class GroundElevation(Transform):
 
         # Fit a model to the trimmed points
         if self.model == 'ransac':
-            model = single_plane_model(pos_trimmed, **self.kwargs)
+            model = single_plane_model(
+                pos_trimmed, 
+                **filter_kwargs(single_plane_model, self.kwargs))
         elif self.model == 'knn':
-            model = neighbor_interpolation_model(pos_trimmed, **self.kwargs)
+            model = neighbor_interpolation_model(
+                pos_trimmed, 
+                **filter_kwargs(neighbor_interpolation_model, self.kwargs))
         elif self.model == 'mlp':
-            model = mlp_model(pos_trimmed, **self.kwargs)
+            model = mlp_model(
+                pos_trimmed, 
+                **filter_kwargs(mlp_model, self.kwargs))
 
         # Compute the elevation of each point wrt the estimated ground
         # surface
@@ -486,26 +472,18 @@ class NAGColorAutoContrast(ColorAutoContrast):
 
     def _process(self, nag):
 
-        level_p = [-1] * nag.num_levels
-        if isinstance(self.level, int):
-            level_p[self.level] = self.p
-        elif self.level == 'all':
-            level_p = [self.p] * nag.num_levels
-        elif self.level[-1] == '+':
-            i = int(self.level[:-1])
-            level_p[i:] = [self.p] * (nag.num_levels - i)
-        elif self.level[-1] == '-':
-            i = int(self.level[:-1])
-            level_p[:i] = [self.p] * i
-        else:
-            raise ValueError(f'Unsupported level={self.level}')
+        level_p = fill_list_with_string_indexing(
+            level=self.level,
+            default=-1,
+            value=self.p,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
 
         transforms = [
             ColorAutoContrast(p=p, blend=self.blend, x_idx=self.x_idx)
             for p in level_p]
 
-        for i_level in range(nag.num_levels):
-            nag._list[i_level] = transforms[i_level](nag._list[i_level])
+        nag.apply_data_transform(transforms)
 
         return nag
 
@@ -553,24 +531,16 @@ class NAGColorDrop(ColorDrop):
 
     def _process(self, nag):
 
-        level_p = [-1] * nag.num_levels
-        if isinstance(self.level, int):
-            level_p[self.level] = self.p
-        elif self.level == 'all':
-            level_p = [self.p] * nag.num_levels
-        elif self.level[-1] == '+':
-            i = int(self.level[:-1])
-            level_p[i:] = [self.p] * (nag.num_levels - i)
-        elif self.level[-1] == '-':
-            i = int(self.level[:-1])
-            level_p[:i] = [self.p] * i
-        else:
-            raise ValueError(f'Unsupported level={self.level}')
+        level_p = fill_list_with_string_indexing(
+            level=self.level,
+            default=-1,
+            value=self.p,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
 
         transforms = [ColorDrop(p=p, x_idx=self.x_idx) for p in level_p]
 
-        for i_level in range(nag.num_levels):
-            nag._list[i_level] = transforms[i_level](nag._list[i_level])
+        nag.apply_data_transform(transforms)
 
         return nag
 
@@ -635,30 +605,146 @@ class NAGColorNormalize(ColorNormalize):
 
     def _process(self, nag):
 
-        level_mean = [[0, 0, 0]] * nag.num_levels
-        level_std = [[1, 1, 1]] * nag.num_levels
-        if isinstance(self.level, int):
-            level_mean[self.level] = self.mean
-            level_std[self.level] = self.std
-        elif self.level == 'all':
-            level_mean = [self.mean] * nag.num_levels
-            level_std = [self.std] * nag.num_levels
-        elif self.level[-1] == '+':
-            i = int(self.level[:-1])
-            level_mean[i:] = [self.mean] * (nag.num_levels - i)
-            level_std[i:] = [self.std] * (nag.num_levels - i)
-        elif self.level[-1] == '-':
-            i = int(self.level[:-1])
-            level_mean[:i] = [self.mean] * i
-            level_std[:i] = [self.std] * i
-        else:
-            raise ValueError(f'Unsupported level={self.level}')
+        level_mean = fill_list_with_string_indexing(
+            level=self.level,
+            default=[0, 0, 0],
+            value=self.mean,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
+
+        level_std = fill_list_with_string_indexing(
+            level=self.level,
+            default=[1, 1, 1],
+            value=self.std,
+            output_length=nag.absolute_num_levels,
+            start_index=nag.start_i_level)
 
         transforms = [
             ColorNormalize(mean=mean, std=std, x_idx=self.x_idx)
             for mean, std in zip(level_mean, level_std)]
 
-        for i_level in range(nag.num_levels):
-            nag._list[i_level] = transforms[i_level](nag._list[i_level])
+        nag.apply_data_transform(transforms)
 
         return nag
+
+class PretrainedCNN(Transform):
+    """
+    Forwards the data through a module that has been already been trained.
+    This is useful to call during preprocessing in order to get the point
+    features on which the partition is computed.
+    
+    :param first_stage: src.nn.stage.PointStage
+        The lightweight module embedding the points.
+        Typically, a sparse CNN of 3 layers.
+
+    :param ckpt_path: str
+        The path to the checkpoint, to be loaded in the `first_stage` 
+        module.
+        
+    :param norm_mode: str
+        Indexing mode used for feature normalization. This will be
+        passed to `Data.norm_index()`. 'graph' will normalize
+        features per graph (i.e. per cloud, i.e. per batch item).
+        'node' will normalize per node (i.e. per point). 'segment'
+        will normalize per segment (i.e.  per cluster)
+        NB : same as in `SPT`
+    
+    :param device: str
+        The device on which to load the first stage module.
+        
+    """
+    def __init__(
+        self, 
+        first_stage, 
+        ckpt_path, 
+        partition_hf=None, 
+        norm_mode='graph', 
+        device='cuda',
+        verbose=False):
+        
+        self.first_stage = first_stage
+        self.norm_mode = norm_mode
+        self.ckpt_path = ckpt_path
+        self.partition_hf = partition_hf
+        self.device = device
+        self.verbose = verbose
+        
+        assert self.partition_hf is not None, "`partition_hf` has not been set up."
+        
+        self.first_stage.to(self.device)
+        log.info(f"Initializing PretrainedCNN (transform used in preprocessing"
+                 "to compute point features for the partition) with: {self.ckpt_path}")
+        
+        self.first_stage = self.load_checkpoint(self.first_stage, 
+                                                self.ckpt_path, 
+                                                self.device,
+                                                verbose=self.verbose)
+    
+    def _process(self, data):
+        
+        with torch.no_grad():
+            # In this transform, we don't delete the partition_hf features after adding them to 'x'
+            # as we need to save them on disk for the training procedure.
+            data.add_keys_to(keys=self.partition_hf, to='x', delete_after=False)
+            
+            x, diameter = SPT.forward_first_stage(
+                data=data,
+                first_stage=self.first_stage,
+                use_node_hf=True,
+                norm_mode=self.norm_mode,
+            )
+            
+
+            data.x = x
+        
+        return data
+
+    @staticmethod
+    def load_checkpoint(first_stage, ckpt_path, device, verbose=False):
+        """
+        Load the checkpoint and update the first stage module.
+        """
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        model_dict = first_stage.state_dict()
+        
+        # Filtering the key
+        first_stage_keys = [k for k in checkpoint['state_dict'].keys() 
+                            if 'first_stage' in k]
+        ckpt_dict = {k.replace('net.first_stage.',""): checkpoint['state_dict'][k] 
+                     for k in first_stage_keys}
+        
+        loadable_params = {}
+        unused_params = {}
+        
+        
+        for k,v in ckpt_dict.items():
+            if k in model_dict:
+                if v.shape == model_dict[k].shape:
+                    loadable_params[k] = v
+                else:
+                    raise ValueError(
+                        f"Shape mismatch for {k}: checkpoint {v.shape} vs "
+                        f"model {model_dict[k].shape}")
+            else:
+                unused_params[k] = v
+
+        missing_params = {k: v for k, v in model_dict.items() if k not in loadable_params}
+        
+        # Load the parameters
+        model_dict.update(loadable_params)
+        first_stage.load_state_dict(model_dict)
+        
+        if verbose:
+            log.info(
+                f"Loaded {len(loadable_params)} parameters from "
+                f"checkpoint: " + ', '.join(loadable_params.keys()))
+            log.info(
+                f"Unused {len(unused_params)} parameters from the "
+                f"checkpoint (not in model): " +
+                ', '.join(unused_params.keys()))
+            log.info(
+                f"Missing {len(missing_params)} model parameters "
+                f"(not in checkpoint, keeping initialization): " +
+                ', '.join(missing_params.keys()))
+            
+        return first_stage

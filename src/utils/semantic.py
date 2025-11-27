@@ -1,16 +1,8 @@
-import sys
 import hydra
 import torch
-import os.path as osp
 from tqdm import tqdm
 from copy import deepcopy
 from src.utils.hydra import init_config
-
-
-src_folder = osp.dirname(osp.dirname(osp.abspath(__file__)))
-sys.path.append(src_folder)
-sys.path.append(osp.join(src_folder, "dependencies/grid_graph/python/bin"))
-sys.path.append(osp.join(src_folder, "dependencies/parallel_cut_pursuit/python/wrappers"))
 
 
 __all__ = ['compute_semantic_metrics', 'compute_semantic_metrics_s3dis_6fold']
@@ -152,12 +144,16 @@ def compute_semantic_metrics_s3dis_6fold(
     # Group together per-fold panoptic and semantic results
     for i in range(len(semantic_list)):
         semantic_6fold.confmat += semantic_list[i].confmat.cpu()
+        
+    # Display the metrics again
+    for i, cm in enumerate(semantic_list):
+        print(f"fold {i+1} mIoU: {cm.miou().cpu().item():.1f}")
 
     # Print computed the metrics
     print(f"\n6-fold")
-    print(f"mIoU : {semantic_6fold.miou().cpu().item()}")
-    print(f"OA   : {semantic_6fold.oa().cpu().item()}")
-    print(f"mAcc : {semantic_6fold.macc().cpu().item()}")
+    print(f"mIoU : {semantic_6fold.miou().cpu().item():.1f}")
+    print(f"OA   : {semantic_6fold.oa().cpu().item():.1f}")
+    print(f"mAcc : {semantic_6fold.macc().cpu().item():.1f}")
 
     return semantic_6fold, semantic_list
 

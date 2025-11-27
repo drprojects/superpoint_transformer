@@ -2,7 +2,9 @@ import torch
 import numpy as np
 import os.path as osp
 import plotly.graph_objects as go
-from src.data import Data, NAG, Cluster
+from src.data.nag import NAG
+from src.data.data import Data
+from src.data.cluster import Cluster
 from src.transforms import GridSampling3D, SaveNodeIndex
 from src.utils import fast_randperm, to_trimmed
 from torch_scatter import scatter_mean
@@ -50,6 +52,7 @@ def visualize_3d(
     """3D data interactive visualization.
 
     :param input: `Data` or `NAG` object
+        If it is a `Data` object, we assume it to be a point cloud (=atomic Data)
     :param keys: `List(str)` or `str`
         By default, the following attributes will be parsed in `input`
         for visualization {`pos`, `rgb`, `y`, `obj`, `semantic_pred`,
@@ -93,7 +96,8 @@ def visualize_3d(
         Voxel size to subsample the point cloud to facilitate
         visualization
     :param max_points: `int`
-        Maximum number of points displayed to facilitate visualization
+        Maximum number of points displayed to facilitate visualization.
+        Pass `max_points <= 0` to use all points without any subsampling
     :param point_size: `int` or `float`
         Size of point markers
     :param centroid_size: `int` or `float`
@@ -185,7 +189,7 @@ def visualize_3d(
     input = input.clone().cpu()
 
     # If the input is a simple Data object, we convert it to a NAG
-    input = NAG([input]) if isinstance(input, Data) else input
+    input = NAG([input], start_i_level = 0) if isinstance(input, Data) else input
 
     # If the last level of the NAG has super_index, we manually
     # construct an additional Data level and append it to the NAG
@@ -197,7 +201,9 @@ def visualize_3d(
         obj = data_last.obj.merge(data_last.super_index) \
             if data_last.obj else None
         pos = scatter_mean(data_last.pos, data_last.super_index, dim=0)
-        input = NAG(input.to_list() + [Data(pos=pos, sub=sub, obj=obj)])
+        input = NAG(
+            input.to_list() + [Data(pos=pos, sub=sub, obj=obj)],
+            start_i_level = input.start_i_level)
     is_nag = isinstance(input, NAG)
     num_levels = input.num_levels if is_nag else 1
 
@@ -218,7 +224,7 @@ def visualize_3d(
             # For Z, we center on the average Z, because the middle
             # value may cause empty samplings for outdoor scenes with
             # some very high objects and most of the interesting stuff
-            # happening near the ground 
+            # happening near the ground
             center[2] = input[0].pos[:, 2].mean()
         else:
             center = torch.as_tensor(center).cpu()
@@ -301,7 +307,7 @@ def visualize_3d(
 
     # If the cloud is too large with respect to required 'max_points',
     # sample without replacement
-    if idx.shape[0] > max_points:
+    if max_points > 0 and idx.shape[0] > max_points:
         idx = idx[fast_randperm(idx.shape[0])[:max_points]]
 
     # If a sampling is needed, apply it to the input Data or NAG,
@@ -403,7 +409,7 @@ def visualize_3d(
         y = data_0.y
         y = y.argmax(1).numpy() if y.dim() == 2 else y.numpy()
         colors = class_colors[y] if class_colors is not None \
-            else int_to_plotly_rgb(torch.LongTensor(y))
+            else int_to_plotly_rgb(torch.tensor(y, dtype=torch.long))
         data_0.y_colors = colors
         if class_names is None:
             text = np.array([f"Class {i}" for i in range(y.max() + 1)])
@@ -444,7 +450,7 @@ def visualize_3d(
             pred[is_void] = y_gt[is_void]
 
         colors = class_colors[pred] if class_colors is not None \
-            else int_to_plotly_rgb(torch.LongTensor(pred))
+            else int_to_plotly_rgb(torch.tensor(pred, dtype=torch.long))
         data_0.pred_colors = colors
         if class_names is None:
             text = np.array([f"Class {i}" for i in range(pred.max() + 1)])
@@ -489,7 +495,7 @@ def visualize_3d(
         y = data_0.y
         y = y.argmax(1).numpy() if y.dim() == 2 else y.numpy()
         colors_stuff = class_colors[y] if class_colors is not None \
-            else int_to_plotly_rgb(torch.LongTensor(y))
+            else int_to_plotly_rgb(torch.tensor(y, dtype=torch.long))
         if class_names is None:
             text_stuff = np.array([
                 f"{'Void' if i in void_classes else 'Stuff'} - Class {i}"
@@ -578,7 +584,7 @@ def visualize_3d(
 
         # Colors and text for stuff points
         colors_stuff = class_colors[y] if class_colors is not None \
-            else int_to_plotly_rgb(torch.LongTensor(y))
+            else int_to_plotly_rgb(torch.tensor(y, dtype=torch.long))
         if class_names is None:
             text_stuff = np.array([
                 f"{'Void' if i in void_classes else 'Stuff'} - Class {i}"
@@ -924,7 +930,7 @@ def visualize_3d(
 
         # Prepare the color for erroneous points
         error_color = 'red' if error_color is None \
-            else np.asarray[error_color].squeeze()
+            else np.asarray(error_color).squeeze()
 
         # Draw the erroneous points
         fig.add_trace(
@@ -947,7 +953,7 @@ def visualize_3d(
     # Traces color for interactive point cloud coloring
     def trace_update(mode):
         # Prepare the output args for the figure update attributes. By
-        # default, all traces are non visible, with no color and no
+        # default, all traces are non-visible, with no color and no
         # hover text
         n_traces = len(trace_modes)
         out = {
@@ -1068,7 +1074,13 @@ def figure_html(fig):
     return fig_html
 
 
-def show(input, path=None, title=None, no_output=True, pt_path=None, **kwargs):
+def show(
+        input,
+        path=None,
+        title=None,
+        display=True,
+        pt_path=None,
+        **kwargs):
     """Interactive data visualization.
 
     :param input: Data or NAG object
@@ -1076,8 +1088,11 @@ def show(input, path=None, title=None, no_output=True, pt_path=None, **kwargs):
         Path to save the visualization into a sharable HTML
     :param title: str
         Figure title
-    :param no_output: bool
-        Set to True if you want to return the 3D Plotly figure objects
+    :param display: bool
+        Whether to display the plotly figure. Setting to `False` will
+        return the plotly figure object without displaying it, allowing
+        to save compute and time if the end goal is to save it to disk
+        or to display later
     :param pt_path:str
         Path to save the visualization-ready `Data` object as a `*.pt`.
         In this `Data` object, the `pos` and all `*color*` attributes
@@ -1099,13 +1114,12 @@ def show(input, path=None, title=None, no_output=True, pt_path=None, **kwargs):
 
     # Draw a figure for 3D data visualization
     out_3d = visualize_3d(input, **kwargs)
-    if no_output:
-        if path is None:
-            out_3d['figure'].show(config={'displayModeBar': False})
-        else:
-            fig_html += figure_html(out_3d['figure'])
+    if display:
+        out_3d['figure'].show(config={'displayModeBar': False})
 
+    # Save the figure to disk in HTML format
     if path is not None:
+        fig_html += figure_html(out_3d['figure'])
         with open(path, "w") as f:
             f.write(fig_html)
 
@@ -1126,7 +1140,7 @@ def show(input, path=None, title=None, no_output=True, pt_path=None, **kwargs):
 
         torch.save(data, pt_path)
 
-    if not no_output:
+    if not display:
         return out_3d
 
     return
