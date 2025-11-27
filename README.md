@@ -705,17 +705,18 @@ used.
 hierarchical superpoint partition and graph clustering. Note that this step is 
 replaced by our GPU-based algorithm in EZ-SP.
 
-This project has greatly benefited from the support of **Romain Janvier** 
-(https://github.com/rjanvier). This collaboration was made possible thanks to
-the [3DFin](https://github.com/3DFin) project.
-
-**3DFin** has been developed at the Centre of Wildfire Research of Swansea 
-University (UK) in collaboration with the Research Institute of Biodiversity 
-(CSIC, Spain) and the Department of Mining Exploitation of the University of 
-Oviedo (Spain). Funding provided by the UK NERC project (NE/T001194/1):
+This project has greatly benefited from the support of 
+[**Romain Janvier**](https://github.com/rjanvier). 
+This collaboration was made possible thanks to
+the [3DFin](https://github.com/3DFin) project. **3DFin** has been developed at the Centre of Wildfire
+Research of Swansea University (UK) in collaboration with the Research Institute
+of Biodiversity (CSIC, Spain) and the Department of Mining Exploitation of the 
+University of Oviedo (Spain). 
+Funding provided by the UK NERC project (NE/T001194/1):
 _Advancing 3D Fuel Mapping for Wildfire Behaviour and Risk Mitigation Modelling_
 and by the Spanish Knowledge Generation project (PID2021-126790NB-I00):
 _Advancing carbon emission estimations from wildfires applying artificial 
 intelligence to 3D terrestrial point clouds_.
 
-This project has also benefited from contributions by **[Louis Geist](https://louisgeist.github.io)**, whose work was funded by the [PEPR IA SHARP](https://www.pepr-ia.fr/en/projet/sharp-english/).
+This project has also benefited from contributions by **[Louis Geist](https://louisgeist.github.io)**, 
+whose work was funded by the [PEPR IA SHARP](https://www.pepr-ia.fr/en/projet/sharp-english/).
