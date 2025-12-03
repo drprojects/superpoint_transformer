@@ -30,9 +30,9 @@ Official implementation for
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/supercluster)
 <br>
 <br>
-[_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/TODO@Geist) (arXiv)
+[_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (arXiv)
 <br>
-[![arXiv](https://img.shields.io/badge/TODO@Geist.svg)](https://arxiv.org/abs/TODO@Geist)
+[![arXiv](https://img.shields.io/badge/arxiv-2512.00385-b31b1b.svg)](https://arxiv.org/abs/2512.00385)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642503.svg)](https://doi.org/10.5281/zenodo.17642503)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://louisgeist.github.io/ez-sp/)
 <br>
@@ -684,7 +684,7 @@ If your work uses all or part of the present code, please include the following 
 📄 You can find our papers on arxiv:
 - [SPT](https://arxiv.org/abs/2306.08045)
 - [SuperCluster](https://arxiv.org/abs/2401.06704)
-- [EZ-SP](https://arxiv.org/abs/TODO@Geist)
+- [EZ-SP](https://arxiv.org/abs/2512.00385)
 
 Also, **if you ❤️ or simply use this project, don't forget to give the 
 repository a ⭐, it means a lot to us !**
