@@ -151,7 +151,7 @@ partition**, implementing
 [_**EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation**_](https://arxiv.org/abs/%3CARXIV%20PAPER%20ID%3E).
 This new version introduces some changes to the codebase which are 
 **non-backward compatible**.
-We strived to list document the breaking changes and provide **instructions and
+We strived to document the breaking changes and provide **instructions and
 scripts** to help users of previous versions move to the new codebase.
 Please refer to the [**CHANGELOG**](CHANGELOG.md) for more details❗
 - **27.06.2024** Released our Superpoint Transformer 🧑‍🏫 tutorial 
