@@ -36,6 +36,7 @@ Official implementation for
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642503.svg)](https://doi.org/10.5281/zenodo.17642503)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://louisgeist.github.io/ez-sp/)
 <br>
+<br>
 **If you ❤️ or simply use this project, don't forget to give the repository a ⭐,
 it means a lot to us !**
 <br>
