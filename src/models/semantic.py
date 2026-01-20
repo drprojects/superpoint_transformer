@@ -1627,7 +1627,11 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             n_sp = self.val_n_sp.compute()
             if n_sp > 0:
                 self.log("val/points_per_superpoint", n_p / n_sp, prog_bar=True)
-
+            
+            # Since `val_n_p` is not logged, it needs to be manually reset
+            self.val_n_p.reset()
+            self.val_n_sp.reset()
+            
     def test_step_update_metrics(self, loss, output) -> None:
         if not self.training_partition_stage:
             return super().test_step_update_metrics(loss, output)
@@ -1675,6 +1679,9 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             n_sp = self.test_n_sp.compute()
             if n_sp > 0:
                 self.log("test/points_per_superpoint", n_p / n_sp, prog_bar=True)
+
+            self.test_n_p.reset()
+            self.test_n_sp.reset()
 
     def _load_from_checkpoint(
             self,
