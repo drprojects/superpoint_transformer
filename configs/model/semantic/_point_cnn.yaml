@@ -3,7 +3,7 @@
 # Partial spt config specifically for the point encoder with CNN
 
 pretrained_cnn_ckpt_path: ${datamodule.pretrained_cnn_ckpt_path}
-train_cnn_from_scratch: False
+train_cnn_from_scratch: False  # False makes pretrained_cnn_ckpt_path mandatory
 freeze_cnn: False
 
 _point_out_dim: ${eval:'${model._point_mlp}[-1] if ${model.net.point_mlp} else ${model.net.point_cnn}[-1]'}

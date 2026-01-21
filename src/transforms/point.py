@@ -1,10 +1,10 @@
+import os
 import torch
 import numpy as np
 
 from src.utils import (
     rgb2hsv,
     rgb2lab,
-    sizes_to_pointers,
     to_float_rgb,
     POINT_FEATURES,
     GEOMETRIC_FEATURES,
@@ -669,16 +669,20 @@ class PretrainedCNN(Transform):
         self.device = device
         self.verbose = verbose
         
-        assert self.partition_hf is not None, "`partition_hf` has not been set up."
-        
+        assert self.partition_hf is not None, \
+            "`partition_hf` has not been set up."
+
         self.first_stage.to(self.device)
-        log.info(f"Initializing PretrainedCNN (transform used in preprocessing"
-                 "to compute point features for the partition) with: {self.ckpt_path}")
+        log.info(
+            f"Initializing {self.__class__.__name__} (transform used in "
+            f"preprocessing to compute point features for the partition) with: "
+            f"{self.ckpt_path}")
         
-        self.first_stage = self.load_checkpoint(self.first_stage, 
-                                                self.ckpt_path, 
-                                                self.device,
-                                                verbose=self.verbose)
+        self.first_stage = self.load_checkpoint(
+            self.first_stage,
+            self.ckpt_path,
+            self.device,
+            verbose=self.verbose)
     
     def _process(self, data):
         
@@ -693,29 +697,36 @@ class PretrainedCNN(Transform):
                 use_node_hf=True,
                 norm_mode=self.norm_mode,
             )
-            
 
             data.x = x
         
         return data
 
     @staticmethod
-    def load_checkpoint(first_stage, ckpt_path, device, verbose=False):
+    def load_checkpoint(
+            first_stage,
+            ckpt_path,
+            device,
+            verbose=False):
         """
         Load the checkpoint and update the first stage module.
         """
+        assert ckpt_path is not None and os.path.exists(ckpt_path), \
+            f"Expected a valid checkpoint path. Received {ckpt_path=}"
+
         checkpoint = torch.load(ckpt_path, map_location=device)
         model_dict = first_stage.state_dict()
         
         # Filtering the key
-        first_stage_keys = [k for k in checkpoint['state_dict'].keys() 
-                            if 'first_stage' in k]
-        ckpt_dict = {k.replace('net.first_stage.',""): checkpoint['state_dict'][k] 
-                     for k in first_stage_keys}
+        first_stage_keys = [
+            k for k in checkpoint['state_dict'].keys()
+            if 'first_stage' in k]
+        ckpt_dict = {
+            k.replace('net.first_stage.',""): checkpoint['state_dict'][k]
+            for k in first_stage_keys}
         
         loadable_params = {}
         unused_params = {}
-        
         
         for k,v in ckpt_dict.items():
             if k in model_dict:
@@ -728,7 +739,10 @@ class PretrainedCNN(Transform):
             else:
                 unused_params[k] = v
 
-        missing_params = {k: v for k, v in model_dict.items() if k not in loadable_params}
+        missing_params = {
+            k: v
+            for k, v in model_dict.items()
+            if k not in loadable_params}
         
         # Load the parameters
         model_dict.update(loadable_params)

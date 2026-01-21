@@ -271,7 +271,7 @@ training the partition). This leads to the following changes in the
 - **⚠️ Breaking change**: `RGB` is no longer added to `x` separately from other 
 features. Therefore, the position of `'rgb'` in lists `point_hf` and 
 `segment_hf` now matters. To ensure backward compatibility of your checkpoint, 
-put `'rgb'` at the end of your lists to reproduce the previous behaviour.
+put `'rgb'` at the end of your lists to reproduce the previous behavior.
 - Removing calls to `torch` legacy tensor constructors in favor of 
 `torch.tensor()` and improving the handling of the working device upon 
 tensor construction. Typically, to avoid construction on CPU followed by 
@@ -297,7 +297,7 @@ responsibility of this project
 `SampleRadiusSubgraphs(k_max=...)` implies a maximum number of nodes sampled in
 each subgraph
 - Factorized all transforms for SPT with `CutPurtsuitPartition` in 
-`datamodule/semantic/default.yaml`. This does not change the behaviour of any
+`datamodule/semantic/default.yaml`. This does not change the behavior of any
 transform.
 - **⚠️ Breaking Change**: modified `install.sh` to use precompiled wheels for 
 `pgeof`, `pycut-pursuit`, and `pygrid-graph` rather than compiling them at 

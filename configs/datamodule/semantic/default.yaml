@@ -59,7 +59,7 @@ prepare_only_test: False
 # Full-resolution prediction
 # By default, we do not need to load the full-resolution input point 
 # cloud for training, validating, and testing, because we compute 
-# metrics and losses based on hisograms of full-resolution labels inside
+# metrics and losses based on histograms of full-resolution labels inside
 # voxels and superpoints. Yet, for some inference applications, it may 
 # be needed to produce a full-resolution prediction. To this end, 
 # setting load_full_res_idx to True will load, for each preprocessed 

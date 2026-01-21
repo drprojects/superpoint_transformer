@@ -1,8 +1,5 @@
 # @package _global_
 
-datamodule:
-  pretrained_cnn_ckpt_path: ???
-
 model:
   _target_: src.models.semantic.PartitionAndSemanticModule
   
@@ -14,7 +11,7 @@ model:
   multi_stage_loss_lambdas: [1,25,100]
   
   # `extensive_logging` to True enables the logging of per class iou during training (and some other metrics).
-  # This is alleviates the memory usage, notably useful with wandb in offline mode where
+  # This alleviates the memory usage, notably useful with wandb in offline mode where
   # big files can take a lot of time to be synced.
   # NB : the validation and test metrics are always logged.
   extensive_logging: False

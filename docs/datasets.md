@@ -154,7 +154,7 @@ for more details.
 > [above-described `data/` structure](#structure-of-the-data-directory).
 
 #### Automatic download and preprocessing
-Following `torch_geometric`'s `Dataset` behaviour:
+Following `torch_geometric`'s `Dataset` behavior:
 
 0. Dataset instantiation <br>
 ➡ Load preprocessed data in `data/<dataset_name>/processed`

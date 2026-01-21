@@ -429,42 +429,55 @@ python src/train.py experiment=panoptic/dales_11g
 >[Lightning-Hydra](https://github.com/ashleve/lightning-hydra-template) for more
 >information on the logging options.
 
-NB: Current EZ-SP implementation supports `<dataset>` among `s3dis`, `kitti360` and `dales`.
+NB: Current EZ-SP implementation supports `<dataset>` among `s3dis`, 
+`kitti360` and `dales`.
 
 #### EZ-SP
 
-To train an EZ-SP model for semantic segmentation, you can either :
-  - a) first train the small backbone for partition, then train the full model for segmentation,
+Our EZ-SP method involves a two-stage training. 
 
-  - b) use a checkpoint for the partition model and directly train the full model for segmentation
+1.  We train a small model to learn pointwise features for the superpoint 
+**partition**, by solving a **contrastive task** at the semantic boundaries.
 
-##### a) Train partition & semantic model
-1. **Train the partition model:**
-   ```bash
-   python src/train.py experiment=partition/<dataset>_ezsp
-   ```
-   The checkpoint path will be logged (usually in `logs/train/runs/<run_dir>/checkpoints/last.ckpt`).
+2. We train a Superpoint Transformer model which takes these point features 
+as input and reasons on the associated hierarchical partition, by solving a 
+**semantic classification** task. 
 
-2. **Train the semantic model with the learned partition:**
-   ```bash
-   python src/train.py experiment=semantic/<dataset>_ezsp datamodule.pretrained_cnn_ckpt_path=<partition_ckpt_path>
-   ```
-   Replace `<partition_ckpt_path>` with the checkpoint from step 1.
+##### 1. Train the partition model
 
-##### b) Train directly a semantic model
-1. **Set partition model checkpoints:** Download our [released checkpoints](https://zenodo.org/records/17642503) of the partition model (named `ezsp_partition_<dataset>.ckpt`) and place the checkpoints in the `ckpt/` folder at the root of the project (and run `python src/train.py experiment=semantic/<dataset>_ezsp`).
-2. **Train the semantic model:**
-   ```bash
-   python src/train.py experiment=semantic/<dataset>_ezsp
-   ```
+```bash
+python src/train.py experiment=partition/<dataset>_ezsp
+```
 
-##### c) Details
-The following provides technical details about the two stages described above:
+The checkpoint should be logged in 
+`logs/train/runs/<run_dir>/checkpoints/last.ckpt` 
+(check your bash and wandb logs 😉).
 
-1. Launching an experiment from `config/experiments/partition` trains a small sparse CNN for EZ-SP that embeds every point into a low-dimensional space where adjacent points from different semantic classes are pushed apart. This first training stage is controlled by the `model.training_partition_stage` parameter.
+> **Note**: 
+> The experiments from `config/experiments/partition` train a small sparse CNN for
+> EZ-SP that embeds every point into a low-dimensional space where adjacent points 
+> from different semantic classes are pushed apart. 
+> This first training stage is controlled by the `model.training_partition_stage` 
+> parameter.
 
-2. Launching an experiment from `config/experiments/semantic` that ends with `_ezsp` trains the full EZ-SP model for semantic segmentation. Note that these configurations require a checkpoint path to a partition model, specified via the `datamodule.pretrained_cnn_ckpt_path` parameter. The pretrained partition model is used to compute the hierarchical superpoint partition during preprocessing, on which the full model reasons during training.
+##### 2. Train the semantic model
 
+```bash
+python src/train.py experiment=semantic/<dataset>_ezsp datamodule.pretrained_cnn_ckpt_path=<partition_ckpt_path>
+```
+
+Make sure you set the partition model checkpoint `pretrained_cnn_ckpt_path`.
+For this, you can train your own partition model as explained in step 1., or
+you can use our [pretrained checkpoints](https://zenodo.org/records/17642503) 
+(named `ezsp_partition_<dataset>.ckpt`).
+
+> **Note**: 
+> The experiments from `config/experiments/semantic` that end with `_ezsp` train
+> the full EZ-SP model for semantic segmentation. Note that these configurations
+> require a checkpoint path to a partition model, specified via the 
+> `datamodule.pretrained_cnn_ckpt_path` parameter. The pretrained partition 
+> model is used to compute the hierarchical superpoint partition during 
+> preprocessing, on which the full model reasons during training.
 
 
 ### PyTorch Lightning `predict()`

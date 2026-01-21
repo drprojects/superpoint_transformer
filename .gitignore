@@ -146,8 +146,8 @@ dmypy.json
 
 # Lightning-Hydra-Template
 configs/local/default.yaml
-/data
-/logs
+.data/
+.logs/
 .env
 .autoenv
 
@@ -167,3 +167,7 @@ src/dependencies/
 *__pycache__*
 *.ipynb*
 notebooks/*
+local
+ckpt
+outputs
+wandb

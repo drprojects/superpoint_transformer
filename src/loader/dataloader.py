@@ -14,7 +14,7 @@ def __identity__(batch_list):
     return batch_list
 
 class DataLoader(TorchDataLoader):
-    """Same as torch DataLoader except that the default behaviour for
+    """Same as torch DataLoader except that the default behavior for
     `collate_fn=None` is a simple identity. (i.e. the DataLoader will
     return a list of elements by default). This approach is meant to
     move the CPU-hungry NAG.from_nag_list (in particular, the level-0

@@ -9,7 +9,6 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric, SumMetric, CatMetric
 from pytorch_lightning.loggers.wandb import WandbLogger
 
-import src
 from src.metrics import ConfusionMatrix
 from src.utils import (
     loss_with_target_histogram,
@@ -266,20 +265,20 @@ class SemanticSegmentationModule(LightningModule):
             return
 
         # Initialization of the CNN from a pretrained checkpoint
-        pretrained_cnn_ckpt_path = getattr(
-            self.hparams, 'pretrained_cnn_ckpt_path', None)
-
-        assert pretrained_cnn_ckpt_path is not None, \
+        ckpt_path = getattr(self.hparams, 'pretrained_cnn_ckpt_path', None)
+        assert ckpt_path is not None and os.path.exists(ckpt_path), \
             ("A pretrained CNN checkpoint must be provided if "
              "you don't want to train the CNN from scratch. "
-             "Currently, `model.train_cnn_from_scratch` is False")
+             "Currently, `train_cnn_from_scratch=False` and "
+             f"`pretrained_cnn_ckpt_path={ckpt_path}`")
 
-        log.info(f"Initializing CNN of semantic module with the pretrained "
-                 f"checkpoint (produced by the partition training): "
-                 f"{pretrained_cnn_ckpt_path}")
+        log.info(
+            f"Initializing CNN of semantic module with the pretrained "
+            f"checkpoint (produced by the partition training): {ckpt_path}")
+
         self.net.first_stage = PretrainedCNN.load_checkpoint(
             self.net.first_stage,
-            pretrained_cnn_ckpt_path,
+            ckpt_path,
             self.device,
             verbose=False)
 
@@ -1210,17 +1209,20 @@ class SemanticSegmentationModule(LightningModule):
         batch = batch.detach().cpu()
 
         # Prepare the folder
-        if self.trainer is None:
-            stage = 'unknown_stage'
-        elif self.trainer.training:
-            stage = 'train'
-        elif self.trainer.validating:
-            stage = 'val'
-        elif self.trainer.testing:
-            stage = 'test'
-        elif self.trainer.predicting:
-            stage = 'predict'
-        else:
+        try:
+            if self.trainer is None:
+                stage = 'unknown_stage'
+            elif self.trainer.training:
+                stage = 'train'
+            elif self.trainer.validating:
+                stage = 'val'
+            elif self.trainer.testing:
+                stage = 'test'
+            elif self.trainer.predicting:
+                stage = 'predict'
+            else:
+                stage = 'unknown_stage'
+        except:
             stage = 'unknown_stage'
         if folder is None:
             if self.logger and self.logger.save_dir:
@@ -1326,7 +1328,10 @@ class SemanticSegmentationModule(LightningModule):
         `model.criterion`, etc.
         """
         return self.__class__.load_from_checkpoint(
-            checkpoint_path, net=self.net, criterion=self.criterion, **kwargs)
+            checkpoint_path,
+            net=self.net,
+            criterion=self.criterion,
+            **kwargs)
 
     def on_save_checkpoint(self, checkpoint: dict) -> None:
         """
@@ -1351,20 +1356,26 @@ class SemanticSegmentationModule(LightningModule):
         # Affect default version if not found
         if '__version__' not in checkpoint['metadata']:
             version = '2.1.0'
-            log.warning("⚠️ No `__version__` found in checkpoint metadata."\
-                "\nIt means the checkpoint was saved with a version of the code prior to 3.0.0."\
-                f"\nSetting the version {version}, "\
-                "so that the official weights of SPT and SPC are compatible."\
-                "\nIf you have weights from version 2.2.0, please use the migration script to set the version to 3.0.0."
-                "\n(see: src/utils/backwards_compatibility/add_version_to_checkpoint.py and CHANGELOG.md for more details)")
+            log.warning(
+                "⚠️ No `__version__` found in checkpoint metadata."
+                "\nThis means the checkpoint was saved with a version of the "
+                "code prior to 3.0.0."
+                f"\nSetting the version {version}, so that the official "
+                f"weights of SPT and SPC are compatible."
+                "\nIf you have weights from version 2.2.0, please use the "
+                "migration script to set the version to 3.0.0."
+                "\n(see: "
+                "src/utils/backwards_compatibility/add_version_to_checkpoint.py"
+                " and CHANGELOG.md for more details)")
             checkpoint['metadata']['__version__'] = version
 
         # Affect default commit hash if not found
         if 'commit_hash' not in checkpoint['metadata']:
             commit_hash = 'unknown'
-            log.warning("⚠️ No `commit_hash` found in checkpoint metadata."\
-                "\nIt means the checkpoint was saved with a version of the code "\
-                "prior to 3.0.0."\
+            log.warning(
+                "⚠️ No `commit_hash` found in checkpoint metadata."
+                "\nThis means the checkpoint was saved with a version of the "
+                "code prior to 3.0.0."
                 f"\nSetting the commit hash to {commit_hash}.")
             checkpoint['metadata']['commit_hash'] = commit_hash
         
@@ -1404,7 +1415,7 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             See the class PartitionCriterion for more details on
             the loss function.
         If False, the model is in the semantic segmentation stage.
-            See behaviour of `SemanticSegmentationModule`.
+            See behavior of `SemanticSegmentationModule`.
     :param partition : torch.nn.Module
         Module that computes a hierarchical partition.
         It takes a `Data` object (having notably the attributes `x`, `edge_index`) and
@@ -1489,39 +1500,45 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
         self.val_partition_ooa_best = MaxMetric()
         self.val_partition_omacc_best = MaxMetric()
 
-    def forward(self, sample: Union[NAG, Data]) -> Union[SemanticSegmentationOutput, PartitionOutput]:
+    def forward(
+            self,
+            sample: Union[NAG, Data],
+    ) -> Union[SemanticSegmentationOutput, PartitionOutput]:
         # `sample` is a `Data` if the training_partition_stage is True
         # `sample` is a `NAG` otherwise
 
         if self.training_partition_stage:
-            sample.add_keys_to(keys=self.net.point_hf, 
-                               to='x', 
-                               delete_after=not self.net.store_features)
+            sample.add_keys_to(
+                keys=self.net.point_hf,
+                to='x',
+                delete_after=not self.net.store_features)
 
-            x, diameter = self.net.forward_first_stage(sample,
-                                                       first_stage=self.net.first_stage,
-                                                       use_node_hf=self.net.use_node_hf,
-                                                       norm_mode=self.net.norm_mode, )
+            x, diameter = self.net.forward_first_stage(
+                sample,
+               first_stage=self.net.first_stage,
+               use_node_hf=self.net.use_node_hf,
+               norm_mode=self.net.norm_mode, )
 
             # Store the features on the level to be partitioned
             sample.x = x
 
             if (not self.training) or (self.partition_during_training):
-                nag = self.partition(sample)  # self.partition is a Transform from data to NAG
+                # self.partition is a Transform from data to NAG
+                nag = self.partition(sample)
             else:
                 nag = None
 
-            # If the training procedure of the partition does not need to compute the partition,
-            # `PartitionOutput` won't actually hold a partition during training (unless
-            # `partition_during_training` is set to True).
-            # Therefore, the hard partition is given during validation epochs so that the partition metrics are computed
+            # If the training procedure of the partition does not need
+            # to compute the partition, `PartitionOutput` won't actually
+            # hold a partition during training (unless
+            # `partition_during_training` is set to True). Therefore,
+            # the hard partition is given during validation epochs so
+            # that the partition metrics are computed
             return PartitionOutput(
                 y=sample.y,
                 x=sample.x,
                 edge_index=sample.edge_index,
-
-                partition=nag[1] if nag is not None else None,
-            )
+                partition=nag[1] if nag is not None else None)
 
         else:
             return super().forward(sample)
@@ -1536,14 +1553,14 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
 
             partition_output = self.forward(batch)
 
-            # If there are targets, compute the loss to train the partition
+            # If there are targets, compute the loss to train the
+            # partition
             if partition_output.has_target:
-                loss, partition_output = self.partition_criterion(partition_output)
+                loss, partition_output = self.partition_criterion(
+                    partition_output)
                 return loss, partition_output
-
             else:
                 return None, partition_output
-
 
         else:
             return super().model_step(batch)
@@ -1558,16 +1575,18 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
                 y_oracle = output.y_superpoint[:, :self.num_classes].argmax(dim=1)
                 self.partition_train_cm(
                     pred=y_oracle,
-                    target=output.y_superpoint
-                )
+                    target=output.y_superpoint)
 
     def train_step_log_metrics(self) -> None:
         if not self.training_partition_stage:
             return super().train_step_log_metrics()
         else:
             self.log(
-                "train/partition_loss", self.train_partition_loss,
-                on_step=False, on_epoch=True, prog_bar=True)
+                "train/partition_loss",
+                self.train_partition_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True)
 
     def on_train_epoch_end(self) -> None:
         if not self.training_partition_stage:
@@ -1575,8 +1594,9 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
         else:
 
             if self.partition_during_training:
-                self._on_train_epoch_end(cm=self.partition_train_cm,
-                                         metric_category='superpoints_purity')
+                self._on_train_epoch_end(
+                    cm=self.partition_train_cm,
+                    metric_category='superpoints_purity')
 
     def validation_step_update_metrics(self, loss, output) -> None:
 
@@ -1589,8 +1609,7 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             y_oracle = output.y_superpoint[:, :self.num_classes].argmax(dim=1)
             self.partition_val_cm(
                 pred=y_oracle,
-                target=output.y_superpoint
-            )
+                target=output.y_superpoint)
 
             self.val_n_sp(output.partition.num_points)
             self.val_n_p(output.x.shape[0])
@@ -1604,11 +1623,18 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
 
         else:
             self.log(
-                "val/partition_loss", self.val_partition_loss,
-                on_step=False, on_epoch=True, prog_bar=True)
+                "val/partition_loss",
+                self.val_partition_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True)
 
-            self.log("val/n_sp", self.val_n_sp,
-                    on_step=False, on_epoch=True, prog_bar=True)
+            self.log(
+                "val/n_sp",
+                self.val_n_sp,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         if not self.training_partition_stage:
@@ -1622,16 +1648,19 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
                 oa_best=self.val_partition_ooa_best,
                 macc_best=self.val_partition_omacc_best,
             )
-            # Log ratio at the end of epoch when all metrics are accumulated
+            # Log ratio at the end of epoch when all metrics are
+            # accumulated
             n_p = self.val_n_p.compute()
             n_sp = self.val_n_sp.compute()
             if n_sp > 0:
-                self.log("val/points_per_superpoint", n_p / n_sp, prog_bar=True)
-            
-            # Since `val_n_p` is not logged, it needs to be manually reset
+                self.log(
+                    "val/points_per_superpoint",
+                    n_p / n_sp,
+                    prog_bar=True)
+
             self.val_n_p.reset()
             self.val_n_sp.reset()
-            
+
     def test_step_update_metrics(self, loss, output) -> None:
         if not self.training_partition_stage:
             return super().test_step_update_metrics(loss, output)
@@ -1643,8 +1672,7 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             y_oracle = output.y_superpoint[:, :self.num_classes].argmax(dim=1)
             self.partition_test_cm(
                 pred=y_oracle,
-                target=output.y_superpoint
-            )
+                target=output.y_superpoint)
             
             self.test_n_sp(output.partition.num_points)
             self.test_n_p(output.x.shape[0])
@@ -1653,17 +1681,24 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
         if not self.training_partition_stage:
             return super().test_step_log_metrics()
         else:
-            # If the test set misses targets, we keep track of it, to skip
-            # metrics computation on the test set
+            # If the test set misses targets, we keep track of it, to
+            # skip metrics computation on the test set
             if not self.test_has_target:
                 return
 
             self.log(
-                "test/partition_loss", self.test_partition_loss,
-                on_step=False, on_epoch=True, prog_bar=True)
+                "test/partition_loss",
+                self.test_partition_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True)
 
-            self.log("test/n_sp", self.test_n_sp,
-                    on_step=False, on_epoch=True, prog_bar=True)
+            self.log(
+                "test/n_sp",
+                self.test_n_sp,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         if not self.training_partition_stage:
@@ -1672,13 +1707,17 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             self._on_eval_epoch_end(
                 stage='test',
                 cm=self.partition_test_cm,
-                metric_category='superpoints_purity',
-            )
-            # Log ratio at the end of epoch when all metrics are accumulated
+                metric_category='superpoints_purity')
+
+            # Log ratio at the end of epoch when all metrics are
+            # accumulated
             n_p = self.test_n_p.compute()
             n_sp = self.test_n_sp.compute()
             if n_sp > 0:
-                self.log("test/points_per_superpoint", n_p / n_sp, prog_bar=True)
+                self.log(
+                    "test/points_per_superpoint",
+                    n_p / n_sp,
+                    prog_bar=True)
 
             self.test_n_p.reset()
             self.test_n_sp.reset()
@@ -1688,14 +1727,15 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             checkpoint_path: str,
             **kwargs
     ) -> 'SemanticSegmentationModule':
-        """
-        Add of `partition` to the `SemanticSegmentationModule.load_from_checkpoint()`
+        """Simpler version of `LightningModule.load_from_checkpoint()`
+        for easier use: no need to explicitly pass `model.net`,
+        `model.criterion`, `model.partition`, etc.
         """
         return self.__class__.load_from_checkpoint(
             checkpoint_path, 
             net=self.net, 
             criterion=self.criterion, 
-            partition=self.partition, 
+            partition=self.partition,
             **kwargs)
 
 
