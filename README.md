@@ -33,7 +33,7 @@ Official implementation for
 [_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (arXiv)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2512.00385-b31b1b.svg)](https://arxiv.org/abs/2512.00385)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642503.svg)](https://doi.org/10.5281/zenodo.17642503)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://louisgeist.github.io/ez-sp/)
 <br>
 <br>
@@ -337,7 +337,7 @@ python src/eval.py experiment=semantic/dales_ezsp ckpt_path=/path/to/your/checkp
 >
 > The pretrained weights of the **EZ-SP** models for **S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642503.svg)](https://doi.org/10.5281/zenodo.17642503)
+> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
 
 ### Training
 #### SPT & SuperCluster
@@ -468,7 +468,7 @@ python src/train.py experiment=semantic/<dataset>_ezsp datamodule.pretrained_cnn
 
 Make sure you set the partition model checkpoint `pretrained_cnn_ckpt_path`.
 For this, you can train your own partition model as explained in step 1., or
-you can use our [pretrained checkpoints](https://zenodo.org/records/17642503) 
+you can use our [pretrained checkpoints](https://zenodo.org/records/18329602) 
 (named `ezsp_partition_<dataset>.ckpt`).
 
 > **Note**: 
