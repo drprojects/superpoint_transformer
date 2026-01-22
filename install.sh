@@ -118,6 +118,7 @@ pip install torch-ransac3d
 pip install pgeof
 pip install pycut-pursuit
 pip install pygrid-graph
+pip install pip install torch-graph-components
 
 echo
 echo
