@@ -30,7 +30,7 @@ Official implementation for
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/supercluster)
 <br>
 <br>
-[_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (arXiv)
+[_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (ICRA 2026)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2512.00385-b31b1b.svg)](https://arxiv.org/abs/2512.00385)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
