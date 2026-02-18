@@ -1500,6 +1500,8 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
         self.val_partition_ooa_best = MaxMetric()
         self.val_partition_omacc_best = MaxMetric()
 
+        self.train_n_inter_edge = SumMetric()
+
     def forward(
             self,
             sample: Union[NAG, Data],
@@ -1570,6 +1572,7 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
             return super().train_step_update_metrics(loss, output)
         else:
             self.train_partition_loss(loss.detach())
+            self.train_n_inter_edge(output.n_inter_edge)
 
             if self.partition_during_training:
                 y_oracle = output.y_superpoint[:, :self.num_classes].argmax(dim=1)
@@ -1592,7 +1595,36 @@ class PartitionAndSemanticModule(SemanticSegmentationModule):
         if not self.training_partition_stage:
             return super().on_train_epoch_end()
         else:
-
+            n_inter_edge = self.train_n_inter_edge.compute()
+            self.log(
+                    "train/n_inter_edge",
+                    n_inter_edge,
+                    prog_bar=True,
+                    rank_zero_only=True)
+            
+            
+            if n_inter_edge == 0:
+                raise ValueError(
+                    "No inter-edges found during one training epoch.\n\n"
+                    "Possible causes and solutions:\n"
+                    "  1. Random crops are too small (crops are stochastic, therefore, the issue may appear after only a few epochs):\n"
+                    "     - The random crops produced by `SampleRadiusSubgraphs` may only contain "
+                    "intra-edges for a whole epoch.\n"
+                    "     - Solution: Increase `datamodule.sample_graph_r` in your config to get "
+                    "bigger crops.\n"
+                    "     - Alternative: Deactivate crops by setting `datamodule.sample_graph_r=-1` "
+                    "(if GPU memory permits).\n\n"
+                    "  2. Graph definition:\n"
+                    "     - Your dataset and `AdjacencyGraph` graph definition may create only "
+                    "intra-edges or no edges at all.\n"
+                    "     - Solution: Review your graph connectivity parameters (e.g., `k`, `r_max`) "
+                    "in the `AdjacencyGraph` transform."
+                )
+            
+            # Since `self.train_n_inter_edge` is not given to self.log directly,
+            # we need to reset it manually here.
+            self.train_n_inter_edge.reset()
+            
             if self.partition_during_training:
                 self._on_train_epoch_end(
                     cm=self.partition_train_cm,

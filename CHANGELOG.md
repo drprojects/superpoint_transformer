@@ -14,6 +14,18 @@ introduced in EZ-SP to a standalone library:
 [torch-graph-components](https://github.com/drprojects/torch-graph-components). 
 This dependency is now installed by `install.sh`.
 
+- Partition training update:
+  - Logging of the number of inter-edges per epoch the model is trained on
+    (`train/n_inter_edge`)
+  - Clearer error or warning messages. Distinct messages for:
+    - error: no edge at all in the batch;
+    - warning: only void edges in the batch;
+    - warning: only intra-edges and no inter-edges in the batch.
+  - The two latter cases no longer raise an error: if a batch is composed of a
+    random crop in an area with only one semantic label, training continues.
+    However, if no inter-edge is found during a whole training epoch, an error
+    is raised, as this likely indicates a bug in the graph or crop definition.
+
 ### Deprecated
 
 ### Fixed
