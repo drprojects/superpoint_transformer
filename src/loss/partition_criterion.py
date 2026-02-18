@@ -1,8 +1,12 @@
 import torch
 from torch import nn
+from typing import Tuple
 
 from src.utils import PartitionOutput, compute_edge_distances_batch
 from src.loss.focal import BinaryFocalLoss
+
+import logging
+log = logging.getLogger(__name__)
 
 __all__ = []
 
@@ -33,7 +37,9 @@ class PartitionCriterion(nn.Module):
         The number of classes.
         
     """
-    
+    INTER_EDGE_LABEL = 0
+    INTRA_EDGE_LABEL = 1
+
     def __init__(self, 
                  loss_function = BinaryFocalLoss(),
                  affinity_temperature: float = 1,
@@ -54,11 +60,16 @@ class PartitionCriterion(nn.Module):
         self.num_classes = num_classes
 
     def forward(self, 
-                partition_output: PartitionOutput):
+                partition_output: PartitionOutput
+                ) -> Tuple[torch.Tensor, PartitionOutput]:
         
-        edge_classification_loss, edge_classification_output = self.edge_classification_loss(partition_output)
+        loss, edge_classification_output, n_inter_edge \
+            = self.edge_classification_loss(partition_output)
+        
+        # Store the number of inter-edges for logging
+        partition_output.n_inter_edge = n_inter_edge
 
-        return edge_classification_loss, partition_output
+        return loss, partition_output
 
     
     def edge_classification_loss(self, partition_output: PartitionOutput):
@@ -78,48 +89,79 @@ class PartitionCriterion(nn.Module):
               For meaningful partition evaluation, see the partition purity metrics logged in 
               `PartitionAndSemanticModule.on_validation_epoch_end`.
         """
-        # Get the taret affinity
+        # A) Get the target edge affinity
         # y is an histogram of the classes of shape (n, C+1), where C is the
         # number of classes and the last column is the void class.
         y = partition_output.y 
         x = partition_output.x
-        
         edge_index = partition_output.edge_index
         
-        # Remove self-loops (which are useless for the loss)
-        mask = edge_index[0] != edge_index[1]
-        edge_index = edge_index[:, mask]
+        if edge_index.numel() == 0:
+            raise ValueError("No edges found in batch.")
         
-        # Taking the argmax assumes the voxels are pure enough.
+        # A.1) Keep only relevant edges
+        
+        # Turn histogram into unique label (by taking the mode per voxel)
         majority_class_count, y = y[:,:self.num_classes].max(dim=1)
         
-        # We discard edges if one of the two nodes is a voxel with only void 
-        # labels (that is, if the count of the majority class is 0)
-        mask_void_voxels = majority_class_count == 0
+        # Remove self-loops (which are useless for the loss)
+        mask_self_loops = edge_index[0] == edge_index[1]
+        edge_index = edge_index[:, ~mask_self_loops]
+        
+        # Discard edges containing a pure void voxel
+        mask_void_voxels = majority_class_count == 0 # all points in the voxel were voids
         mask_void_edges = mask_void_voxels[edge_index[0]] | mask_void_voxels[edge_index[1]]
         edge_index = edge_index[:, ~mask_void_edges]
         
-        # Compute the groundtruth affinity (inter-edges are 0, intra-edges are 1)
-        groundtruth_affinity = (y[edge_index[0]] == y[edge_index[1]]).int()
+        if edge_index.numel() == 0:
+            log.warning("No edges with two non-void nodes found in current batch.\n")
+            return self.fake_edge_classification_loss(y.device)
+        
+        # Compute the target edge affinities 
+        # (inter-edges are 0, intra-edges are 1 - consistent with class 
+        # attributes `INTER_EDGE_LABEL` and `INTRA_EDGE_LABEL`)
+        target_affinity = (y[edge_index[0]] == y[edge_index[1]]).int()
+        n_inter_edge = (target_affinity == self.INTER_EDGE_LABEL).sum().item()
+        
+        if n_inter_edge == 0:
+            log.warning("No inter-edges found in current batch.\n")
+            return self.fake_edge_classification_loss(y.device)
 
-        # Adaptive sampling (only during training)
+        # A.2) Adaptive sampling on edges to balance between inter- and 
+        # intra-edges (ONLY during training)
         if self.training and self.adaptive_sampling_ratio is not None:
-            sampled_indices = self.binary_adaptive_sampling(groundtruth_affinity, 
-                                                            minority_class=0)
+            sampled_indices = self.binary_adaptive_sampling(target_affinity, 
+                                                            minority_class=self.INTER_EDGE_LABEL)
             
-            assert sampled_indices.numel() > 0, \
-                ("No edges left after adaptive sampling. "
-                 "Probably because there were no inter-edges (minority class).")
+            assert sampled_indices.numel() > 0, "No edges left after adaptive sampling."
             
             edge_index = edge_index[:, sampled_indices]
-            groundtruth_affinity = groundtruth_affinity[sampled_indices]
+            target_affinity = target_affinity[sampled_indices]
 
-        # Compute the predicted affinity
+        # B) Predict the edge affinities
         predicted_affinity = self.features_to_edge_affinity(x, edge_index)
-        loss = self.loss_function(predicted_affinity, groundtruth_affinity.bool())
+        loss = self.loss_function(predicted_affinity, target_affinity.bool())
 
-        return loss, ((predicted_affinity>=0.5).int(), groundtruth_affinity)
+        return loss, ((predicted_affinity>=0.5).int(), target_affinity), n_inter_edge
     
+    def fake_edge_classification_loss(self, device):
+        """
+        If for any reason, there are no edges or no inter-edges in the batch to 
+        train on, we return a fake loss and other metrics to avoid errors.
+        
+        This is useful if it happens rarely during one training epoch (e.g., 
+        due to small random crops or specific batch compositions).
+        
+        If during a WHOLE training epoch, no inter-edges are found, then 
+        `PartitionAndSemanticModule.on_train_epoch_end` will raise an error.
+        """
+        # Create a zero loss that requires grad for backward compatibility
+        fake_loss = torch.tensor(0.0, device=device, requires_grad=True)
+        
+        fake_pred = torch.tensor([0], device=device)
+        fake_target = torch.tensor([0], device=device)
+        n_inter_edge = 0
+        return fake_loss, (fake_pred, fake_target), n_inter_edge
     
     def binary_adaptive_sampling(self, y, minority_class=1):
         """
