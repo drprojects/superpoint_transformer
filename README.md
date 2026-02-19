@@ -15,7 +15,7 @@
 Official implementation for
 <br>
 <br>
-[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045) (ICCV 2023)
+[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045) (ICCV'23)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2306.08045-b31b1b.svg)](https://arxiv.org/abs/2306.08045)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
@@ -23,14 +23,14 @@ Official implementation for
 [![Tutorial](https://img.shields.io/badge/Tutorial-FFC300)](https://www.youtube.com/watch?v=2qKhpQs9gJw)
 <br>
 <br>
-[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704) (3DV 2024 Oral)
+[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704) (3DV'24 Oral)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2401.06704-b31b1b.svg)](https://arxiv.org/abs/2401.06704)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10689037.svg)](https://doi.org/10.5281/zenodo.10689037)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/supercluster-site)
 <br>
 <br>
-[_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (arXiv)
+[_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (ICRA'26)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2512.00385-b31b1b.svg)](https://arxiv.org/abs/2512.00385)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
@@ -152,6 +152,7 @@ superpoints can then be used in the SPT semantic segmentation framework.
 > library.
 
 ## 📰  Updates
+- **31.01.2026** Our paper [_**EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation**_](https://arxiv.org/abs/2512.00385) was accepted at **[ICRA'26](https://2026.ieee-icra.org/)** 🥳
 - **22.01.2026** Release the graph connected components and graph
 partitioning algorithms introduced in EZ-SP as a standalone library: 
 [torch-graph-components](https://github.com/drprojects/torch-graph-components). 
@@ -159,7 +160,7 @@ We hope this will facilitate the application of these core building blocks to
 other graph-based projects. 
 - **27.11.2025** Major code release for our **learnable, GPU-accelerated 
 partition**, implementing 
-[_**EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation**_](https://arxiv.org/abs/%3CARXIV%20PAPER%20ID%3E).
+[_**EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation**_](https://arxiv.org/abs/2512.00385).
 This new version introduces some changes to the codebase which are 
 **non-backward compatible**.
 We strived to document the breaking changes and provide **instructions and
@@ -181,9 +182,9 @@ Some changes in the dependencies and repository structure are **not
 backward-compatible**. If you were already using anterior code versions, this
 means we recommend re-installing your conda environment and re-running the 
 preprocessing or your datasets❗
-- **15.10.2023** Our paper **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704)** was accepted for an **oral** presentation at **[3DV 2024](https://3dvconf.github.io/2024/)** 🥳
-- **06.10.2023** Come see our poster for **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045)** at **[ICCV 2023](https://iccv2023.thecvf.com/)**
-- **14.07.2023** Our paper **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045)** was accepted at **[ICCV 2023](https://iccv2023.thecvf.com/)** 🥳
+- **15.10.2023** Our paper **[_Scalable 3D Panoptic Segmentation As Superpoint Graph Clustering_](https://arxiv.org/abs/2401.06704)** was accepted for an **oral** presentation at **[3DV'24](https://3dvconf.github.io/2024/)** 🥳
+- **06.10.2023** Come see our poster for **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045)** at **[ICCV'23](https://iccv2023.thecvf.com/)**
+- **14.07.2023** Our paper **[_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045)** was accepted at **[ICCV'23](https://iccv2023.thecvf.com/)** 🥳
 - **15.06.2023** Official release 🌱
 
 <br>
