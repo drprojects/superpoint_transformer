@@ -98,7 +98,7 @@ def read_dales_tile(
 class DALES(BaseDataset):
     """DALES dataset.
 
-    Dataset website: https://udayton.edu/engineering/research/centers/vision_lab/research/was_data_analysis_and_processing/dale.php
+    Dataset website: https://sites.google.com/a/udayton.edu/vasari1/research/earth-vision/dales
 
     :param root: str
         Root directory where the dataset should be saved.

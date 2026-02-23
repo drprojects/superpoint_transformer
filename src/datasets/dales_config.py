@@ -5,7 +5,7 @@ import numpy as np
 #                         Download information                         #
 ########################################################################
 
-FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSefhHMMvN0Uwjnj_vWQgYSvtFOtaoGFWsTIcRuBTnP09NHR7A/viewform?fbzx=5530674395784263977'
+FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdl2Tag498Goc3yFPLllya3ICorYlcBcw3IQi9Lw-Wj9ow2jQ/viewform'
 
 # DALES in LAS format
 LAS_TAR_NAME = 'dales_semantic_segmentation_las.tar.gz'
