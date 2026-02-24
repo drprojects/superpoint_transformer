@@ -7,8 +7,6 @@ _target_: src.models.semantic.PartitionAndSemanticModule
 
 training_partition_stage: True
 
-multi_stage_loss_lambdas: null
-loss_type: null
 
 # This creates the following CNN : dim_hf -> 32 -> 32 -> 32
 # where each arrow (->) is a convolutional block. (Conv -> GN -> LeakyReLU)
@@ -35,6 +33,13 @@ partition:
   verbose: ${datamodule.contour_prior_verbose}
   sharding: ${datamodule.contour_prior_sharding}
 
+# Disable everything related to the semantic criterion
+multi_stage_loss_lambdas: null
+loss_type: null
+weighted_loss: False
+
+# Criterion for partition training is saved under the `partition_criterion` 
+# attribute.
 partition_criterion:
   _target_: src.loss.partition_criterion.PartitionCriterion
   
