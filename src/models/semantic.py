@@ -323,6 +323,16 @@ class SemanticSegmentationModule(LightningModule):
             f'LightningDataModule has {num_classes} classes.'
 
         self.class_names = dataset.class_names
+        
+        # Check that the period of track_val_every_n_epoch` is a
+        # multiple of check_val_every_n_epoch
+        if self.trainer.check_val_every_n_epoch is not None:
+            assert (self.hparams.track_val_every_n_epoch
+                    % self.trainer.check_val_every_n_epoch == 0), \
+                (f"Expected 'track_val_every_n_epoch' to be a multiple of "
+                 f"'check_val_every_n_epoch', but received "
+                 f"{self.hparams.track_val_every_n_epoch} and "
+                 f"{self.trainer.check_val_every_n_epoch} instead.")
 
         if not self.hparams.weighted_loss:
             return
@@ -338,16 +348,6 @@ class SemanticSegmentationModule(LightningModule):
             weight = self.trainer.datamodule.train_dataset.get_class_weight(
                 smooth=getattr(self.hparams, 'weighted_loss_smooth', 'sqrt'))
             self.criterion.weight = weight.to(self.device)
-
-        # Check that the period of track_val_every_n_epoch` is a
-        # multiple of check_val_every_n_epoch
-        if self.trainer.check_val_every_n_epoch is not None:
-            assert (self.hparams.track_val_every_n_epoch
-                    % self.trainer.check_val_every_n_epoch == 0), \
-                (f"Expected 'track_val_every_n_epoch' to be a multiple of "
-                 f"'check_val_every_n_epoch', but received "
-                 f"{self.hparams.track_val_every_n_epoch} and "
-                 f"{self.trainer.check_val_every_n_epoch} instead.")
 
     def on_train_start(self) -> None:
         # By default, lightning executes validation step sanity checks
