@@ -1,0 +1,82 @@
+# configs/datamodule/semantic/uklidar.yaml
+# ==========================================
+# UK LiDAR dataset config for Superpoint Transformer.
+# Inherits from the default semantic segmentation config.
+#
+# Usage:
+#   python src/eval.py experiment=semantic/uklidar \
+#       ckpt_path=/path/to/dales_checkpoint.ckpt
+#
+# Data structure:
+#   data/uklidar/raw/test/*.laz   (or .las, .ply)
+#
+# Adjust voxel, pcp_regularization, etc. for your point density.
+
+defaults:
+  - default
+
+# Dataset class
+_target_: src.datamodules.DataModule
+datamodule:
+  _target_: src.datamodules.DataModule
+  dataset_class: src.datasets.uklidar.UKLidarDataset
+
+  # --- Data paths ---
+  # Override in configs/local/default.yaml or via CLI
+  # data_dir: /path/to/your/data/
+
+  # --- Preprocessing ---
+  # Voxel size: 0.1m matches DALES default.
+  # For lower-density EA data (~2 pts/m²), try 0.25 or 0.5.
+  voxel: 0.1
+
+  # KNN for neighbor search
+  knn_k: 50
+  knn_r_max: 1.0
+
+  # Partition parameters (matched to DALES defaults)
+  pcp_regularization:
+    - 0.01
+    - 0.1
+  pcp_spatial_weight:
+    - 1.0e-1
+    - 1.0e-1
+  pcp_cutoff:
+    - 10
+    - 10
+  pcp_k_adjacency: 10
+  pcp_w_adjacency: 0
+
+  # Graph construction
+  graph_k_max: 30
+  graph_gap: 0.2
+  graph_chunk: 1000000
+  graph_se_ratio: 0.3
+  graph_se_min: 20
+
+  # --- Tiling for large tiles ---
+  # UK ALS tiles are typically 1 km × 1 km (similar to DALES 500m × 500m).
+  # xy_tiling=2 splits each into 4 sub-tiles for memory safety.
+  xy_tiling: 2
+  pc_tiling: 0
+
+  # --- Sampling (training only) ---
+  sample_graph_k: 2
+  sample_graph_r: 50
+  sample_segment_ratio: 0.1
+  sample_point_min: 128
+  sample_point_max: 32000
+
+  # --- Batch limits ---
+  max_num_nodes: 50000
+  max_num_edges: 1000000
+
+  # --- DataLoader ---
+  dataloader:
+    batch_size: 1
+    num_workers: 4
+    pin_memory: true
+    persistent_workers: true
+
+  # --- Validation ---
+  val_on_test: true
