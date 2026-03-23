@@ -81,27 +81,33 @@ log = logging.getLogger(__name__)
 
 UKLIDAR_NUM_CLASSES = 8  # Matches DALES
 
-UKLIDAR_CLASS_NAMES = {
-    0: "ground",
-    1: "vegetation",
-    2: "cars",
-    3: "trucks",
-    4: "power_lines",
-    5: "fences",
-    6: "poles",
-    7: "buildings",
-}
-
-UKLIDAR_CLASS_COLORS = [
-    [128, 64, 0],     # ground — brown
-    [0, 128, 0],      # vegetation — green
-    [255, 0, 0],      # cars — red
-    [255, 128, 0],    # trucks — orange
-    [255, 255, 0],    # power_lines — yellow
-    [128, 128, 128],  # fences — grey
-    [0, 0, 255],      # poles — blue
-    [255, 0, 255],    # buildings — magenta
+# class_names must have num_classes + 1 entries; the last is the void class
+UKLIDAR_CLASS_NAMES = [
+    'Ground',
+    'Vegetation',
+    'Cars',
+    'Trucks',
+    'Power lines',
+    'Fences',
+    'Poles',
+    'Buildings',
+    'Unknown',          # void / unlabelled (index == num_classes)
 ]
+
+# class_colors must also have num_classes + 1 entries
+UKLIDAR_CLASS_COLORS = [
+    [128,  64,   0],   # ground — brown
+    [  0, 128,   0],   # vegetation — green
+    [255,   0,   0],   # cars — red
+    [255, 128,   0],   # trucks — orange
+    [255, 255,   0],   # power_lines — yellow
+    [128, 128, 128],   # fences — grey
+    [  0,   0, 255],   # poles — blue
+    [255,   0, 255],   # buildings — magenta
+    [ 50,  50,  50],   # unknown / void — dark grey
+]
+
+UKLIDAR_STUFF_CLASSES = [0, 1]  # Ground, Vegetation (same as DALES)
 
 # ASPRS → DALES label mapping
 # Applied when reading classified UK LiDAR data.
@@ -292,6 +298,9 @@ def _read_with_laspy(filepath):
 # Dataset Class
 # ===========================================================================
 
+__all__ = ['UKLidarDataset']
+
+
 class UKLidarDataset(BaseDataset):
     """Dataset class for UK colourised LiDAR point clouds.
 
@@ -315,34 +324,43 @@ class UKLidarDataset(BaseDataset):
     For inference-only usage, place all files in ``raw/test/``.
     """
 
-    _num_classes = UKLIDAR_NUM_CLASSES
-    _class_names = list(UKLIDAR_CLASS_NAMES.values())
-    _class_colors = UKLIDAR_CLASS_COLORS
-
     # Whether labels are available for inference data
     label_all_void: bool = True
 
     @property
-    def num_classes(self):
-        return self._num_classes
+    def class_names(self) -> List[str]:
+        """List of string names for dataset classes. Must be one-item
+        larger than ``num_classes``, with the last entry being the
+        void / unlabelled class.
+        """
+        return UKLIDAR_CLASS_NAMES
 
     @property
-    def class_names(self):
-        return self._class_names
+    def num_classes(self) -> int:
+        return UKLIDAR_NUM_CLASSES
 
     @property
-    def class_colors(self):
-        return self._class_colors
+    def stuff_classes(self) -> List[int]:
+        """'Stuff' classes (Ground, Vegetation) — same convention as
+        DALES.
+        """
+        return UKLIDAR_STUFF_CLASSES
 
     @property
-    def all_base_cloud_ids(self):
+    def class_colors(self) -> List[List[int]]:
+        return UKLIDAR_CLASS_COLORS
+
+    @property
+    def all_base_cloud_ids(self) -> Dict[str, List[str]]:
         """Discover cloud IDs from the raw directory structure.
 
         Returns dict with train/val/test splits populated from the
-        corresponding subdirectories.
+        corresponding subdirectories.  Cloud IDs are just the file
+        stems (no split prefix) — the split prefix is handled by
+        ``id_to_relative_raw_path``.
         """
         raw_dir = Path(self.raw_dir)
-        splits = {"train": [], "val": [], "test": []}
+        splits: Dict[str, List[str]] = {"train": [], "val": [], "test": []}
 
         for split in splits:
             split_dir = raw_dir / split
@@ -353,10 +371,7 @@ class UKLidarDataset(BaseDataset):
                 all_files = sorted(
                     set(laz + las + ply), key=lambda p: p.name,
                 )
-                # Cloud IDs include the split prefix to ensure uniqueness
-                splits[split] = [
-                    f"{split}/{f.stem}" for f in all_files
-                ]
+                splits[split] = [f.stem for f in all_files]
 
         log.info(
             "UKLidar splits: train=%d, val=%d, test=%d",
@@ -367,17 +382,64 @@ class UKLidarDataset(BaseDataset):
 
         return splits
 
-    def read_single_raw_cloud(self, raw_cloud_path):
+    def download_dataset(self) -> None:
+        """UKLidar data is user-provided — no automatic download."""
+        log.info(
+            "UKLidar does not support automatic download.\n"
+            "Place your LAS/LAZ files in:\n"
+            "  %s/{train,val,test}/*.laz\n",
+            self.raw_dir,
+        )
+
+    def id_to_relative_raw_path(self, id: str) -> str:
+        """Map a cloud id to its relative raw path under ``raw_dir``.
+
+        We need to find the actual file because extensions may be
+        .laz, .las, or .ply.
+        """
+        base_id = self.id_to_base_id(id)
+
+        # Determine which split this id belongs to
+        for split, ids in self.all_cloud_ids.items():
+            if id in ids:
+                # Resolve 'trainval' and 'val' to the correct raw dir
+                raw_split = split
+                if raw_split == 'trainval':
+                    raw_split = 'train'
+                split_dir = Path(self.raw_dir) / raw_split
+                for ext in ('.laz', '.las', '.ply'):
+                    candidate = split_dir / (base_id + ext)
+                    if candidate.is_file():
+                        return str(Path(raw_split) / (base_id + ext))
+                # Fallback: return .laz path even if not found yet
+                return str(Path(raw_split) / (base_id + '.laz'))
+
+        raise ValueError(f"Unknown cloud id '{id}'")
+
+    def processed_to_raw_path(self, processed_path: str) -> str:
+        """Return the raw cloud path corresponding to the input
+        processed path.
+        """
+        import os
+        stage, hash_dir, cloud_id = \
+            os.path.splitext(processed_path)[0].split(os.sep)[-3:]
+
+        raw_split = 'train' if stage in ['trainval', 'val'] else stage
+        base_cloud_id = self.id_to_base_id(cloud_id)
+
+        split_dir = Path(self.raw_dir) / raw_split
+        for ext in ('.laz', '.las', '.ply'):
+            candidate = split_dir / (base_cloud_id + ext)
+            if candidate.is_file():
+                return str(candidate)
+
+        return str(split_dir / (base_cloud_id + '.laz'))
+
+    def read_single_raw_cloud(self, raw_cloud_path: str) -> Data:
         """Read a single raw point cloud file.
 
         This is the method that SPT's preprocessing pipeline calls.
         It dispatches to ``read_uklidar_tile()`` for LAS/LAZ files.
-
-        Args:
-            raw_cloud_path: Path to the raw file (LAS, LAZ, or PLY).
-
-        Returns:
-            Data object with pos, rgb, intensity, y.
         """
         raw_cloud_path = Path(raw_cloud_path)
 
@@ -387,7 +449,6 @@ class UKLidarDataset(BaseDataset):
                 label_all_void=self.label_all_void,
             )
         elif raw_cloud_path.suffix.lower() == ".ply":
-            # Fallback for PLY files (from prepare_spt.py output)
             data = self._read_ply(raw_cloud_path)
         else:
             raise ValueError(
@@ -395,6 +456,15 @@ class UKLidarDataset(BaseDataset):
             )
 
         return data
+
+    @property
+    def raw_file_structure(self) -> str:
+        return f"""
+    {self.root}/
+        └── raw/
+            └── {{train, val, test}}/
+                └── {{tile_name}}.laz
+            """
 
     @staticmethod
     def _read_ply(filepath):

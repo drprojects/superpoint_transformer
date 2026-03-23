@@ -1,82 +1,129 @@
-# configs/datamodule/semantic/uklidar.yaml
-# ==========================================
-# UK LiDAR dataset config for Superpoint Transformer.
-# Inherits from the default semantic segmentation config.
-#
-# Usage:
-#   python src/eval.py experiment=semantic/uklidar \
-#       ckpt_path=/path/to/dales_checkpoint.ckpt
-#
-# Data structure:
-#   data/uklidar/raw/test/*.laz   (or .las, .ply)
-#
-# Adjust voxel, pcp_regularization, etc. for your point density.
-
+# @package datamodule
 defaults:
-  - default
+  - /datamodule/semantic/default.yaml
 
-# Dataset class
-_target_: src.datamodules.DataModule
-datamodule:
-  _target_: src.datamodules.DataModule
-  dataset_class: src.datasets.uklidar.UKLidarDataset
+_target_: src.datamodules.uklidar.UKLidarDataModule
 
-  # --- Data paths ---
-  # Override in configs/local/default.yaml or via CLI
-  # data_dir: /path/to/your/data/
+# These parameters are not actually used by the DataModule, but are used
+# here to facilitate model parameterization with config interpolation
+num_classes: 8
+stuff_classes: [0, 1]
+trainval: False
+val_on_test: True
+xy_tiling: 2
 
-  # --- Preprocessing ---
-  # Voxel size: 0.1m matches DALES default.
-  # For lower-density EA data (~2 pts/m²), try 0.25 or 0.5.
-  voxel: 0.1
+# Features that will be computed, saved, loaded for points and segments
 
-  # KNN for neighbor search
-  knn_k: 50
-  knn_r_max: 1.0
+# point features used for the partition
+partition_hf:
+  - 'linearity'
+  - 'planarity'
+  - 'scattering'
+  - 'elevation'
 
-  # Partition parameters (matched to DALES defaults)
-  pcp_regularization:
-    - 0.01
-    - 0.1
-  pcp_spatial_weight:
-    - 1.0e-1
-    - 1.0e-1
-  pcp_cutoff:
-    - 10
-    - 10
-  pcp_k_adjacency: 10
-  pcp_w_adjacency: 0
+# point features used for training
+point_hf:
+  - 'intensity'
+  - 'linearity'
+  - 'planarity'
+  - 'scattering'
+  - 'verticality'
+  - 'elevation'
 
-  # Graph construction
-  graph_k_max: 30
-  graph_gap: 0.2
-  graph_chunk: 1000000
-  graph_se_ratio: 0.3
-  graph_se_min: 20
+# segment-wise features computed at preprocessing
+segment_base_hf: []
 
-  # --- Tiling for large tiles ---
-  # UK ALS tiles are typically 1 km × 1 km (similar to DALES 500m × 500m).
-  # xy_tiling=2 splits each into 4 sub-tiles for memory safety.
-  xy_tiling: 2
-  pc_tiling: 0
+# segment features computed as the mean of point feature in each
+# segment, saved with "mean_" prefix
+segment_mean_hf: []
 
-  # --- Sampling (training only) ---
-  sample_graph_k: 2
-  sample_graph_r: 50
-  sample_segment_ratio: 0.1
-  sample_point_min: 128
-  sample_point_max: 32000
+# segment features computed as the std of point feature in each segment,
+# saved with "std_" prefix
+segment_std_hf: []
 
-  # --- Batch limits ---
-  max_num_nodes: 50000
-  max_num_edges: 1000000
+# horizontal edge features used for training
+edge_hf:
+  - 'mean_off'
+  - 'std_off'
+  - 'mean_dist'
+  - 'angle_source'
+  - 'angle_target'
+  - 'centroid_dir'
+  - 'centroid_dist'
+  - 'normal_angle'
+  - 'log_length'
+  - 'log_surface'
+  - 'log_volume'
+  - 'log_size'
 
-  # --- DataLoader ---
-  dataloader:
-    batch_size: 1
-    num_workers: 4
-    pin_memory: true
-    persistent_workers: true
+v_edge_hf: []  # vertical edge features used for training
 
-  # --- Validation ---
-  val_on_test: true
+# Parameters declared here to facilitate tuning configs without copying
+# all the pre_transforms.
+# Voxel size: 0.1m matches DALES default.
+# For lower-density EA data (~2 pts/m²), try 0.25 or 0.5.
+voxel: 0.1
+knn: 25
+knn_r: 10
+knn_step: -1
+knn_min_search: 10
+ground_model: 'ransac'
+ground_threshold: 5
+ground_xy_grid: 5
+ground_scale: 20
+pcp_regularization: [0.1, 0.2, 0.3]
+pcp_spatial_weight: [1e-1, 1e-2, 1e-3]
+pcp_edge_reduce: 'mean'
+pcp_cutoff: [10, 30, 100]
+pcp_k_adjacency: 10
+pcp_w_adjacency: 1
+pcp_iterations: 15
+graph_k_min: 1
+graph_k_max: 30
+graph_gap: [5, 30, 30]
+graph_se_ratio: 0.3
+graph_se_min: 20
+graph_cycles: 3
+graph_margin: 0.5
+graph_chunk: [1e6, 1e5, 1e5]  # reduce if CUDA memory errors
+
+# Batch construction parameterization
+sample_segment_ratio: 0.2
+sample_segment_by_size: True
+sample_segment_by_class: False
+sample_point_min: 32
+sample_point_max: 128
+sample_graph_r: 50  # set to r<=0 to skip SampleRadiusSubgraphs
+sample_graph_k: 4
+sample_graph_max_nodes: 10000
+sample_graph_disjoint: True
+sample_graph_cylindrical: True
+sample_edge_n_min: -1
+sample_edge_n_max: -1
+
+# Augmentations parameterization
+pos_jitter: 0.05
+tilt_n_rotate_phi: 0.1
+tilt_n_rotate_theta: 180
+anisotropic_scaling: 0.2
+node_feat_jitter: 0
+h_edge_feat_jitter: 0
+v_edge_feat_jitter: 0
+node_feat_drop: 0
+h_edge_feat_drop: 0.3
+v_edge_feat_drop: 0
+node_row_drop: 0
+h_edge_row_drop: 0
+v_edge_row_drop: 0
+drop_to_mean: False
+
+# UK LiDAR may or may not have RGB; disable RGB augmentations by default
+# (same approach as DALES which also lacks RGB)
+rgb_jitter: 0.0
+rgb_autocontrast: 0.0
+rgb_drop: 0.0
+
+# DataLoader
+dataloader:
+  batch_size: 4
+  num_workers: 4

@@ -1,29 +1,19 @@
-# configs/experiment/semantic/uklidar.yaml
-# ==========================================
-# Experiment config for running SPT inference on UK LiDAR data
-# using a DALES pretrained checkpoint.
-#
-# Usage:
-#   python src/eval.py experiment=semantic/uklidar \
-#       ckpt_path=/path/to/dales_checkpoint.ckpt
-#
-# For KITTI-360 checkpoint, override the model:
-#   python src/eval.py experiment=semantic/uklidar \
-#       model=spt-128 \
-#       ckpt_path=/path/to/kitti360_checkpoint.ckpt
-
 # @package _global_
 
+# to execute this experiment run:
+# python src/eval.py experiment=semantic/uklidar \
+#     ckpt_path=/path/to/dales_checkpoint.ckpt
+
 defaults:
-  - override /datamodule: semantic/uklidar
-  - override /model: semantic/spt-64     # DALES uses spt-64
-  - override /trainer: default
+  - override /datamodule: semantic/uklidar.yaml
+  - override /model: semantic/spt-2.yaml
+  - override /trainer: gpu.yaml
 
-# --- Trainer ---
+# Inference only — no training
 trainer:
-  max_epochs: 0  # Inference only — no training
+  max_epochs: 0
 
-# --- Tags ---
+# Tags
 tags:
   - uklidar
   - inference
