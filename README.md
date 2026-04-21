@@ -708,8 +708,8 @@ If your work uses all or part of the present code, please include the following 
 @article{geist2025ezsp,
   title={EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation},
   author={Geist, Louis and Landrieu, Loic and Robert, Damien},
-  journal={arXiv},
-  year={2025},
+  journal={ICRA},
+  year={2026},
 }
 ```
 
