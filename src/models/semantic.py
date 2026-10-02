@@ -438,7 +438,9 @@ class SemanticSegmentationModule(LightningModule):
                     if i == 0:
                         y_dominant = b.argmax(dim=1)
                         y_hist_dominant = torch.zeros_like(b)
-                        y_hist_dominant[:, y_dominant] = b.sum(dim=1)
+                        y_hist_dominant[
+                            torch.arange(b.shape[0], device=b.device),
+                            y_dominant] = b.sum(dim=1)
                         loss = loss + loss_with_target_histogram(
                             criterion, a, y_hist_dominant)
                         continue
@@ -463,7 +465,10 @@ class SemanticSegmentationModule(LightningModule):
             elif self.hparams.loss_type == 'wce':
                 y_dominant = output.y_hist.argmax(dim=1)
                 y_hist_dominant = torch.zeros_like(output.y_hist)
-                y_hist_dominant[:, y_dominant] = output.y_hist.sum(dim=1)
+                y_hist_dominant[
+                    torch.arange(
+                        output.y_hist.shape[0], device=output.y_hist.device),
+                    y_dominant] = output.y_hist.sum(dim=1)
                 loss = loss_with_target_histogram(
                     self.criterion, output.logits, y_hist_dominant)
             elif self.hparams.loss_type == 'kl':
