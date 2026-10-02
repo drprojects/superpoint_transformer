@@ -141,20 +141,28 @@ class RandomAnisotropicScale(Transform):
     Credit: https://github.com/torch-points3d/torch-points3d
 
     :param delta: float or List(float)
-        Scaling will be uniformly sampled in [-delta, delta]. If a
-        3-element list may be passed to scale X, Y and Z differently.
+        Each scaling factor ``s_i`` will be uniformly sampled in
+        [1 - delta, 1 + delta]. A 3-element list may be passed to scale
+        X, Y and Z within different ranges
+    :param per_axis: bool
+        If True (default), each axis has its own random draw, so the
+        scaling is anisotropic. If False, a single random draw is shared
+        by the 3 axes: with a scalar `delta`, the scaling is then
+        isotropic, ie ``s1 = s2 = s3``, which was also the default
+        behavior of this transform in versions <= 3.0.0
     """
 
     _IN_TYPE = NAG
     _OUT_TYPE = NAG
     _NO_REPR = ['_device_delta']
 
-    def __init__(self, delta=0.2):
+    def __init__(self, delta=0.2, per_axis=True):
         assert isinstance(delta, (float, int)) or isinstance(delta, (tuple, list))
         if isinstance(delta, (float, int)):
             delta = [float(delta)] * 3
         assert len(delta) == 3
         self.delta = torch.tensor(delta).abs().view(1, -1)
+        self.per_axis = per_axis
         self._device_delta = None
 
     def _get_delta(self, device):
@@ -167,9 +175,11 @@ class RandomAnisotropicScale(Transform):
 
     def _process(self, nag):
         # Generate the random scales, directly on the device to avoid a
-        # CPU-GPU synchronization
+        # CPU-GPU synchronization. With `per_axis=True`, each axis has
+        # its own random draw
         delta = self._get_delta(nag.device)
-        scale = 1 + torch.rand(1, device=nag.device) * 2 * delta - delta
+        u = torch.rand(1, 3 if self.per_axis else 1, device=nag.device)
+        scale = 1 + u * 2 * delta - delta
 
         for i_level in nag.level_range:
             nag[i_level].pos = nag[i_level].pos * scale
@@ -194,7 +204,10 @@ class RandomAnisotropicScale(Transform):
                 # scaled by the isotropic equivalent of `scale`, its RMS
                 # `scale.norm() / sqrt(3)`, NOT `scale.norm()` (~sqrt(3)
                 # for a ~(1, 1, 1) scale). `std_off` is clipped like in
-                # `_minimalistic_horizontal_edge_features`
+                # `_minimalistic_horizontal_edge_features`. This is
+                # exact for an isotropic scaling. For an anisotropic
+                # one, `std_off` and `mean_dist` are only approximated,
+                # their exact value would require the points
                 s_iso = scale.norm() / math.sqrt(3)
                 edge_attr[:, :3] *= scale
                 edge_attr[:, 3:6] = (edge_attr[:, 3:6] * s_iso).clip(-2, 2)
@@ -205,7 +218,10 @@ class RandomAnisotropicScale(Transform):
 
     @staticmethod
     def _scale_normal(normal, scale):
-        return torch.nn.functional.normalize(normal * scale, dim=1)
+        # Normals transform with the inverse transpose of the scaling
+        # matrix, ie they are divided by `scale`, not multiplied. Both
+        # are equivalent for an isotropic scaling only
+        return torch.nn.functional.normalize(normal / scale, dim=1)
 
 
 class RandomAxisFlip(Transform):

@@ -117,6 +117,7 @@ pos_jitter: 0.03
 tilt_n_rotate_phi: 0.1
 tilt_n_rotate_theta: 180
 anisotropic_scaling: 0.2
+anisotropic_scaling_per_axis: False  # if True, a scaling factor is drawn for each axis. If False, the same factor is shared by all axes (isotropic scaling, which was also the default behavior in versions <= 3.0.0)
 rgb_jitter: 0
 rgb_autocontrast: 0.2
 rgb_drop: 0.2

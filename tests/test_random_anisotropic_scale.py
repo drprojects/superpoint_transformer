@@ -55,8 +55,66 @@ def test_anisotropic_scale_matches_edge_features_of_scaled_points(s):
     with mock.patch(
             'src.transforms.geometry.torch.rand',
             return_value=torch.tensor([u])):
-        nag = RandomAnisotropicScale(delta=0.2)(nag)
+        nag = RandomAnisotropicScale(delta=0.2, per_axis=False)(nag)
 
     torch.testing.assert_close(
         nag[1].edge_attr, expected, rtol=1e-4, atol=1e-4)
     torch.testing.assert_close(nag[0].pos, points * s)
+
+
+def _scale_factors(per_axis, seed):
+    """Per-axis factors applied to the positions by one call of
+    `RandomAnisotropicScale(delta=0.2)`.
+    """
+    pos = torch.ones(5, 3)
+    nag = NAG([Data(pos=pos.clone())])
+    torch.manual_seed(seed)
+    nag = RandomAnisotropicScale(delta=0.2, per_axis=per_axis)(nag)
+    return nag[0].pos[0] / pos[0]
+
+
+@pytest.mark.parametrize('seed', range(5))
+def test_anisotropic_scale_draws_one_factor_per_axis(seed):
+    """By default, each axis must have its own scaling factor. A single
+    random draw used to be shared by the 3 axes, so that the
+    transform was isotropic despite its name.
+    """
+    scale = _scale_factors(per_axis=True, seed=seed)
+    assert ((0.8 <= scale) & (scale <= 1.2)).all()
+    assert not torch.allclose(scale, scale[0].expand(3))
+
+
+@pytest.mark.parametrize('seed', range(5))
+def test_anisotropic_scale_shared_factor_if_not_per_axis(seed):
+    scale = _scale_factors(per_axis=False, seed=seed)
+    assert ((0.8 <= scale) & (scale <= 1.2)).all()
+    torch.testing.assert_close(scale, scale[0].expand(3))
+
+
+def test_anisotropic_scale_keeps_normals_orthogonal_to_surface():
+    """After an anisotropic scaling, normals must stay orthogonal to
+    the scaled surface. They used to be multiplied by the scale instead
+    of divided by it.
+    """
+    g = torch.Generator().manual_seed(0)
+    normal = torch.nn.functional.normalize(
+        torch.randn(8, 3, generator=g), dim=1)
+    # Two tangent vectors per normal
+    tangent_1 = torch.nn.functional.normalize(
+        torch.cross(normal, torch.randn(8, 3, generator=g), dim=1), dim=1)
+    tangent_2 = torch.cross(normal, tangent_1, dim=1)
+    nag = NAG([Data(pos=torch.rand(8, 3, generator=g), normal=normal)])
+
+    # delta = 0.2 and rand = u give scales of 1 + 0.4 * u - 0.2
+    u = torch.tensor([[0., 0.5, 1.]])
+    scale = 1 + 0.4 * u - 0.2
+    with mock.patch(
+            'src.transforms.geometry.torch.rand', return_value=u):
+        nag = RandomAnisotropicScale(delta=0.2)(nag)
+
+    new_normal = nag[0].normal
+    torch.testing.assert_close(new_normal.norm(dim=1), torch.ones(8))
+    for tangent in [tangent_1, tangent_2]:
+        torch.testing.assert_close(
+            (new_normal * tangent * scale).sum(dim=1), torch.zeros(8),
+            rtol=0, atol=1e-6)
