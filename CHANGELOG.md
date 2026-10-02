@@ -45,6 +45,10 @@ This dependency is now installed by `install.sh`.
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
 `[[6, 0, 0], [0, 0, 9]]`)
+- `OnTheFlyHorizontalEdgeFeatures`: `angle_source` and `angle_target` are now
+swapped for the j->i edges appended to the trimmed i->j graph. They used to be
+copied unchanged, so for half of the edges, `angle_source` described the
+normal of the target node and `angle_target` that of the source node
 
 ### Removed
 
