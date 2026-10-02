@@ -133,6 +133,12 @@ normal of the target node and `angle_target` that of the source node
 could not be instantiated, only logging the error. A datamodule could then
 eg run the preprocessing without its `pre_transform`, or without one of its
 augmentations. The error is now raised
+- `RandomAnisotropicScale` no longer inflates the `std_off` and `mean_dist`
+edge features by ~sqrt(3) at train time. They were multiplied by
+`scale.norm()` (~sqrt(3) for a ~(1, 1, 1) scale), causing a train/eval shift
+and pushing `std_off` beyond its clip value of 2. They are now scaled by the
+isotropic equivalent of the scale, `scale.norm() / sqrt(3)`, with a square
+root for `mean_dist`, and `std_off` is clipped like at preprocessing time
 
 ### Removed
 

@@ -1,3 +1,4 @@
+import math
 import torch
 from src.data import NAG
 from src.transforms import Transform
@@ -175,8 +176,17 @@ class RandomAnisotropicScale(Transform):
                 assert edge_attr.shape[1] == 7, \
                     "Expected exactly 7 features in `edge_attr`, generated " \
                     "with `_minimalistic_horizontal_edge_features`"
+                # `mean_off` is an offset vector: scaled per axis.
+                # `std_off` (expressed in a local basis aligned with
+                # `mean_off`) and `mean_dist` (sqrt of a distance) are
+                # scaled by the isotropic equivalent of `scale`, its RMS
+                # `scale.norm() / sqrt(3)`, NOT `scale.norm()` (~sqrt(3)
+                # for a ~(1, 1, 1) scale). `std_off` is clipped like in
+                # `_minimalistic_horizontal_edge_features`
+                s_iso = scale.norm() / math.sqrt(3)
                 edge_attr[:, :3] *= scale
-                edge_attr[:, 3:] *= scale.norm()  # std_off and mean_dist are scaled by the scaling norm, slightly incorrect for std_off...
+                edge_attr[:, 3:6] = (edge_attr[:, 3:6] * s_iso).clip(-2, 2)
+                edge_attr[:, 6] *= s_iso.sqrt()
                 nag[i_level].edge_attr = edge_attr
 
         return nag
