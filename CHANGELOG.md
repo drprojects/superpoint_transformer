@@ -30,6 +30,11 @@ This dependency is now installed by `install.sh`.
 
 ### Fixed
 
+- `loss_type='wce'` and `loss_type='wce_kl'`: the dominant-label histogram
+was written into every row instead of only the row of each node (eg
+`[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
+`[[6, 0, 0], [0, 0, 9]]`)
+
 ### Removed
 
 ## \[3.0.0\] - 2025-11-27
