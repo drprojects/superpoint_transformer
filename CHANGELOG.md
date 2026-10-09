@@ -41,6 +41,10 @@ This dependency is now installed by `install.sh`.
   With `gamma=0`, both paths now match `nn.CrossEntropyLoss`. This affects
   models trained with `WeightedFocalLoss`, such as the EZ-SP DALES and
   KITTI-360 configs
+- `loss_type='wce'` and `loss_type='wce_kl'`: the dominant-label histogram
+was written into every row instead of only the row of each node (eg
+`[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
+`[[6, 0, 0], [0, 0, 9]]`)
 
 ### Removed
 
