@@ -64,6 +64,16 @@ class WeightedFocalLoss(nn.NLLLoss):
             Target labels
         :param w: (N, ...) Tensor
             Per-item weights, can be None
+
+        :return: Tensor
+            With `reduction='mean'`, the weighted mean
+            Σ a_i·(1-p_i)^γ·(-log p_i) / Σ a_i, with a_i the product of
+            the class weight of y_i and w_i. With γ=0 this equals
+            `F.cross_entropy`. With `reduction='none'`, the
+            unnormalized per-item loss a_i·(1-p_i)^γ·(-log p_i) (0 for
+            ignored items), as `nn.CrossEntropyLoss` would return, so
+            `loss_with_sample_weights` can apply its own normalized
+            weights
         """
         # Convert 1D x to multiclass x. This is an artificial step for
         # binary classification (eg affinity loss), where only 1 score
@@ -83,10 +93,11 @@ class WeightedFocalLoss(nn.NLLLoss):
         # target labels
         y = y.long()
 
-        # Convert per-item weights to [0, 1] weights
+        # Per-item weights. NB: they must not be normalized here, the
+        # normalization happens once, in the 'mean' reduction below
         if w is None:
             w = torch.ones_like(y).float()
-        w = w / w.sum()
+        w = w.float()
 
         if x.ndim > 2:
             # (N, C, d1, d2, ..., dK) --> (N * d1 * ... * dK, C)
@@ -101,27 +112,29 @@ class WeightedFocalLoss(nn.NLLLoss):
         y_original_shape = y.shape
         y = y[unignored_mask]
         if len(y) == 0:
+            if self.reduction == 'none':
+                return torch.zeros(
+                    y_original_shape, dtype=torch.float, device=x.device)
             return torch.tensor(0., device=x.device)
         x = x[unignored_mask]
         w = w[unignored_mask]
 
-        # compute weighted cross entropy term: -weight * log(pt)
-        # (weight is already part of super().NLLLoss)
-        log_p = F.log_softmax(x, dim=-1)
-        ce = super().forward(log_p, y)
+        # Per-item weight a_i = class_weight[y_i] * w_i
+        if self.weight is not None:
+            w = w * self.weight.to(w.device)[y]
 
-        # get true class column from each row
-        log_pt = log_p.gather(dim=1, index=y.view(-1, 1)).squeeze()
+        # Per-item (unreduced) -log(pt). NB: the reduction must not be
+        # delegated to NLLLoss, otherwise each item's focal term would
+        # multiply the batch-averaged cross-entropy
+        log_p = F.log_softmax(x, dim=-1)
+        log_pt = log_p.gather(dim=1, index=y.view(-1, 1))[:, 0]
 
         # compute focal term: (1 - pt)^gamma
         pt = log_pt.exp()
         focal_term = (1 - pt) ** self.gamma
 
-        # the full loss: -weight * ((1 - pt)^gamma) * log(pt)
-        loss = focal_term * ce
-
-        # Apply the per-item weighting
-        loss = loss * w
+        # the full per-item loss: -a_i * ((1 - pt)^gamma) * log(pt)
+        loss = -w * focal_term * log_pt
 
         if self.reduction == 'none':
             # Create a tensor of zeros with original shape and fill valid positions
@@ -129,7 +142,7 @@ class WeightedFocalLoss(nn.NLLLoss):
             loss_with_original_shape[unignored_mask] = loss
             return loss_with_original_shape
 
-        return loss.sum()
+        return loss.sum() / w.sum()
 
 
 def weighted_focal_loss(

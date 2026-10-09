@@ -30,6 +30,17 @@ This dependency is now installed by `install.sh`.
 
 ### Fixed
 
+- `WeightedFocalLoss` no longer reduces the loss twice:
+  - with `reduction='mean'`, it returned `mean(focal_term) * mean(CE)`
+  instead of `mean(focal_term * CE)`, so the focal term did not modulate each
+  sample's loss;
+  - with `reduction='none'` (used by `loss_with_target_histogram`, eg for
+  levels >= 2 with `loss_type='ce_kl'`), the loss was divided by the number of
+  items, which nearly disabled the supervision of the upper partition levels.
+
+  With `gamma=0`, both paths now match `nn.CrossEntropyLoss`. This affects
+  models trained with `WeightedFocalLoss`, such as the EZ-SP DALES and
+  KITTI-360 configs
 - `loss_type='wce'` and `loss_type='wce_kl'`: the dominant-label histogram
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
