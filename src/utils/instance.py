@@ -466,9 +466,11 @@ def _instance_cut_pursuit(
     edge_affinity = edge_affinity_logits.sigmoid()
     edge_discrepancy = edge_affinity / (1 - edge_affinity + discrepancy_epsilon)
 
-    # Convert edges to forward-star (or CSR) representation
+    # Convert edges to forward-star (or CSR) representation. Edges are
+    # passed as a column-major 2-by-E array: an E-by-2 array would be
+    # mistaken for a 2-by-E one when E=2, and rejected
     source_csr, target, reindex = edge_list_to_forward_star(
-        num_nodes, edge_index.T.contiguous().cpu().numpy())
+        num_nodes, np.asfortranarray(edge_index.cpu().numpy()))
     source_csr = source_csr.astype('uint32')
     target = target.astype('uint32')
     edge_weights = edge_discrepancy.cpu().numpy()[reindex] * regularization \

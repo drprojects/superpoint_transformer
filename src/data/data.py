@@ -358,8 +358,10 @@ class Data(PyGData):
         # If Data contains edges, we will want to update edge indices
         # and attributes with respect to the new point order. Edge
         # indices are updated here, to compute 'idx_edge', which
-        # will be used to select edge attributes
-        if self.has_edges:
+        # will be used to select edge attributes. An empty 'edge_index'
+        # stays an empty 'edge_index', consistent with 'edge_attr'
+        has_edge_index = self.edge_index is not None
+        if has_edge_index:
             # To update edge indices, create a 'reindex' tensor so that
             # the desired output can be computed with simple indexation
             # 'reindex[edge_index]'. This avoids using map() or
@@ -450,7 +452,7 @@ class Data(PyGData):
             if is_tensor and is_node_size and key in self.v_edge_keys:
                 data[key] = item[idx]
 
-            elif self.has_edges and is_tensor and is_edge_size and \
+            elif has_edge_index and is_tensor and is_edge_size and \
                     key in ['edge_attr'] + self.edge_keys:
                 data[key] = item[idx_edge]
 
@@ -498,14 +500,16 @@ class Data(PyGData):
         # Search for isolated nodes and exit if no node is isolated
         is_isolated = self.is_isolated()
         is_out = torch.where(is_isolated)[0]
-        if not is_isolated.any():
+        if not is_isolated.any() or self.num_nodes < 2:
             return self
 
         # Search the nearest nodes for isolated nodes, among all nodes
-        # NB: we remove the nodes themselves from their own neighborhood
+        # NB: we remove the nodes themselves from their own neighborhood.
+        # The search radius must be positive, even if all nodes share
+        # the same position
         high = self.pos.max(dim=0).values
         low = self.pos.min(dim=0).values
-        r_max = (high - low).norm()
+        r_max = (high - low).norm().clamp(min=1e-3)
         neighbors, distances = knn_2(
             self.pos,
             self.pos[is_out],
@@ -516,11 +520,16 @@ class Data(PyGData):
         distances = distances[:, 1:]
         neighbors = neighbors[:, 1:]
 
-        # Add new edges between the nodes
+        # Add new edges between the nodes. Missing neighbors (-1), e.g.
+        # when there are less than `k` other nodes, do not make edges
         source = is_out.repeat_interleave(k)
         target = neighbors.flatten()
+        found = target >= 0
+        source = source[found]
+        target = target[found]
         edge_index_new = torch.vstack((source, target))
-        edge_index_old = self.edge_index
+        edge_index_old = self.edge_index if self.edge_index is not None \
+            else torch.zeros(2, 0, dtype=torch.long, device=self.device)
         self.edge_index = torch.cat((edge_index_old, edge_index_new), dim=1)
 
         # Exit here if there are no edge attributes
@@ -553,7 +562,7 @@ class Data(PyGData):
             b = b.to(self.device)
 
         # Heuristic: linear approximation of w by d
-        edge_attr_new = distances.flatten() * a + b
+        edge_attr_new = distances.flatten()[found] * a + b
 
         # Append to existing self.edge_attr
         self.edge_attr = torch.cat((self.edge_attr, edge_attr_new))
@@ -569,7 +578,9 @@ class Data(PyGData):
 
         NB: returned edges are expressed with i<j by default.
         """
-        assert self.has_edges
+        # Nothing to trim in a graph without edges
+        if not self.has_edges:
+            return self
 
         self.raise_if_edge_keys()
 

@@ -948,8 +948,10 @@ class BaseSampleSubgraphs(Transform):
                 if i_step >= num_batch - 1:
                     k_batch = k - num_sampled
 
-                # Compute the sampling indices for the NAG at hand
+                # Compute the sampling indices for the NAG at hand. A
+                # NAG cannot provide more seeds than it has nodes
                 mask = torch.where(i_batch == batch)[0]
+                k_batch = min(int(k_batch), mask.numel())
                 idx_ = torch.multinomial(
                     weights[mask], k_batch, replacement=False)
                 idx_list.append(mask[idx_])
