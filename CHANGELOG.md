@@ -45,6 +45,13 @@ This dependency is now installed by `install.sh`.
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
 `[[6, 0, 0], [0, 0, 9]]`)
+- `NAG.select()`: when the selection kept all the nodes of a level, in the
+same order (eg dropping a few level-1 nodes while keeping all their level-2
+parents), the levels above that one lost their `sub`, and symmetrically the
+levels below lost their `super_index`. A later selection on these levels then
+broke the hierarchy, or crashed when instance labels (`obj`) were loaded. This
+can happen in the on-device train transforms (`SampleRadiusSubgraphs`, then
+`SampleSegments`), eg when the sampled subgraph covers a whole small cloud
 
 ### Removed
 
