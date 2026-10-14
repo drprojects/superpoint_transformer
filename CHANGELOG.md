@@ -55,6 +55,17 @@ them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
 `[[6, 0, 0], [0, 0, 9]]`)
+- `GridSampling3D` with `chunk_size`: the `sub` Cluster indices of clouds
+larger than `chunk_size` were offset when merging the chunks, pointing out of
+the input cloud (eg max index 793 for a 200-point cloud). This broke the
+mapping from level-0 voxels to full-resolution points, eg in
+`full_res_semantic_pred()`. Preprocessed datasets with clouds larger than
+`chunk_size` (10M points by default, eg S3DIS areas) must be preprocessed
+again to benefit from this fix, the preprocessing hash being unchanged.
+The same chunk merging also renumbered `super_index` and offset `obj_pred`
+(`obj` was already handled), and dropped `batch`. These attributes are not
+present when voxelizing raw clouds in the default pipelines, but are now kept
+unchanged as well
 - `OnTheFlyHorizontalEdgeFeatures`: `angle_source` and `angle_target` are now
 swapped for the j->i edges appended to the trimmed i->j graph. They used to be
 copied unchanged, so for half of the edges, `angle_source` described the
