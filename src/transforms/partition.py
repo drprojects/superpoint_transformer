@@ -118,7 +118,7 @@ class CutPursuitPartition(Transform):
 
     def _process(self, data):
         # Sanity checks
-        assert data.has_edges, \
+        assert data.has_edges or data.num_nodes < 2, \
             "Cannot compute partition, no edges in Data"
         assert data.num_nodes < np.iinfo(np.uint32).max, \
             "Too many nodes for `uint32` indices"
@@ -174,26 +174,34 @@ class CutPursuitPartition(Transform):
             # Recover the Data object on which we will run the partition
             d1 = data_list[level]
 
-            # Exit if the graph contains only one node
-            if d1.num_nodes < 2:
-                break
+            # A graph with a single node or without edges cannot be
+            # partitioned further. Each node then becomes its own
+            # cluster, so that the output NAG has the expected number
+            # of levels
+            is_trivial = d1.num_nodes < 2 or d1.edge_index is None \
+                or d1.edge_index.shape[1] == 0
 
             # User warning if the number of edges exceeds uint32 limits
-            if d1.edge_index.shape[1] > self._MAX_NUM_EDGES and self.verbose:
+            if not is_trivial and d1.edge_index.shape[1] > self._MAX_NUM_EDGES \
+                    and self.verbose:
                 print(
                     f"WARNING: number of edges {d1.edge_index.shape[1]} "
                     f"exceeds the uint32 limit {self._MAX_NUM_EDGES}. Please"
                     f"update the cut-pursuit source code to accept a larger "
                     f"data type for `index_t`.")
 
-            # Convert edges to forward-star (or CSR) representation
-            source_csr, target, reindex = edge_list_to_forward_star(
-                d1.num_nodes,
-                d1.edge_index.T.contiguous().cpu().numpy())
-            source_csr = source_csr.astype('uint32')
-            target = target.astype('uint32')
-            edge_weights = d1.edge_attr.cpu().numpy()[reindex] * reg \
-                if d1.edge_attr is not None else reg
+            # Convert edges to forward-star (or CSR) representation.
+            # Edges are passed as a column-major 2-by-E array: an E-by-2
+            # array would be mistaken for a 2-by-E one when E=2, and
+            # rejected
+            if not is_trivial:
+                source_csr, target, reindex = edge_list_to_forward_star(
+                    d1.num_nodes,
+                    np.asfortranarray(d1.edge_index.cpu().numpy()))
+                source_csr = source_csr.astype('uint32')
+                target = target.astype('uint32')
+                edge_weights = d1.edge_attr.cpu().numpy()[reindex] * reg \
+                    if d1.edge_attr is not None else reg
 
             # Recover attributes features from Data object
             pos_offset = d1.pos.mean(dim=0)
@@ -207,24 +215,35 @@ class CutPursuitPartition(Transform):
             coor_weights[:n_dim] *= sw
 
             # Partition computation
-            super_index, x_c, cluster, edges, times = cp_d0_dist(
-                n_dim + n_feat,
-                x,
-                source_csr,
-                target,
-                edge_weights=edge_weights,
-                vert_weights=node_size,
-                coor_weights=coor_weights,
-                min_comp_weight=cut,
-                cp_dif_tol=1e-2,
-                cp_it_max=self.iterations,
-                split_damp_ratio=0.7,
-                verbose=self.verbose,
-                max_num_threads=num_threads,
-                balance_parallel_split=True,
-                compute_Time=True,
-                compute_List=True,
-                compute_Graph=True)
+            if is_trivial:
+                num_nodes = d1.num_nodes
+                super_index = np.arange(num_nodes)
+                x_c = x
+                cluster = [np.array([i]) for i in range(num_nodes)]
+                edges = (
+                    np.zeros(num_nodes + 1, dtype='uint32'),
+                    np.zeros(0, dtype='uint32'),
+                    np.zeros(0, dtype='float32'))
+                times = np.zeros(2)
+            else:
+                super_index, x_c, cluster, edges, times = cp_d0_dist(
+                    n_dim + n_feat,
+                    x,
+                    source_csr,
+                    target,
+                    edge_weights=edge_weights,
+                    vert_weights=node_size,
+                    coor_weights=coor_weights,
+                    min_comp_weight=cut,
+                    cp_dif_tol=1e-2,
+                    cp_it_max=self.iterations,
+                    split_damp_ratio=0.7,
+                    verbose=self.verbose,
+                    max_num_threads=num_threads,
+                    balance_parallel_split=True,
+                    compute_Time=True,
+                    compute_List=True,
+                    compute_Graph=True)
 
             if self.verbose:
                 delta_t = (times[1:] - times[:-1]).round(2)

@@ -26,6 +26,16 @@ This dependency is now installed by `install.sh`.
     However, if no inter-edge is found during a whole training epoch, an error
     is raised, as this likely indicates a bug in the graph or crop definition.
 
+- **⚠️ Breaking Change**: the code version is now `3.1.0`. Model checkpoints
+(SPT, EZ-SP, SPC) saved with an older version (`metadata['__version__']` below
+`3.1.0`, or missing) now raise an error when loaded. The fixes of this version
+change the features and graphs the models see, so older weights are not
+compatible with this code: **please retrain**, or use the code release matching
+your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
+`train.yaml` / `eval.yaml`, or as a `load_from_checkpoint()` argument) loads
+them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
+`PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
+
 ### Deprecated
 
 ### Fixed
@@ -54,6 +64,58 @@ their models were in fact trained with a constant zero feature. These configs
 now use `use_diameter: False`, the default of all other configs. Models
 trained with `use_diameter: True` before this version are not compatible with
 the fixed behavior
+- `NAG.select()`: when the selection kept all the nodes of a level, in the
+same order (eg dropping a few level-1 nodes while keeping all their level-2
+parents), the levels above that one lost their `sub`, and symmetrically the
+levels below lost their `super_index`. A later selection on these levels then
+broke the hierarchy, or crashed when instance labels (`obj`) were loaded. This
+can happen in the on-device train transforms (`SampleRadiusSubgraphs`, then
+`SampleSegments`), eg when the sampled subgraph covers a whole small cloud
+- Degenerate clouds and graphs no longer crash preprocessing, training or
+inference. Clouds where a partition level has a single superpoint or no
+possible edge (eg tiny, sparse or collinear clouds) now go through the whole
+pipeline and keep the expected number of partition levels:
+  - `CutPursuitPartition`: a level with a single node or without edges gives
+  an identity level instead of stopping the hierarchy. A level with exactly 2
+  edges no longer crashes the conversion to forward-star, which also affected
+  the SuperCluster instance partition;
+  - `RadiusHorizontalGraph`, `OnTheFlyHorizontalEdgeFeatures` and `SPT`
+  support levels without horizontal edges;
+  - `Data.connect_isolated()` supports a single node, coincident nodes, and
+  less than `k` other nodes (which previously created edges to `-1`);
+  - `Data.select()` keeps an empty `edge_index` consistent with `edge_attr`,
+  and `Data.to_trimmed()` accepts graphs without edges;
+  - `GroundElevation` with `model='ransac'` falls back to the horizontal plane
+  through the lowest point when no plane can be fitted (eg less than 3 ground
+  candidates);
+  - `scatter_pca` retries on CPU when the GPU eigendecomposition fails to
+  converge on ill-conditioned covariances (eg collinear points);
+  - `SampleRadiusSubgraphs` no longer samples more seeds than a batch item has
+  nodes;
+  - the semantic and panoptic losses of a batch without any labeled point or
+  supervised edge are null instead of NaN.
+
+  These code paths are only reached by such degenerate inputs: the
+  preprocessing hash and the outputs on regular clouds are unchanged
+- `GridSampling3D` with `chunk_size`: the `sub` Cluster indices of clouds
+larger than `chunk_size` were offset when merging the chunks, pointing out of
+the input cloud (eg max index 793 for a 200-point cloud). This broke the
+mapping from level-0 voxels to full-resolution points, eg in
+`full_res_semantic_pred()`. Preprocessed datasets with clouds larger than
+`chunk_size` (10M points by default, eg S3DIS areas) must be preprocessed
+again to benefit from this fix, the preprocessing hash being unchanged.
+The same chunk merging also renumbered `super_index` and offset `obj_pred`
+(`obj` was already handled), and dropped `batch`. These attributes are not
+present when voxelizing raw clouds in the default pipelines, but are now kept
+unchanged as well
+- `OnTheFlyHorizontalEdgeFeatures`: `angle_source` and `angle_target` are now
+swapped for the j->i edges appended to the trimmed i->j graph. They used to be
+copied unchanged, so for half of the edges, `angle_source` described the
+normal of the target node and `angle_target` that of the source node
+- `instantiate_datamodule_transforms()` silently skipped a transform that
+could not be instantiated, only logging the error. A datamodule could then
+eg run the preprocessing without its `pre_transform`, or without one of its
+augmentations. The error is now raised
 
 ### Removed
 

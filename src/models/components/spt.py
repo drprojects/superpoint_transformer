@@ -789,7 +789,8 @@ class SPT(nn.Module):
             if self.node_mlps is not None and self.node_mlps[0] is not None:
                 norm_index = nag[1].norm_index(mode=self.norm_mode)
                 nag[1].x = self.node_mlps[0](nag[1].x, batch=norm_index)
-            if self.h_edge_mlps is not None:
+            if self.h_edge_mlps is not None and nag[1].has_edges \
+                    and getattr(nag[1], 'edge_attr', None) is not None:
                 norm_index = nag[1].norm_index(mode=self.norm_mode)
                 norm_index = norm_index[nag[1].edge_index[0]]
                 nag[1].edge_attr = self.h_edge_mlps[0](
@@ -826,13 +827,13 @@ class SPT(nn.Module):
                 if node_mlp is not None:
                     norm_index = nag[i_level].norm_index(mode=self.norm_mode)
                     nag[i_level].x = node_mlp(nag[i_level].x, batch=norm_index)
-                if h_edge_mlp is not None:
+                edge_attr = getattr(nag[i_level], 'edge_attr', None)
+                if h_edge_mlp is not None and nag[i_level].has_edges \
+                        and edge_attr is not None:
                     norm_index = nag[i_level].norm_index(mode=self.norm_mode)
                     norm_index = norm_index[nag[i_level].edge_index[0]]
-                    edge_attr = getattr(nag[i_level], 'edge_attr', None)
-                    if edge_attr is not None:
-                        nag[i_level].edge_attr = h_edge_mlp(
-                            edge_attr, batch=norm_index)
+                    nag[i_level].edge_attr = h_edge_mlp(
+                        edge_attr, batch=norm_index)
                 if v_edge_mlp is not None:
                     norm_index = nag[i_level - 1].norm_index(mode=self.norm_mode)
                     v_edge_attr = getattr(nag[i_level], 'v_edge_attr', None)
