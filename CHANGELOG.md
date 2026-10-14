@@ -45,6 +45,10 @@ This dependency is now installed by `install.sh`.
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
 `[[6, 0, 0], [0, 0, 9]]`)
+- `instantiate_datamodule_transforms()` silently skipped a transform that
+could not be instantiated, only logging the error. A datamodule could then
+eg run the preprocessing without its `pre_transform`, or without one of its
+augmentations. The error is now raised
 
 ### Removed
 
