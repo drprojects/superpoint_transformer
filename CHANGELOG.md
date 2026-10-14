@@ -55,6 +55,15 @@ them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
 `[[6, 0, 0], [0, 0, 9]]`)
+- **⚠️ Breaking Change**: `use_diameter=True` only injected a column of zeros:
+`DownNFuseStage` and `UpNFuseStage` did not forward the `diameter` they
+received to `Stage.forward()`, and the up stages were passed `diameter=None`.
+The node diameter is now injected, as `log(1 + diameter)`. Since the EZ-SP
+configs (`experiment/semantic/default_ezsp.yaml`) set `use_diameter: True`,
+their models were in fact trained with a constant zero feature. These configs
+now use `use_diameter: False`, the default of all other configs. Models
+trained with `use_diameter: True` before this version are not compatible with
+the fixed behavior
 - `NAG.select()`: when the selection kept all the nodes of a level, in the
 same order (eg dropping a few level-1 nodes while keeping all their level-2
 parents), the levels above that one lost their `sub`, and symmetrically the
