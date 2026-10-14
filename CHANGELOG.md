@@ -45,6 +45,23 @@ This dependency is now installed by `install.sh`.
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
 `[[6, 0, 0], [0, 0, 9]]`)
+- **⚠️ Breaking Change**: `cluster_radius_nn_graph`, which builds the
+horizontal graph of each partition level in `RadiusHorizontalGraph` (and the
+instance graph of `OnTheFlyInstanceGraph` for SuperCluster), compared squared
+distances (as returned by `knn_1`) to a distance threshold. All pairs of superpoints whose
+bounding-box centers were further apart than about `sqrt(r_max_edge)` were
+discarded, whatever `gap`, making the graphs sparser than `graph_gap` implies,
+mostly at the upper levels where superpoints are large. Mean degree at
+levels 1 / 2 / 3, measured on two tiles of each dataset:
+  - DALES (`graph_gap: [5, 30, 30]`): from 26-28 / 29 / 8 to 33 / 34 / 34,
+  with a preprocessing time increased by about 10%;
+  - KITTI-360 (`graph_gap: [3, 10, 30]`): from 33 / 32 / 22-26 to
+  34 / 35 / 35, with an unchanged preprocessing time
+
+  This changes the preprocessing outputs without changing its parameters,
+  hence without changing the dataset hash: **you will need to delete your
+  already-existing preprocessed datasets and re-run the preprocessing**,
+  otherwise the former graphs will be silently reused
 
 ### Removed
 

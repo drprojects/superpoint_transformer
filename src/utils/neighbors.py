@@ -561,6 +561,13 @@ def cluster_radius_nn_graph(
     r_search = float(diam.max() + gap)
     neighbors, distances = knn_1(center, k_max, r_max=r_search, batch=batch)
 
+    # `knn_1` returns squared distances (FRNN convention), while they
+    # are compared to `r_max_edge`, a distance, below. Comparing the
+    # squared distances discarded all the pairs of clusters whose
+    # centers are further apart than about `sqrt(r_max_edge)`, whatever
+    # `gap`
+    distances = distances.clamp(min=0).sqrt()
+
     if verbose or src.is_debug_enabled():
         torch.cuda.synchronize()
         print(f"    cluster_radius_nn_graph | knn_1: {time() - start:0.3f} sec")
