@@ -3,7 +3,9 @@ import logging
 
 log = logging.getLogger(__name__)
 
-__all__ = ['get_commit_hash', 'VersionHolder']
+__all__ = [
+    'get_commit_hash', 'VersionHolder', 'MIN_CHECKPOINT_VERSION',
+    'parse_version', 'check_checkpoint_version']
 
 
 
@@ -75,3 +77,54 @@ class VersionHolder:
     @property
     def patch(self):
         return self.parsed['patch']
+
+
+# Oldest code version whose checkpoints are compatible with the current
+# code. Fixes introduced in 3.1.0 change the features and graphs that
+# the models see, so weights trained with earlier versions do not match
+MIN_CHECKPOINT_VERSION = '3.1.0'
+
+
+def parse_version(version: str):
+    """Parse a 'MAJOR.MINOR.PATCH' version string into a tuple of ints,
+    for comparison.
+    """
+    return tuple(int(x) for x in version.split('.')[:3])
+
+
+def check_checkpoint_version(
+        version: str,
+        allow_old_checkpoint: bool = False,
+        source: str = 'checkpoint'):
+    """Raise an error if `version`, the code version a checkpoint was
+    saved with, is older than `MIN_CHECKPOINT_VERSION`.
+
+    :param version: str
+        Version string in MAJOR.MINOR.PATCH format
+    :param allow_old_checkpoint: bool
+        For development only. If True, only a warning is logged and the
+        checkpoint can be loaded anyway
+    :param source: str
+        Name of the checkpoint, for the error message
+    """
+    if parse_version(version) >= parse_version(MIN_CHECKPOINT_VERSION):
+        return
+
+    msg = (
+        f"The {source} was saved with version {version} of the code, but "
+        f"version {MIN_CHECKPOINT_VERSION} or later is required. The fixes "
+        f"introduced in {MIN_CHECKPOINT_VERSION} change the features and "
+        f"graphs the models are trained on (see CHANGELOG.md), so weights "
+        f"trained with an earlier version are not compatible with this "
+        f"code. Please either retrain your model with this version, or use "
+        f"the code release matching your checkpoint (e.g. "
+        f"`git checkout v3.0.0`).")
+
+    if not allow_old_checkpoint:
+        raise ValueError(
+            f"{msg}\nFor development purposes only, you may load it anyway "
+            f"with `allow_old_checkpoint=True`.")
+
+    log.warning(
+        f"⚠️ {msg}\n`allow_old_checkpoint=True`: loading it anyway. "
+        f"Results may differ from those obtained with version {version}.")

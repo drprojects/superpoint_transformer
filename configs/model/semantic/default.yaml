@@ -21,6 +21,9 @@ track_val_every_n_epoch: ${trainer.check_val_every_n_epoch} # trigger the tracki
 track_val_idx: null  # index of the validation batch to track. If -1, all the validation batches will be tracked, at every `track_val_every_n_epoch` epoch
 track_test_idx: null  # index of the test batch to track. If -1, all the test batches will be tracked
 
+# Development only, see `allow_old_checkpoint` in train.yaml and eval.yaml
+allow_old_checkpoint: ${allow_old_checkpoint}
+
 optimizer:
   _target_: torch.optim.AdamW
   _partial_: True
