@@ -1,0 +1,26 @@
+# @package model.optimizer
+
+# Hybrid Muon/AdamW optimizer (src/optim/muon.py).
+# Replaces the AdamW optimizer of any experiment, e.g.:
+#   python src/train.py experiment=semantic/kitti360_ezsp +optimizer=muon
+#
+#   - Muon: 2D hidden weights (transformer qkv / out_proj / RPE, MLPs, ...)
+#   - AdamW: biases, norms, classification heads and the 3D TorchSparse
+#     CNN kernels
+#
+# `lr` and `weight_decay` are NOT set here: they are inherited from the
+# AdamW optimizer of the experiment. With `adjust_lr_fn: match_rms_adamw`
+# ("Muon is Scalable for LLM Training", Liu et al. 2025), the Muon updates
+# are scaled to the RMS of AdamW's, so the same values can be used. The
+# alternative, `original` (Keller Jordan), needs a much larger Muon lr
+# (~0.02) and a smaller AdamW one, set with `+model.muon_adamw_lr_scale`.
+#
+# Other model options: `+model.muon_exclude` (substrings of the parameter
+# names kept on AdamW, default: ['head', 'classifier']) and
+# `+model.muon_split_qkv` (orthogonalize q, k, v separately, default: True).
+_target_: src.optim.Muon
+_partial_: True
+momentum: 0.95
+nesterov: True
+ns_steps: 5
+adjust_lr_fn: match_rms_adamw

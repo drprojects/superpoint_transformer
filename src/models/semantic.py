@@ -25,6 +25,9 @@ from src.utils import (
 from src.nn import Classifier
 from src.loss import MultiLoss
 from src.optim.lr_scheduler import ON_PLATEAU_SCHEDULERS
+from src.optim.muon import (
+    DEFAULT_MUON_EXCLUDE, is_muon_optimizer, qkv_row_splits,
+    split_muon_param_groups)
 from src.data import NAG, Data
 from src.transforms import Transform, NAGSaveNodeIndex, PretrainedCNN
 
@@ -1255,18 +1258,43 @@ class SemanticSegmentationModule(LightningModule):
         t_names = ['transformer_blocks', 'down_pool_block']
         lr = self.hparams.optimizer.keywords['lr']
         t_lr = lr * self.hparams.transformer_lr_scale
-        param_dicts = [
+        named_groups = [
             {
                 "params": [
-                    p
+                    (n, p)
                     for n, p in self.named_parameters()
-                    if all([t not in n for t in t_names]) and p.requires_grad]},
+                    if all([t not in n for t in t_names]) and p.requires_grad],
+                "lr": lr},
             {
                 "params": [
-                    p
+                    (n, p)
                     for n, p in self.named_parameters()
                     if any([t in n for t in t_names]) and p.requires_grad],
                 "lr": t_lr}]
+
+        if is_muon_optimizer(self.hparams.optimizer):
+            # Hidden 2D weights -> Muon, everything else -> AdamW
+            param_dicts = split_muon_param_groups(
+                named_groups,
+                exclude=getattr(
+                    self.hparams, 'muon_exclude', DEFAULT_MUON_EXCLUDE),
+                adamw_lr_scale=getattr(
+                    self.hparams, 'muon_adamw_lr_scale', 1.0),
+                # Orthogonalize q, k, v separately, not as one matrix
+                row_splits=qkv_row_splits(self)
+                if getattr(self.hparams, 'muon_split_qkv', True) else None)
+            n_muon = sum(
+                p.numel()
+                for g in param_dicts if g['use_muon']
+                for p in g['params'])
+            n_total = sum(p.numel() for g in param_dicts for p in g['params'])
+            log.info(
+                f"Muon optimizer: {n_muon:,} / {n_total:,} trainable "
+                f"parameters use Muon, the rest uses AdamW.")
+        else:
+            param_dicts = [
+                {**g, "params": [p for _, p in g["params"]]}
+                for g in named_groups]
         optimizer = self.hparams.optimizer(params=param_dicts)
 
         # Return the optimizer if no scheduler in the config
