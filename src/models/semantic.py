@@ -19,7 +19,8 @@ from src.utils import (
     garbage_collection_cuda,
     SemanticSegmentationOutput,
     PartitionOutput,
-    get_commit_hash)
+    get_commit_hash,
+    check_checkpoint_version)
 from src.nn import Classifier
 from src.loss import MultiLoss
 from src.optim.lr_scheduler import ON_PLATEAU_SCHEDULERS
@@ -116,6 +117,11 @@ class SemanticSegmentationModule(LightningModule):
         If specified, the output for the `track_test_idx`th
         test batch will be saved to disk. If `track_test_idx=-1`,
         predictions for the entire test set will be saved to disk
+    :param allow_old_checkpoint: bool
+        For development only. Checkpoints saved with a code version
+        older than `src.utils.MIN_CHECKPOINT_VERSION` raise an error
+        when loaded. If True, a warning is logged instead and the
+        checkpoint is loaded anyway
     :param kwargs: Dict
         Kwargs will be passed to `_load_from_checkpoint()`
     """
@@ -145,6 +151,7 @@ class SemanticSegmentationModule(LightningModule):
             track_val_every_n_epoch: int = 1,
             track_val_idx: int = None,
             track_test_idx: int = None,
+            allow_old_checkpoint: bool = False,
             **kwargs):
         super().__init__()
 
@@ -1394,7 +1401,14 @@ class SemanticSegmentationModule(LightningModule):
                 "code prior to 3.0.0."
                 f"\nSetting the commit hash to {commit_hash}.")
             checkpoint['metadata']['commit_hash'] = commit_hash
-        
+
+        # Checkpoints from versions older than MIN_CHECKPOINT_VERSION are
+        # not compatible with the current code
+        check_checkpoint_version(
+            checkpoint['metadata']['__version__'],
+            allow_old_checkpoint=getattr(
+                self.hparams, 'allow_old_checkpoint', False))
+
         # Update network version from checkpoint
         self.net.version = checkpoint['metadata']['__version__']
         self.net.version_holder.commit_hash = checkpoint['metadata']['commit_hash']

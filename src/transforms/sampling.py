@@ -317,7 +317,7 @@ def _group_data(
             #  instance edge_index, edge_attr,  neighbor_index,
             #  neighbor_distance, ...
             mask = torch.logical_and(split[0] <= cluster, cluster <= split[-1])
-            data_ = data.select(mask, update_sub=False, update_super=True)[0]
+            data_ = data.select(mask, update_sub=False, update_super=False)[0]
             cluster_, unique_pos_indices_ = consecutive_cluster(cluster[mask])
             data_list.append(_group_data(
                 data_,
@@ -328,25 +328,42 @@ def _group_data(
                 bins=bins,
                 chunk_size=None))
 
-        # Dirty hack to allow batching together InstanceData objects
-        # referring to the same object indices. In general, we assume
-        # the InstanceData.obj indices are referring to different
-        # objects when merging. But in our specific case here, this is
-        # not the case
-        has_obj = data_.obj is not None
-        if has_obj:
-            for data_ in data_list:
-                data_.obj.is_index_value[0] = False
+        # All chunks index the same spaces as the input cloud: input
+        # points for 'sub', objects for 'obj' and 'obj_pred', input
+        # superpoints for 'super_index'. Batch.from_data_list() would
+        # offset these indices by each previous chunk's values, pushing
+        # them out of range. So we temporarily disable the index offset
+        # of CSRData attributes, and set aside the tensor attributes
+        # that would be offset or, for 'batch', overwritten
+        data_0 = data_list[0]
+        csr_iiv = {}
+        raw = {}
+        for key, item in list(data_0.items()):
+            if isinstance(item, CSRData):
+                csr_iiv[key] = item.is_index_value.clone()
+                for data_ in data_list:
+                    data_[key].is_index_value[:] = False
+            elif torch.is_tensor(item) and (
+                    key == 'batch' or data_0.__inc__(key, item) != 0):
+                raw[key] = torch.cat([
+                    data_[key] for data_ in data_list],
+                    dim=data_0.__cat_dim__(key, item))
+                for data_ in data_list:
+                    del data_[key]
+
         batch = Batch.from_data_list(data_list)
-        if has_obj:
-            batch.obj.is_index_value[0] = True
 
         # TODO: this will not handle well objects which are not of size
         #  num_points. e.g. if pos_offset is a single scalar for the
         #  input Data, it will be duplicated for each chunk here. This
         #  is mostly a duplication problem, so for now we keep this as
         #  is, even if a bit dirty
-        return batch.forget_batching()
+        data = batch.forget_batching()
+        for key, iiv in csr_iiv.items():
+            data[key].is_index_value = iiv
+        for key, item in raw.items():
+            data[key] = item
+        return data
 
     skip_keys = sanitize_keys(skip_keys, default=[])
 

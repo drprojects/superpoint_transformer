@@ -161,9 +161,12 @@ def instantiate_datamodule_transforms(transform_options, log=None):
         try:
             transform = instantiate_transforms(params)
         except Exception:
+            # Do not silently skip a transform that could not be built:
+            # e.g. a missing `pre_transform` would change the
+            # preprocessing without notice
             msg = f"Error trying to create {name}, {params}"
             log.exception(msg) if log is not None else print(msg)
-            continue
+            raise
         transforms_dict[name] = transform
     if len(transforms_dict) == 0:
         msg = (f"Could not find any '*transform*' key among the provided config"

@@ -1232,15 +1232,19 @@ def _on_the_fly_horizontal_edge_features(
             # _minimalistic_horizontal_edge_features
             f_list = [torch.cat((se_mean_off, -se_mean_off), dim=0)] + f_list
 
-        if 'angle_source' in keys:
+        # The j->i edges appended below have i as target, so source and
+        # target angles must be swapped for them. The direction flip
+        # has no effect since we take the absolute value
+        if 'angle_source' in keys or 'angle_target' in keys:
             normal = getattr(data, normal_key, None)
-            f = (se_direction * normal[se[0]]).sum(dim=1).abs()
-            f_list.append(torch.cat((f, f), dim=0).view(-1, 1))
+            f_src = (se_direction * normal[se[0]]).sum(dim=1).abs()
+            f_tgt = (se_direction * normal[se[1]]).sum(dim=1).abs()
+
+        if 'angle_source' in keys:
+            f_list.append(torch.cat((f_src, f_tgt), dim=0).view(-1, 1))
 
         if 'angle_target' in keys:
-            normal = getattr(data, normal_key, None)
-            f = (se_direction * normal[se[1]]).sum(dim=1).abs()
-            f_list.append(torch.cat((f, f), dim=0).view(-1, 1))
+            f_list.append(torch.cat((f_tgt, f_src), dim=0).view(-1, 1))
 
     if 'normal_angle' in keys:
         normal = getattr(data, normal_key, None)
