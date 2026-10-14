@@ -617,6 +617,12 @@ def cluster_radius_nn_graph(
         print(f"    cluster_radius_nn_graph | missing_point : {time() - start:0.3f} sec")
         start = time()
 
+    # No candidate edge, e.g. for clusters too far apart from each
+    # other. The subsequent trimming and anchor search do not support
+    # empty graphs
+    if edge_index.shape[1] == 0:
+        return edge_index, distances
+
     # Trim the graph. This is required before computing the actual
     # nearest points between all cluster pairs. Since this operation is
     # so costly, we first built on a coarse neighborhood edge_index to

@@ -245,8 +245,8 @@ class SPT(nn.Module):
         should be used at all. If False, `node_mlp` will be ignored
     :param use_diameter: bool
         Whether the node's diameter (currently estimated with
-        `UnitSphereNorm`) should be concatenated to the node features.
-        See `Stage`
+        `UnitSphereNorm`) should be concatenated to the node features,
+        as `log(1 + diameter)`, in the down and up stages. See `Stage`
     :param use_diameter_parent: bool
         Whether the node's parent diameter (currently estimated with
         `UnitSphereNorm`) should be concatenated to the node features.
@@ -789,7 +789,8 @@ class SPT(nn.Module):
             if self.node_mlps is not None and self.node_mlps[0] is not None:
                 norm_index = nag[1].norm_index(mode=self.norm_mode)
                 nag[1].x = self.node_mlps[0](nag[1].x, batch=norm_index)
-            if self.h_edge_mlps is not None:
+            if self.h_edge_mlps is not None and nag[1].has_edges \
+                    and getattr(nag[1], 'edge_attr', None) is not None:
                 norm_index = nag[1].norm_index(mode=self.norm_mode)
                 norm_index = norm_index[nag[1].edge_index[0]]
                 nag[1].edge_attr = self.h_edge_mlps[0](
@@ -826,13 +827,13 @@ class SPT(nn.Module):
                 if node_mlp is not None:
                     norm_index = nag[i_level].norm_index(mode=self.norm_mode)
                     nag[i_level].x = node_mlp(nag[i_level].x, batch=norm_index)
-                if h_edge_mlp is not None:
+                edge_attr = getattr(nag[i_level], 'edge_attr', None)
+                if h_edge_mlp is not None and nag[i_level].has_edges \
+                        and edge_attr is not None:
                     norm_index = nag[i_level].norm_index(mode=self.norm_mode)
                     norm_index = norm_index[nag[i_level].edge_index[0]]
-                    edge_attr = getattr(nag[i_level], 'edge_attr', None)
-                    if edge_attr is not None:
-                        nag[i_level].edge_attr = h_edge_mlp(
-                            edge_attr, batch=norm_index)
+                    nag[i_level].edge_attr = h_edge_mlp(
+                        edge_attr, batch=norm_index)
                 if v_edge_mlp is not None:
                     norm_index = nag[i_level - 1].norm_index(mode=self.norm_mode)
                     v_edge_attr = getattr(nag[i_level], 'v_edge_attr', None)
@@ -912,6 +913,15 @@ class SPT(nn.Module):
             batch=data.batch,
             x_mlp=getattr(data, 'x_mlp', None))
 
+    @staticmethod
+    def _diameter_feat(nag, i_level):
+        """Diameter feature of the level-`i_level` nodes, as computed
+        by the stage below: `log(1 + diameter)`. `None` if not available,
+        in which case `Stage` falls back to zeros.
+        """
+        diameter = getattr(nag[i_level], 'diameter', None)
+        return None if diameter is None else torch.log1p(diameter)
+
     def _forward_down_stage(self, stage, nag, i_level, x):
         is_last_level = (i_level == nag.end_i_level)
         x_handcrafted = nag[i_level].x if self.use_node_hf else None
@@ -921,7 +931,7 @@ class SPT(nn.Module):
             nag[i_level].norm_index(mode=self.norm_mode),
             nag[i_level - 1].super_index,
             pos=nag[i_level].pos,
-            diameter=nag[i_level].diameter, #TODO : WARNING : Diameter is not used in a `DownNFuseStage`
+            diameter=self._diameter_feat(nag, i_level),
             node_size=nag[i_level].node_size,
             super_index=nag[i_level].super_index if not is_last_level else None,
             edge_index=nag[i_level].edge_index,
@@ -937,7 +947,7 @@ class SPT(nn.Module):
             nag[i_level].norm_index(mode=self.norm_mode),
             nag[i_level].super_index,
             pos=nag[i_level].pos,
-            diameter=None, #TODO : WARNING : Diameter is not used in the `UpNFuseStage` (I removed the -self.nano, because as nag[0] is not loaded, it raises an error)
+            diameter=self._diameter_feat(nag, i_level),
             node_size=nag[i_level].node_size,
             super_index=nag[i_level].super_index,
             edge_index=nag[i_level].edge_index,

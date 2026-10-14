@@ -85,7 +85,15 @@ def scatter_pca(x, idx, on_cpu=False, algorithm='eigh'):
         eigenvec = eigenvec.to(device)
 
     elif algorithm == 'eigh':
-        eigenval, eigenvec = torch.linalg.eigh(cov, UPLO='U')
+        try:
+            eigenval, eigenvec = torch.linalg.eigh(cov, UPLO='U')
+        except torch.linalg.LinAlgError:
+            # The GPU solver may fail to converge on ill-conditioned
+            # covariance matrices, e.g. for perfectly collinear points.
+            # The CPU solver is more robust
+            eigenval, eigenvec = torch.linalg.eigh(cov.cpu(), UPLO='U')
+            eigenval = eigenval.to(device)
+            eigenvec = eigenvec.to(device)
 
     elif algorithm == 'eig':
         cov[:, ij[:, 1], ij[:, 0]] = upper_triangle

@@ -26,4 +26,4 @@ model:
 
   net:
     use_diameter_parent: False
-    use_diameter: True
+    use_diameter: False  # `True` injected zeros before 3.1.0, see CHANGELOG

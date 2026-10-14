@@ -113,6 +113,18 @@ def single_plane_model(pos, random_state=0, residual_threshold=1e-3):
     """
     assert is_xyz_tensor(pos)
 
+    # Fallback ground model: the horizontal plane through the lowest
+    # point. Used when no plane can be fitted, e.g. for tiny clouds
+    # with less than 3 ground candidates, or degenerate ones
+    z_min = pos[:, 2].min() if pos.shape[0] > 0 else 0
+
+    def horizontal_plane_elevation(pos_query):
+        assert is_xyz_tensor(pos_query)
+        return pos_query[:, 2] - z_min
+
+    if pos.shape[0] < 3:
+        return horizontal_plane_elevation
+
     if pos.is_cpu:
         xy = pos[:, :2].cpu().numpy()
         z = pos[:, 2].cpu().numpy()
@@ -138,6 +150,13 @@ def single_plane_model(pos, random_state=0, residual_threshold=1e-3):
             iterations_per_batch=100,
             epsilon=1e-8,
             device=pos.device)
+
+        # No plane found, or a (near) vertical one, for which the
+        # elevation is not defined
+        if result.equation is None \
+                or not torch.isfinite(result.equation).all() \
+                or result.equation[2].abs() < 1e-3:
+            return horizontal_plane_elevation
 
         # result.equation holds: [a, b, c, d] for ax + by + cz + d = 0
         w = result.equation[:-1]
