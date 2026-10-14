@@ -28,6 +28,11 @@ compile: False
 # passing checkpoint path is necessary for evaluation
 ckpt_path: ???
 
+# development only: load checkpoints saved with a code version older than
+# 3.1.0 with a warning, instead of raising an error. Old checkpoints are not
+# compatible with the fixes of 3.1.0 (see CHANGELOG.md)
+allow_old_checkpoint: False
+
 # float32 precision operations (torch>=2.0)
 # see https://pytorch.org/docs/2.0/generated/torch.set_float32_matmul_precision.html
 float32_matmul_precision: high

@@ -776,8 +776,15 @@ class PanopticSegmentationModule(SemanticSegmentationModule):
         edge_affinity_pred, edge_affinity_target, is_same_class, is_same_obj = \
             output.sanitized_edge_affinities()
         edge_weight = self._edge_affinity_weights(is_same_class, is_same_obj)
-        edge_affinity_loss = self.edge_affinity_criterion(
-            edge_affinity_pred, edge_affinity_target, edge_weight)
+
+        # Without any supervised edge (e.g. a single superpoint, or only
+        # void ones), the loss would average over nothing and return
+        # NaN. We use a null loss instead, still attached to the graph
+        if edge_affinity_pred.numel() == 0:
+            edge_affinity_loss = edge_affinity_pred.sum() * 0
+        else:
+            edge_affinity_loss = self.edge_affinity_criterion(
+                edge_affinity_pred, edge_affinity_target, edge_weight)
 
         # Combine the losses together
         # TODO: remove node offset cleanly

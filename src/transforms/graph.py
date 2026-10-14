@@ -750,6 +750,11 @@ class RadiusHorizontalGraph(Transform):
             margin,
             chunk_size,
             verbose=False):
+        # Skip levels without horizontal edges, e.g. a level made of a
+        # single node: there are no subedges to compute
+        if not nag[i_level].has_edges:
+            return nag
+
         # Compute 'subedges', i.e. edges between level-0 points making up
         # the edges between the segments. These will be used for edge
         # features computation. NB: this operation simplifies the
@@ -905,11 +910,11 @@ def _horizontal_graph_by_radius_for_single_level(
     data.edge_index = None
     data.edge_attr = None
 
-    # Exit in case the i_level graph contains only one node
+    # Exit in case the i_level graph contains only one node: there is
+    # nothing to connect and the level is left without edges
     if num_nodes < 2:
-        raise ValueError(
-            f"Input NAG only has 1 node at level={i_level}. Cannot compute "
-            f"radius-based horizontal graph.")
+        nag._list[i_level] = data
+        return nag
 
     # Compute the super_index for level-0 points wrt the target level
     super_index = nag.get_super_index(i_level)
@@ -933,6 +938,13 @@ def _horizontal_graph_by_radius_for_single_level(
     # Search for nodes which received no edges and connect them to their
     # k_min nearest neighbor
     data.connect_isolated(k=k_min)
+
+    # No edge could be built, e.g. for nodes too far apart from each
+    # other: the level is left without edges, as for a single node
+    if not data.has_edges:
+        data.edge_index = None
+        nag._list[i_level] = data
+        return nag
 
     # Trim the graph. This is temporary, to alleviate edge features
     # computation
@@ -1125,6 +1137,11 @@ class OnTheFlyHorizontalEdgeFeatures(Transform):
                 # There are no horizontal edges at atom level
                 continue
 
+            # Skip levels without horizontal edges, e.g. a level made
+            # of a single node
+            if not nag._list[relative_i_level].has_edges:
+                continue
+
             nag._list[relative_i_level] = _on_the_fly_horizontal_edge_features(
                 nag._list[relative_i_level],
                 keys=self.keys,
@@ -1215,15 +1232,19 @@ def _on_the_fly_horizontal_edge_features(
             # _minimalistic_horizontal_edge_features
             f_list = [torch.cat((se_mean_off, -se_mean_off), dim=0)] + f_list
 
-        if 'angle_source' in keys:
+        # The j->i edges appended below have i as target, so source and
+        # target angles must be swapped for them. The direction flip
+        # has no effect since we take the absolute value
+        if 'angle_source' in keys or 'angle_target' in keys:
             normal = getattr(data, normal_key, None)
-            f = (se_direction * normal[se[0]]).sum(dim=1).abs()
-            f_list.append(torch.cat((f, f), dim=0).view(-1, 1))
+            f_src = (se_direction * normal[se[0]]).sum(dim=1).abs()
+            f_tgt = (se_direction * normal[se[1]]).sum(dim=1).abs()
+
+        if 'angle_source' in keys:
+            f_list.append(torch.cat((f_src, f_tgt), dim=0).view(-1, 1))
 
         if 'angle_target' in keys:
-            normal = getattr(data, normal_key, None)
-            f = (se_direction * normal[se[1]]).sum(dim=1).abs()
-            f_list.append(torch.cat((f, f), dim=0).view(-1, 1))
+            f_list.append(torch.cat((f_tgt, f_src), dim=0).view(-1, 1))
 
     if 'normal_angle' in keys:
         normal = getattr(data, normal_key, None)
