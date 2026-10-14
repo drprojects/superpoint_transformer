@@ -398,6 +398,17 @@ class SemanticSegmentationModule(LightningModule):
         if not output.has_target:
             return None, output
 
+        # A batch without any labeled point (e.g. a crop falling in an
+        # unlabeled area) provides no supervision. The losses would
+        # then average over no target and return NaN, so we return a
+        # null loss instead, still attached to the computation graph
+        y_hist = output.y_hist[0] if isinstance(output.y_hist, list) \
+            else output.y_hist
+        if y_hist[:, :self.num_classes].sum() == 0:
+            logits = output.logits if isinstance(output.logits, list) \
+                else [output.logits]
+            return sum(l.sum() for l in logits) * 0, output
+
         # Compute the loss either in a point-wise or segment-wise
         # fashion. Cross-Entropy with pointwise_loss is equivalent to
         # KL-divergence

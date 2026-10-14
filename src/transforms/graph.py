@@ -750,6 +750,11 @@ class RadiusHorizontalGraph(Transform):
             margin,
             chunk_size,
             verbose=False):
+        # Skip levels without horizontal edges, e.g. a level made of a
+        # single node: there are no subedges to compute
+        if not nag[i_level].has_edges:
+            return nag
+
         # Compute 'subedges', i.e. edges between level-0 points making up
         # the edges between the segments. These will be used for edge
         # features computation. NB: this operation simplifies the
@@ -905,11 +910,11 @@ def _horizontal_graph_by_radius_for_single_level(
     data.edge_index = None
     data.edge_attr = None
 
-    # Exit in case the i_level graph contains only one node
+    # Exit in case the i_level graph contains only one node: there is
+    # nothing to connect and the level is left without edges
     if num_nodes < 2:
-        raise ValueError(
-            f"Input NAG only has 1 node at level={i_level}. Cannot compute "
-            f"radius-based horizontal graph.")
+        nag._list[i_level] = data
+        return nag
 
     # Compute the super_index for level-0 points wrt the target level
     super_index = nag.get_super_index(i_level)
@@ -933,6 +938,13 @@ def _horizontal_graph_by_radius_for_single_level(
     # Search for nodes which received no edges and connect them to their
     # k_min nearest neighbor
     data.connect_isolated(k=k_min)
+
+    # No edge could be built, e.g. for nodes too far apart from each
+    # other: the level is left without edges, as for a single node
+    if not data.has_edges:
+        data.edge_index = None
+        nag._list[i_level] = data
+        return nag
 
     # Trim the graph. This is temporary, to alleviate edge features
     # computation
@@ -1123,6 +1135,11 @@ class OnTheFlyHorizontalEdgeFeatures(Transform):
         for relative_i_level, i_level in enumerate(nag.level_range):
             if i_level == 0:
                 # There are no horizontal edges at atom level
+                continue
+
+            # Skip levels without horizontal edges, e.g. a level made
+            # of a single node
+            if not nag._list[relative_i_level].has_edges:
                 continue
 
             nag._list[relative_i_level] = _on_the_fly_horizontal_edge_features(

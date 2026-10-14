@@ -55,6 +55,32 @@ them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
 `[[6, 0, 0], [0, 0, 9]]`)
+- Degenerate clouds and graphs no longer crash preprocessing, training or
+inference. Clouds where a partition level has a single superpoint or no
+possible edge (eg tiny, sparse or collinear clouds) now go through the whole
+pipeline and keep the expected number of partition levels:
+  - `CutPursuitPartition`: a level with a single node or without edges gives
+  an identity level instead of stopping the hierarchy. A level with exactly 2
+  edges no longer crashes the conversion to forward-star, which also affected
+  the SuperCluster instance partition;
+  - `RadiusHorizontalGraph`, `OnTheFlyHorizontalEdgeFeatures` and `SPT`
+  support levels without horizontal edges;
+  - `Data.connect_isolated()` supports a single node, coincident nodes, and
+  less than `k` other nodes (which previously created edges to `-1`);
+  - `Data.select()` keeps an empty `edge_index` consistent with `edge_attr`,
+  and `Data.to_trimmed()` accepts graphs without edges;
+  - `GroundElevation` with `model='ransac'` falls back to the horizontal plane
+  through the lowest point when no plane can be fitted (eg less than 3 ground
+  candidates);
+  - `scatter_pca` retries on CPU when the GPU eigendecomposition fails to
+  converge on ill-conditioned covariances (eg collinear points);
+  - `SampleRadiusSubgraphs` no longer samples more seeds than a batch item has
+  nodes;
+  - the semantic and panoptic losses of a batch without any labeled point or
+  supervised edge are null instead of NaN.
+
+  These code paths are only reached by such degenerate inputs: the
+  preprocessing hash and the outputs on regular clouds are unchanged
 - `GridSampling3D` with `chunk_size`: the `sub` Cluster indices of clouds
 larger than `chunk_size` were offset when merging the chunks, pointing out of
 the input cloud (eg max index 793 for a 200-point cloud). This broke the
