@@ -26,6 +26,16 @@ This dependency is now installed by `install.sh`.
     However, if no inter-edge is found during a whole training epoch, an error
     is raised, as this likely indicates a bug in the graph or crop definition.
 
+- **⚠️ Breaking Change**: the code version is now `3.1.0`. Model checkpoints
+(SPT, EZ-SP, SPC) saved with an older version (`metadata['__version__']` below
+`3.1.0`, or missing) now raise an error when loaded. The fixes of this version
+change the features and graphs the models see, so older weights are not
+compatible with this code: **please retrain**, or use the code release matching
+your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
+`train.yaml` / `eval.yaml`, or as a `load_from_checkpoint()` argument) loads
+them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
+`PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
+
 ### Deprecated
 
 ### Fixed
@@ -49,6 +59,10 @@ was written into every row instead of only the row of each node (eg
 swapped for the j->i edges appended to the trimmed i->j graph. They used to be
 copied unchanged, so for half of the edges, `angle_source` described the
 normal of the target node and `angle_target` that of the source node
+- `instantiate_datamodule_transforms()` silently skipped a transform that
+could not be instantiated, only logging the error. A datamodule could then
+eg run the preprocessing without its `pre_transform`, or without one of its
+augmentations. The error is now raised
 
 ### Removed
 
