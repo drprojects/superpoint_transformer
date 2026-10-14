@@ -53,6 +53,11 @@ compile: False
 # simply provide checkpoint path to resume training
 ckpt_path: null
 
+# development only: load checkpoints saved with a code version older than
+# 3.1.0 with a warning, instead of raising an error. Old checkpoints are not
+# compatible with the fixes of 3.1.0 (see CHANGELOG.md)
+allow_old_checkpoint: False
+
 # seed for random number generators in pytorch, numpy and python.random
 seed: null
 
