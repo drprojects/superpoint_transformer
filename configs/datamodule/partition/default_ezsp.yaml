@@ -95,6 +95,7 @@ on_device_train_transform:
     - transform: RandomAnisotropicScale
       params:
         delta: ${datamodule.anisotropic_scaling}
+        per_axis: ${datamodule.anisotropic_scaling_per_axis}
     - transform: RandomAxisFlip
       params:
         p: 0.5

@@ -79,6 +79,12 @@ load_full_res_idx: False
 max_num_nodes: 50000
 max_num_edges: 1000000
 
+# Training augmentation. Default for the dataset configs which do not
+# define it: if True, `RandomAnisotropicScale` draws a scaling factor for
+# each axis. If False, the same factor is shared by all axes (isotropic
+# scaling, which was also the default behavior in versions <= 3.0.0)
+anisotropic_scaling_per_axis: False
+
 # Test-time augmentation
 tta_runs: null
 tta_val: False
@@ -259,6 +265,7 @@ on_device_train_transform:
     - transform: RandomAnisotropicScale
       params:
         delta: ${datamodule.anisotropic_scaling}
+        per_axis: ${datamodule.anisotropic_scaling_per_axis}
     - transform: RandomAxisFlip
       params:
         p: 0.5

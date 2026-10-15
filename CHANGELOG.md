@@ -133,6 +133,28 @@ normal of the target node and `angle_target` that of the source node
 could not be instantiated, only logging the error. A datamodule could then
 eg run the preprocessing without its `pre_transform`, or without one of its
 augmentations. The error is now raised
+- `RandomAnisotropicScale` no longer inflates the `std_off` and `mean_dist`
+edge features by ~sqrt(3) at train time. They were multiplied by
+`scale.norm()` (~sqrt(3) for a ~(1, 1, 1) scale), causing a train/eval shift
+and pushing `std_off` beyond its clip value of 2. They are now scaled by the
+isotropic equivalent of the scale, `scale.norm() / sqrt(3)`, with a square
+root for `mean_dist`, and `std_off` is clipped like at preprocessing time.
+The random scale is also drawn directly on the device, which removes a CPU-GPU
+synchronization at each call
+- `RandomAnisotropicScale` was isotropic, unlike documented: a single random
+draw was shared by the 3 axes, so that the scaling was isotropic with the
+scalar `delta` of all configs. A scaling factor can now be drawn for each axis,
+with the new `per_axis` parameter:
+  - `RandomAnisotropicScale(per_axis=True)`, the default of the class, is
+  anisotropic, as documented;
+  - the datamodule configs set it with `anisotropic_scaling_per_axis`, which is
+  `False` for now: the configs keep the isotropic scaling the published models
+  were trained with, until the anisotropic one is evaluated.
+
+  Normals are now divided by the scale instead of multiplied by it, which only
+  made a difference for anisotropic scalings. With an anisotropic scaling, the
+  `std_off` and `mean_dist` edge features are approximated with the isotropic
+  equivalent of the scale
 
 ### Removed
 

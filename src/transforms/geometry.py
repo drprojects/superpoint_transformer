@@ -1,3 +1,4 @@
+import math
 import torch
 from src.data import NAG
 from src.transforms import Transform
@@ -140,23 +141,39 @@ class RandomAnisotropicScale(Transform):
     Credit: https://github.com/torch-points3d/torch-points3d
 
     :param delta: float or List(float)
-        Scaling will be uniformly sampled in [-delta, delta]. If a
-        3-element list may be passed to scale X, Y and Z differently.
+        Each scaling factor ``s_i`` will be uniformly sampled in
+        [1 - delta, 1 + delta]. A 3-element list may be passed to scale
+        X, Y and Z within different ranges
+    :param per_axis: bool
+        If True (default), each axis has its own random draw, so the
+        scaling is anisotropic. If False, a single random draw is shared
+        by the 3 axes: with a scalar `delta`, the scaling is then
+        isotropic, ie ``s1 = s2 = s3``, which was also the default
+        behavior of this transform in versions <= 3.0.0
     """
 
     _IN_TYPE = NAG
     _OUT_TYPE = NAG
 
-    def __init__(self, delta=0.2):
+    def __init__(self, delta=0.2, per_axis=True):
         assert isinstance(delta, (float, int)) or isinstance(delta, (tuple, list))
         if isinstance(delta, (float, int)):
             delta = [float(delta)] * 3
         assert len(delta) == 3
-        self.delta = torch.tensor(delta).abs().view(1, -1)
+        # Python floats, so that the scale can be drawn directly on the
+        # device of the inputs without copying `delta` to it, which
+        # would trigger a CPU-GPU synchronization
+        self.delta = tuple(abs(float(d)) for d in delta)
+        self.per_axis = per_axis
 
     def _process(self, nag):
-        # Generate the random scales
-        scale = 1 + (torch.rand(1) * 2 * self.delta - self.delta).to(nag.device)
+        # Generate the random scales on the device of the inputs. With
+        # `per_axis=True`, each axis has its own random draw
+        u = torch.rand(1, 3 if self.per_axis else 1, device=nag.device)
+        axes = range(3) if self.per_axis else [0] * 3
+        scale = torch.cat(
+            [1 + u[:, j:j + 1] * 2 * d - d for j, d in zip(axes, self.delta)],
+            dim=1)
 
         for i_level in nag.level_range:
             nag[i_level].pos = nag[i_level].pos * scale
@@ -175,15 +192,30 @@ class RandomAnisotropicScale(Transform):
                 assert edge_attr.shape[1] == 7, \
                     "Expected exactly 7 features in `edge_attr`, generated " \
                     "with `_minimalistic_horizontal_edge_features`"
+                # `mean_off` is an offset vector: scaled per axis.
+                # `std_off` (expressed in a local basis aligned with
+                # `mean_off`) and `mean_dist` (sqrt of a distance) are
+                # scaled by the isotropic equivalent of `scale`, its RMS
+                # `scale.norm() / sqrt(3)`, NOT `scale.norm()` (~sqrt(3)
+                # for a ~(1, 1, 1) scale). `std_off` is clipped like in
+                # `_minimalistic_horizontal_edge_features`. This is
+                # exact for an isotropic scaling. For an anisotropic
+                # one, `std_off` and `mean_dist` are only approximated,
+                # their exact value would require the points
+                s_iso = scale.norm() / math.sqrt(3)
                 edge_attr[:, :3] *= scale
-                edge_attr[:, 3:] *= scale.norm()  # std_off and mean_dist are scaled by the scaling norm, slightly incorrect for std_off...
+                edge_attr[:, 3:6] = (edge_attr[:, 3:6] * s_iso).clip(-2, 2)
+                edge_attr[:, 6] *= s_iso.sqrt()
                 nag[i_level].edge_attr = edge_attr
 
         return nag
 
     @staticmethod
     def _scale_normal(normal, scale):
-        return torch.nn.functional.normalize(normal * scale, dim=1)
+        # Normals transform with the inverse transpose of the scaling
+        # matrix, ie they are divided by `scale`, not multiplied. Both
+        # are equivalent for an isotropic scaling only
+        return torch.nn.functional.normalize(normal / scale, dim=1)
 
 
 class RandomAxisFlip(Transform):
