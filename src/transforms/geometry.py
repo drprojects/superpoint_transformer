@@ -154,32 +154,26 @@ class RandomAnisotropicScale(Transform):
 
     _IN_TYPE = NAG
     _OUT_TYPE = NAG
-    _NO_REPR = ['_device_delta']
 
     def __init__(self, delta=0.2, per_axis=True):
         assert isinstance(delta, (float, int)) or isinstance(delta, (tuple, list))
         if isinstance(delta, (float, int)):
             delta = [float(delta)] * 3
         assert len(delta) == 3
-        self.delta = torch.tensor(delta).abs().view(1, -1)
+        # Python floats, so that the scale can be drawn directly on the
+        # device of the inputs without copying `delta` to it, which
+        # would trigger a CPU-GPU synchronization
+        self.delta = tuple(abs(float(d)) for d in delta)
         self.per_axis = per_axis
-        self._device_delta = None
-
-    def _get_delta(self, device):
-        """`delta` on `device`. It is copied once and cached, to avoid a
-        CPU-GPU synchronization at each call.
-        """
-        if self._device_delta is None or self._device_delta.device != device:
-            self._device_delta = self.delta.to(device)
-        return self._device_delta
 
     def _process(self, nag):
-        # Generate the random scales, directly on the device to avoid a
-        # CPU-GPU synchronization. With `per_axis=True`, each axis has
-        # its own random draw
-        delta = self._get_delta(nag.device)
+        # Generate the random scales on the device of the inputs. With
+        # `per_axis=True`, each axis has its own random draw
         u = torch.rand(1, 3 if self.per_axis else 1, device=nag.device)
-        scale = 1 + u * 2 * delta - delta
+        axes = range(3) if self.per_axis else [0] * 3
+        scale = torch.cat(
+            [1 + u[:, j:j + 1] * 2 * d - d for j, d in zip(axes, self.delta)],
+            dim=1)
 
         for i_level in nag.level_range:
             nag[i_level].pos = nag[i_level].pos * scale

@@ -54,7 +54,7 @@ def test_anisotropic_scale_matches_edge_features_of_scaled_points(s):
     u = (s - 0.8) / 0.4
     with mock.patch(
             'src.transforms.geometry.torch.rand',
-            return_value=torch.tensor([u])):
+            return_value=torch.tensor([[u]])):
         nag = RandomAnisotropicScale(delta=0.2, per_axis=False)(nag)
 
     torch.testing.assert_close(
