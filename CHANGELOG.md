@@ -40,6 +40,11 @@ them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 
 ### Fixed
 
+- `OnTheFlyHorizontalEdgeFeatures`: at train time, about half of the
+horizontal edges were flipped without flipping the sign of their `mean_off`
+edge feature, which then pointed the wrong way. See
+[#232](https://github.com/drprojects/superpoint_transformer/pull/232) for
+details
 - `WeightedFocalLoss` no longer reduces the loss twice:
   - with `reduction='mean'`, it returned `mean(focal_term) * mean(CE)`
   instead of `mean(focal_term * CE)`, so the focal term did not modulate each
