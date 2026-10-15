@@ -147,6 +147,7 @@ class RandomAnisotropicScale(Transform):
 
     _IN_TYPE = NAG
     _OUT_TYPE = NAG
+    _NO_REPR = ['_device_delta']
 
     def __init__(self, delta=0.2):
         assert isinstance(delta, (float, int)) or isinstance(delta, (tuple, list))
@@ -154,10 +155,21 @@ class RandomAnisotropicScale(Transform):
             delta = [float(delta)] * 3
         assert len(delta) == 3
         self.delta = torch.tensor(delta).abs().view(1, -1)
+        self._device_delta = None
+
+    def _get_delta(self, device):
+        """`delta` on `device`. It is copied once and cached, to avoid a
+        CPU-GPU synchronization at each call.
+        """
+        if self._device_delta is None or self._device_delta.device != device:
+            self._device_delta = self.delta.to(device)
+        return self._device_delta
 
     def _process(self, nag):
-        # Generate the random scales
-        scale = 1 + (torch.rand(1) * 2 * self.delta - self.delta).to(nag.device)
+        # Generate the random scales, directly on the device to avoid a
+        # CPU-GPU synchronization
+        delta = self._get_delta(nag.device)
+        scale = 1 + torch.rand(1, device=nag.device) * 2 * delta - delta
 
         for i_level in nag.level_range:
             nag[i_level].pos = nag[i_level].pos * scale

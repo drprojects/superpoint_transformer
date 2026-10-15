@@ -138,7 +138,9 @@ edge features by ~sqrt(3) at train time. They were multiplied by
 `scale.norm()` (~sqrt(3) for a ~(1, 1, 1) scale), causing a train/eval shift
 and pushing `std_off` beyond its clip value of 2. They are now scaled by the
 isotropic equivalent of the scale, `scale.norm() / sqrt(3)`, with a square
-root for `mean_dist`, and `std_off` is clipped like at preprocessing time
+root for `mean_dist`, and `std_off` is clipped like at preprocessing time.
+The random scale is also drawn directly on the device, which removes a CPU-GPU
+synchronization at each call
 
 ### Removed
 
