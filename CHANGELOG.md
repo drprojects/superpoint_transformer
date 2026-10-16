@@ -36,6 +36,15 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- Removed some avoidable CPU-GPU syncs in the model: the default
+qk-scale of the attention and pooling blocks counts the neighbors with a
+known output size instead of `bincount` (`build_qk_scale_func` functions
+now accept an optional `num_nodes`), and `scatter_mean_weighted` /
+`UnitSphereNorm` no longer read GPU values on CPU (the non-negative
+weights check of `scatter_mean_weighted` now only runs in debug mode).
+Outputs are unchanged. The speedup is negligible for the published
+configs, whose train step is GPU-bound.
+
 ### Deprecated
 
 ### Fixed
