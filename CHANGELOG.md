@@ -36,6 +36,18 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- Faster on-device transforms: removed the avoidable CPU-GPU syncs (blocking
+host-to-device copies of small tensors, data-dependent sizes computed several
+times, input validation of `torch.multinomial`), from ~1300 to 176 per EZ-SP
+training batch. On an RTX A6000, the on-device train transforms go from 194
+to 149 ms per batch, and the full train step from 631 to 581 ms. Outputs are
+unchanged, except that `RandomAxisFlip`, `ColorAutoContrast` and `ColorDrop`
+now draw their random decisions from the CPU generator (same distribution, but
+a different draw for a given seed). The
+new helpers `src.utils.async_tensor()` and
+`src.utils.multinomial_no_replacement()` build a GPU tensor from Python data
+and sample without replacement, without blocking the CPU
+
 ### Deprecated
 
 ### Fixed

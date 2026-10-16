@@ -429,7 +429,9 @@ class ColorAutoContrast(ColorTransform):
     def _func(self, rgb):
         device = rgb.device
 
-        if torch.rand(1, device=device) < self.p:
+        # Drawn on CPU: deciding on a CUDA draw would cause a CPU-GPU
+        # sync
+        if torch.rand(1) < self.p:
 
             # Compute the contrasted colors
             lo = rgb.min(dim=0).values.view(1, -1)
@@ -503,7 +505,9 @@ class ColorDrop(ColorTransform):
         self.p = p
 
     def _func(self, rgb):
-        if torch.rand(1, device=rgb.device) < self.p:
+        # Drawn on CPU: deciding on a CUDA draw would cause a CPU-GPU
+        # sync
+        if torch.rand(1) < self.p:
             rgb *= 0
         return rgb
 

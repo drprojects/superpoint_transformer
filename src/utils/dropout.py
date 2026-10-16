@@ -5,18 +5,19 @@ __all__ = ['dropout']
 
 
 def dropout(a, p=0.5, dim=1, inplace=False, to_mean=False):
+    # The dropped rows/columns are handled with a broadcast mask rather
+    # than with their indices, whose computation would cause a CPU-GPU
+    # sync
     n = a.shape[dim]
-    to_drop = torch.where(torch.rand(n, device=a.device).detach() < p)[0]
+    shape = [1] * a.dim()
+    shape[dim] = n
+    mask = (torch.rand(n, device=a.device) < p).view(shape)
     out = a if inplace else a.clone()
 
-
     if not to_mean:
-        out.index_fill_(dim, to_drop, 0)
+        out.masked_fill_(mask, 0)
         return out
 
-    if dim == 1:
-        out[:, to_drop] = a.mean(dim=0)[to_drop]
-        return out
-
-    out[to_drop] = a.mean(dim=0)
+    # Dropped values are replaced by the mean of their column
+    out.copy_(torch.where(mask, a.mean(dim=0), a))
     return out

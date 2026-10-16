@@ -1163,9 +1163,20 @@ def _on_the_fly_horizontal_edge_features(
 
     normal_key = 'mean_normal' if use_mean_normal else 'normal'
 
-    assert is_trimmed(se), \
-        "Expects the graph to be trimmed, consider using " \
-        "`src.utils.to_trimmed()` before computing the features"
+    # Orient all edges as i<j, in place. This used to be a side effect
+    # of the `is_trimmed(se)` check below, which is now only run in
+    # debug mode
+    # TODO: the edge attributes are not flipped accordingly, so the
+    #  directional features (e.g. `mean_off`) of the flipped edges point
+    #  the wrong way
+    se.copy_(torch.stack((se.min(dim=0).values, se.max(dim=0).values)))
+
+    # Checking the graph is trimmed requires trimming it, which is
+    # costly and causes CPU-GPU syncs, so this is only done in debug
+    if src.is_debug_enabled():
+        assert is_trimmed(se), \
+            "Expects the graph to be trimmed, consider using " \
+            "`src.utils.to_trimmed()` before computing the features"
     if 'mean_off' in keys:
         assert getattr(data, 'edge_attr', None) is not None, \
             "Expected input Data to have a 'edge_attr' attribute precomputed " \
