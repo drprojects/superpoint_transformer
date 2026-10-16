@@ -36,6 +36,9 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- Semantic configs (`instance: False`) no longer load the instance labels `obj`
+(EZ-SP train step -11%, [#238](https://github.com/drprojects/superpoint_transformer/pull/238))
+
 ### Deprecated
 
 ### Fixed
