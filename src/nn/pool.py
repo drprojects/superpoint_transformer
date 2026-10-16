@@ -218,8 +218,11 @@ class BaseAttentivePool(nn.Module):
 
             q = q + rpe.view(Nc, H, -1)
 
-        # Compute compatibility scores from the query-key products
-        compat = torch.einsum('nhd, nhd -> nh', q, k)  # [Nc, H]
+        # Compute compatibility scores from the query-key products.
+        # NB: `torch.einsum` would run this as a batched matmul of Nc*H
+        # (1, D) x (D, 1) matrices, much slower than the elementwise
+        # product and sum
+        compat = (q * k).sum(dim=-1)  # [Nc, H]
 
         # Compute the attention scores with scaled softmax
         attn = softmax(compat, index=index, dim=0, num_nodes=Np)  # [Nc, H]
