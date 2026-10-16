@@ -36,6 +36,9 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- `Data.select()` computes `num_nodes`, `num_edges` and the edge keys once
+instead of once per attribute ([#239](https://github.com/drprojects/superpoint_transformer/pull/239))
+
 ### Deprecated
 
 ### Fixed

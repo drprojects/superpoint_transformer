@@ -421,6 +421,11 @@ class Data(PyGData):
         # Index data items depending on their type
         warn_keys = ['neighbor_index', 'neighbor_distance']
         skip_keys = ['edge_index', 'sub', 'super_index'] + warn_keys
+        # These properties scan all the attributes, compute them once
+        num_nodes = self.num_nodes
+        num_edges = self.num_edges
+        v_edge_keys = self.v_edge_keys
+        edge_attr_keys = ['edge_attr'] + self.edge_keys
         for key, item in self:
 
             # 'skip_keys' have already been dealt with earlier on, so we
@@ -438,8 +443,8 @@ class Data(PyGData):
                 continue
 
             is_tensor = torch.is_tensor(item)
-            is_node_size = item.shape[0] == self.num_nodes
-            is_edge_size = item.shape[0] == self.num_edges
+            is_node_size = item.shape[0] == num_nodes
+            is_edge_size = item.shape[0] == num_edges
 
             # Slice tensor elements containing num_edges elements. Note
             # we deal with edges first, to rule out the case where
@@ -449,11 +454,11 @@ class Data(PyGData):
             # `edge_index`. An exception is made for attributes
             # starting with 'v_edge': those are expected to be node
             # attributes and must be treated as such
-            if is_tensor and is_node_size and key in self.v_edge_keys:
+            if is_tensor and is_node_size and key in v_edge_keys:
                 data[key] = item[idx]
 
             elif has_edge_index and is_tensor and is_edge_size and \
-                    key in ['edge_attr'] + self.edge_keys:
+                    key in edge_attr_keys:
                 data[key] = item[idx_edge]
 
             # Slice other tensor elements containing num_nodes elements
