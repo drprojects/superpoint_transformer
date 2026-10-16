@@ -68,9 +68,12 @@ class RandomTiltAndRotate(Transform):
         # Generate the random rotation axis
         sigma = self.phi / 180. * torch.pi / 3
         if sigma > 0:
+            # `sigma` is the standard deviation of the xy offset, so
+            # the covariance matrix is `sigma² I`
             means = torch.zeros(2, device=device)
-            stds = torch.eye(2, device=device) * sigma
-            distribution = torch.distributions.MultivariateNormal(means, stds)
+            covariance = torch.eye(2, device=device) * sigma ** 2
+            distribution = torch.distributions.MultivariateNormal(
+                means, covariance)
             axis_xy = distribution.sample()
             axis_z = torch.ones(1, device=device)
             axis = torch.cat((axis_xy, axis_z))

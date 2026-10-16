@@ -158,6 +158,9 @@ with the new `per_axis` parameter:
 - `RandomTiltAndRotate` skipped the rotation when `phi=0`: KITTI-360 was never
 rotated, its config now sets `tilt_n_rotate_theta: 0` to keep this behavior
 ([#241](https://github.com/drprojects/superpoint_transformer/pull/241))
+- `RandomTiltAndRotate` drew the tilt with a standard deviation `sqrt(sigma)`
+instead of `sigma`: DALES, S3DIS and ScanNet now use `tilt_n_rotate_phi: 4.15`
+to keep the same tilts ([#241](https://github.com/drprojects/superpoint_transformer/pull/241))
 
 ### Removed
 
