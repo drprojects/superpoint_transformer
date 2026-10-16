@@ -18,6 +18,7 @@ from src.utils import (
     indices_to_pointers,
     sizes_to_pointers,
     fast_repeat,
+    async_tensor,
     save_tensor,
     load_tensor,
     from_flat_tensor,
@@ -59,6 +60,13 @@ class CSRData(TensorHolderMixIn):
     _iiv_serialization_key = 'is_index_value'
     _value_serialization_prefix = 'value_'
 
+    # Subclasses whose `is_index_value` is always the same can declare
+    # it here, so that `from_list()` reads it without a CPU-GPU sync.
+    # Code modifying the `is_index_value` of such an instance must set
+    # the instance's `_static_is_index_value` to None, so that
+    # `from_list()` reads the actual tensor instead
+    _static_is_index_value = None
+
     def __init__(
             self,
             pointers: torch.Tensor,
@@ -90,8 +98,11 @@ class CSRData(TensorHolderMixIn):
         if is_index_value is None or is_index_value == []:
             self.is_index_value = torch.zeros(
                 self.num_values, dtype=torch.bool, device=pointers.device)
+        elif isinstance(is_index_value, torch.Tensor):
+            self.is_index_value = is_index_value.to(
+                dtype=torch.bool, device=pointers.device)
         else:
-            self.is_index_value = torch.as_tensor(
+            self.is_index_value = async_tensor(
                 is_index_value, dtype=torch.bool, device=pointers.device)
         if src.is_debug_enabled():
             self.debug()
@@ -232,6 +243,10 @@ class CSRData(TensorHolderMixIn):
 
     @property
     def num_items(self):
+        # When values are present, their size is read from their shape,
+        # which avoids a CPU-GPU sync on `self.pointers[-1]`
+        if self.num_values > 0:
+            return len(self.values[0])
         return self.pointers[-1]
 
     @property
@@ -245,7 +260,9 @@ class CSRData(TensorHolderMixIn):
         """Returns the dense indices corresponding to the pointers.
         """
         return fast_repeat(
-            torch.arange(self.num_groups, device=self.device), self.sizes)
+            torch.arange(self.num_groups, device=self.device),
+            self.sizes,
+            output_size=self.num_items if self.num_values > 0 else None)
 
     @classmethod
     def get_base_class(cls) -> type:
@@ -335,7 +352,8 @@ class CSRData(TensorHolderMixIn):
         an index tensor to be used to update any values tensor
         associated with the input pointers.
         """
-        assert indices.max() <= pointers.shape[0] - 2
+        if src.is_debug_enabled():
+            assert indices.max() <= pointers.shape[0] - 2
         device = pointers.device
 
         # Create the new pointers
@@ -346,12 +364,13 @@ class CSRData(TensorHolderMixIn):
         # Create the indexing tensor to select and order values.
         # Simply, we could have used a list of slices but we want to
         # avoid for loops and list concatenations to benefit from torch
-        # capabilities.
+        # capabilities. The number of selected values is the only
+        # information we need on CPU, it costs a single CPU-GPU sync
         sizes = pointers_new[1:] - pointers_new[:-1]
-        val_idx = torch.arange(pointers_new[-1], device=device)
-        val_idx -= torch.arange(pointers_new[-1] + 1, device=device)[
-            pointers_new[:-1]].repeat_interleave(sizes)
-        val_idx += pointers[indices].repeat_interleave(sizes).to(device)
+        num_values = int(pointers_new[-1])
+        val_idx = torch.arange(num_values, device=device)
+        val_idx += (pointers[indices] - pointers_new[:-1]).repeat_interleave(
+            sizes, output_size=num_values)
 
         return pointers_new, val_idx
 
@@ -689,10 +708,11 @@ class CSRBatch(CSRData):
             "All provided items must have the same number of values."
         is_index_value = csr_list[0].is_index_value
         if is_index_value is not None:
-            assert all([
-                torch.equal(csr.is_index_value, is_index_value)
-                for csr in csr_list]), \
-                "All provided items must have the same is_index_value."
+            if src.is_debug_enabled():
+                assert all([
+                    torch.equal(csr.is_index_value, is_index_value)
+                    for csr in csr_list]), \
+                    "All provided items must have the same is_index_value."
         else:
             assert all([csr.is_index_value is None for csr in csr_list]), \
                 "All provided items must have the same is_index_value."
@@ -703,18 +723,25 @@ class CSRBatch(CSRData):
         # Offsets are used to stack pointer indices and values
         # identified as "index" value by `is_index_value` without
         # losing the indexing information they carry.
-        offsets = torch.cumsum(
-            torch.tensor(
-                [0] + [csr.num_items for csr in csr_list[:-1]],
-                dtype=torch.long,
-                device=device),
-            dim=0)
+        # NB: offsets are computed as Python integers, from the sizes
+        # of the values, to avoid CPU-GPU syncs
+        offsets = [0]
+        for csr in csr_list[:-1]:
+            offsets.append(offsets[-1] + int(csr.num_items))
 
         # Stack pointers
         pointers = torch.cat((
-            torch.tensor([0], dtype=torch.long, device=device),
+            torch.zeros(1, dtype=torch.long, device=device),
             *[csr.pointers[1:].long() + offset
               for csr, offset in zip(csr_list, offsets)]), dim=0)
+
+        # Read `is_index_value` on CPU once, rather than once per value.
+        # Subclasses declaring a `_static_is_index_value` need no
+        # CPU-GPU sync for it
+        is_index_value_cpu = csr_list[0]._static_is_index_value
+        if is_index_value_cpu is None:
+            is_index_value_cpu = is_index_value.tolist() \
+                if is_index_value is not None else [False] * num_values
 
         # Stack values
         values = []
@@ -722,7 +749,7 @@ class CSRBatch(CSRData):
             val_list = [csr.values[i] for csr in csr_list]
             if len(val_list) > 0 and isinstance(val_list[0], CSRData):
                 val = val_list[0].from_list(val_list)
-            elif is_index_value[i]:
+            elif is_index_value_cpu[i]:
                 # "Index" values are stacked with updated indices.
                 # For Clusters, this implies all point indices are
                 # assumed to be present in the Cluster.points. There can
@@ -731,12 +758,12 @@ class CSRBatch(CSRData):
                 # dtype that would overflow when incrementing values for
                 # collation. To this end, we explicitly cast to int64
                 # when sensitive
-                offsets = torch.tensor(
-                    [0] + [
-                        v.max().long() + 1 if v.shape[0] > 0 else 0
-                        for v in val_list[:-1]],
-                    dtype=torch.long,
-                    device=device)
+                # NB: the offsets are kept on the device, to avoid
+                # CPU-GPU syncs
+                zero = torch.zeros(1, dtype=torch.long, device=device)
+                offsets = torch.cat([zero] + [
+                    v.max().long().view(1) + 1 if v.shape[0] > 0 else zero
+                    for v in val_list[:-1]])
                 cum_offsets = torch.cumsum(offsets, dim=0)
                 val = torch.cat([
                     v.long() + o for v, o in zip(val_list, cum_offsets)], dim=0)
@@ -749,7 +776,7 @@ class CSRBatch(CSRData):
         # may define their own batch class inheriting from CSRBatch.
         batch = csr_list[0].get_batch_class()(
             pointers, *values, dense=False, is_index_value=is_index_value)
-        batch.__sizes__ = torch.tensor(
+        batch.__sizes__ = async_tensor(
             [csr.num_groups for csr in csr_list],
             dtype=torch.long,
             device=device)

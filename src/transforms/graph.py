@@ -1171,13 +1171,19 @@ def _on_the_fly_horizontal_edge_features(
     flip = se[0] > se[1]
     se = torch.where(flip, se.flip(0), se)
     if getattr(data, 'edge_attr', None) is not None:
+        # `torch.where` rather than boolean mask indexing, which would
+        # cause a CPU-GPU sync
         edge_attr = data.edge_attr.clone()
-        edge_attr[flip, :3] = -edge_attr[flip, :3]
+        edge_attr[:, :3] = torch.where(
+            flip.view(-1, 1), -edge_attr[:, :3], edge_attr[:, :3])
         data.edge_attr = edge_attr
 
-    assert is_trimmed(se), \
-        "Expects the graph to be trimmed, consider using " \
-        "`src.utils.to_trimmed()` before computing the features"
+    # Checking the graph is trimmed requires trimming it, which is
+    # costly and causes CPU-GPU syncs, so this is only done in debug
+    if src.is_debug_enabled():
+        assert is_trimmed(se), \
+            "Expects the graph to be trimmed, consider using " \
+            "`src.utils.to_trimmed()` before computing the features"
     if 'mean_off' in keys:
         assert getattr(data, 'edge_attr', None) is not None, \
             "Expected input Data to have a 'edge_attr' attribute precomputed " \

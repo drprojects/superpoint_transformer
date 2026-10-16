@@ -95,17 +95,25 @@ class NAG(TensorHolderMixIn):
                 low >= self.start_i_level
                 and getattr(self[low], 'node_size', None) is not None):
             sub_sizes = scatter_sum(
-                self[low].node_size, self[low].super_index, dim=0)
+                self[low].node_size, self[low].super_index, dim=0,
+                dim_size=self[low + 1].num_nodes)
         elif getattr(self[low + 1], 'sub', None) is not None:
             sub_sizes = self[low + 1].sub.sizes
         elif low >= self.start_i_level:
-            sub_sizes = torch.bincount(self[low].super_index)
+            # NB: unlike `bincount`, passing the output size to
+            # `scatter_sum` avoids a CPU-GPU sync
+            super_index = self[low].super_index
+            sub_sizes = scatter_sum(
+                torch.ones_like(super_index), super_index, dim=0,
+                dim_size=self[low + 1].num_nodes)
         else:
             raise ValueError(
                 f"Cannot infer the size of level {low=} element sizes")
 
         for i in range(low + 1, high):
-            sub_sizes = scatter_sum(sub_sizes, self[i].super_index, dim=0)
+            sub_sizes = scatter_sum(
+                sub_sizes, self[i].super_index, dim=0,
+                dim_size=self[i + 1].num_nodes)
 
         return sub_sizes
 
@@ -722,7 +730,8 @@ class NAG(TensorHolderMixIn):
             n_max=n_max,
             n_min=n_min,
             mask=mask,
-            return_pointers=return_pointers)
+            return_pointers=return_pointers,
+            num_segments=self[high].num_nodes)
 
     def __repr__(self):
         info = [

@@ -20,8 +20,13 @@ def cross_product_matrix(k):
 
     Credit: https://github.com/torch-points3d/torch-points3d
     """
-    return torch.tensor(
-        [[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]], device=k.device)
+    # Built with `torch.stack` rather than `torch.tensor` to avoid a
+    # CPU-GPU sync for each element of a CUDA `k`
+    zero = torch.zeros_like(k[0])
+    return torch.stack([
+        zero, -k[2], k[1],
+        k[2], zero, -k[0],
+        -k[1], k[0], zero]).view(3, 3)
 
 
 def rodrigues_rotation_matrix(axis, theta_degrees):
@@ -33,7 +38,11 @@ def rodrigues_rotation_matrix(axis, theta_degrees):
     """
     axis = axis / axis.norm()
     K = cross_product_matrix(axis)
-    t = torch.tensor([theta_degrees / 180. * np.pi], device=axis.device)
+    t = theta_degrees / 180. * np.pi
+    if isinstance(t, torch.Tensor):
+        t = t.to(device=axis.device, dtype=torch.float).view(1)
+    else:
+        t = torch.full((1,), t, dtype=torch.float, device=axis.device)
     R = torch.eye(3, device=axis.device) \
         + torch.sin(t) * K + (1 - torch.cos(t)) * K.mm(K)
     return R

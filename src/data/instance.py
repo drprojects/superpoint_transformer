@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import src
 from torch.nn.functional import one_hot
 from typing import List, Tuple, Union
 from torch_geometric.nn.pool.consecutive import consecutive_cluster
@@ -58,6 +59,7 @@ class InstanceData(CSRData):
     """
 
     __value_keys__ = ['obj', 'count', 'y']
+    _static_is_index_value = [True, False, False]
 
     def __init__(
             self,
@@ -87,7 +89,8 @@ class InstanceData(CSRData):
 
             # Compute the actual count for each cluster-obj pair in the
             # input data
-            count = scatter_sum(count, cluster_obj_idx)
+            count = scatter_sum(
+                count, cluster_obj_idx, dim_size=perm.shape[0])
 
         super().__init__(
             pointers,
@@ -95,7 +98,7 @@ class InstanceData(CSRData):
             count,
             y,
             dense=dense,
-            is_index_value=[True, False, False])
+            is_index_value=self._static_is_index_value)
 
     @classmethod
     def get_base_class(cls) -> type:
@@ -242,7 +245,8 @@ class InstanceData(CSRData):
         assert idx.shape == torch.Size([self.num_clusters]), \
             f"Expected indices of shape {torch.Size([self.num_clusters])}, " \
             f"but received shape {idx.shape} instead"
-        assert is_dense(idx), f"Expected contiguous indices in [0, max]"
+        if src.is_debug_enabled():
+            assert is_dense(idx), f"Expected contiguous indices in [0, max]"
 
         # Compute the merged cluster index for each cluster-obj pair
         merged_idx = idx[self.indices].long()

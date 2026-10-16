@@ -2,7 +2,6 @@ import torch
 import src
 from src.utils.tensor import (
     is_dense,
-    is_sorted,
     fast_repeat,
     tensor_idx,
     arange_interleave,
@@ -25,18 +24,18 @@ def indices_to_pointers(indices: torch.Tensor):
     device = indices.device
     assert len(indices.shape) == 1, "Only 1D indices are accepted."
     assert indices.shape[0] >= 1, "At least one group index is required."
-    assert is_dense(indices), "Indices must be dense"
+    if src.is_debug_enabled():
+        assert is_dense(indices), "Indices must be dense"
 
-    # Sort indices if need be
-    order = torch.arange(indices.shape[0], device=device)
-    if not is_sorted(indices):
-        indices, order = indices.sort()
+    # Sort indices. A stable sort leaves already-sorted indices
+    # untouched, without the CPU-GPU sync of checking it beforehand
+    indices, order = indices.sort(stable=True)
 
     # Convert sorted indices to pointers
     pointers = torch.cat([
-        torch.tensor([0], dtype=torch.long, device=device),
+        torch.zeros(1, dtype=torch.long, device=device),
         torch.where(indices[1:] > indices[:-1])[0] + 1,
-        torch.tensor([indices.shape[0]], dtype=torch.long, device=device)])
+        torch.full((1,), indices.shape[0], dtype=torch.long, device=device)])
 
     return pointers, order
 
@@ -139,7 +138,9 @@ def sparse_sort_along_direction(src, index, direction, descending=False):
     return src[perm], perm
 
 
-def sparse_sample(idx, n_max=32, n_min=1, mask=None, return_pointers=False):
+def sparse_sample(
+        idx, n_max=32, n_min=1, mask=None, return_pointers=False,
+        num_segments=None):
     """Compute indices to sample elements in a set of size `idx.shape`,
     based on which segment they belong to in `idx`.
 
@@ -163,14 +164,24 @@ def sparse_sample(idx, n_max=32, n_min=1, mask=None, return_pointers=False):
         Whether pointers should be returned along with sampling
         indices. These indicate which sampled element belongs to which
         segment
+    :param num_segments: int
+        Number of segments, if known. Passing it avoids the CPU-GPU
+        sync of computing `idx.max() + 1` to size the segment counts
     """
     assert 0 <= n_min <= n_max
 
-    # Initialization
+    # Initialization. The segment sizes are counted with `index_add_`
+    # into a tensor of known size when `num_segments` is provided,
+    # rather than with `bincount`, which always reads `idx.max()` on
+    # CPU (CPU-GPU sync)
     device = idx.device
-    size = idx.bincount()
-    num_elements = size.sum()
-    num_segments = idx.max() + 1
+    if num_segments is None:
+        size = idx.bincount()
+        num_segments = size.shape[0]
+    else:
+        size = torch.zeros(num_segments, dtype=torch.long, device=device)
+        size.index_add_(0, idx, torch.ones_like(size[:1]).expand_as(idx))
+    num_elements = idx.shape[0]
 
     # Compute the number of elements that will be sampled from each
     # segment, based on a heuristic
@@ -203,7 +214,8 @@ def sparse_sample(idx, n_max=32, n_min=1, mask=None, return_pointers=False):
     if mask is not None:
         sample_idx = sample_idx[mask]
         idx = idx[mask]
-        size = idx.bincount(minlength=num_segments)
+        size = torch.zeros(num_segments, dtype=torch.long, device=device)
+        size.index_add_(0, idx, torch.ones_like(size[:1]).expand_as(idx))
         n_samples = n_samples.clamp(max=size)
 
     # Sanity check

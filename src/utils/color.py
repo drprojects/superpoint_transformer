@@ -16,8 +16,8 @@ __all__ = [
 
 def to_float_rgb(rgb):
     rgb = rgb.float()
-    if rgb.max() > 1:
-        rgb = rgb / 255
+    # NB: `torch.where` avoids the CPU-GPU sync of a Python `if`
+    rgb = torch.where(rgb.max() > 1, rgb / 255, rgb)
     rgb = rgb.clamp(min=0, max=1)
     return rgb
 
