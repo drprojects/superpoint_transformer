@@ -210,8 +210,8 @@ def knn_2(
     batch_search_offset = 0
     batch_query_offset = 0
     if batch_search is not None:
-        hi = max(x_search[:, 2].max(), x_query[:, 2].max())
-        lo = min(x_search[:, 2].min(), x_query[:, 2].min())
+        hi = torch.maximum(x_search[:, 2].max(), x_query[:, 2].max())
+        lo = torch.minimum(x_search[:, 2].min(), x_query[:, 2].min())
         z_offset = hi - lo + r_max + 1
         batch_search_offset = torch.zeros_like(x_search)
         batch_search_offset[:, 2] = batch_search * z_offset
@@ -270,8 +270,8 @@ def knn_brute_force(
     batch_search_offset = 0
     batch_query_offset = 0
     if batch_search is not None:
-        hi = max(x_search[:, 2].max(), x_query[:, 2].max())
-        lo = min(x_search[:, 2].min(), x_query[:, 2].min())
+        hi = torch.maximum(x_search[:, 2].max(), x_query[:, 2].max())
+        lo = torch.minimum(x_search[:, 2].min(), x_query[:, 2].min())
         z_offset = hi - lo + r_max + 1
         batch_search_offset = torch.zeros_like(x_search)
         batch_search_offset[:, 2] = batch_search * z_offset

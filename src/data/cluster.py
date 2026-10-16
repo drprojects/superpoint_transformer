@@ -21,6 +21,8 @@ class Cluster(CSRData):
     dedicated to cluster-point indexing.
     """
 
+    _static_is_index_value = [True]
+
     def __init__(
             self,
             pointers: torch.Tensor,
@@ -28,7 +30,8 @@ class Cluster(CSRData):
             dense: bool = False,
             **kwargs):
         super().__init__(
-            pointers, points, dense=dense, is_index_value=[True])
+            pointers, points, dense=dense,
+            is_index_value=self._static_is_index_value)
 
     @classmethod
     def get_base_class(cls) -> type:
@@ -73,7 +76,8 @@ class Cluster(CSRData):
         device = self.device
         out = torch.empty((self.num_items,), dtype=torch.long, device=device)
         cluster_idx = torch.arange(self.num_groups, device=device)
-        out[self.points] = cluster_idx.repeat_interleave(self.sizes.long())
+        out[self.points] = cluster_idx.repeat_interleave(
+            self.sizes.long(), output_size=self.num_items)
         return out
 
     def select(
