@@ -155,6 +155,7 @@ with the new `per_axis` parameter:
   made a difference for anisotropic scalings. With an anisotropic scaling, the
   `std_off` and `mean_dist` edge features are approximated with the isotropic
   equivalent of the scale
+- `test/loss` was logged twice by `SemanticSegmentationModule`
 
 ### Removed
 
