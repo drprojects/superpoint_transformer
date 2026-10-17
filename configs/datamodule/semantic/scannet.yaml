@@ -114,7 +114,7 @@ sample_edge_n_max: -1  # [10, 15, 25]
 
 # Augmentations parameterization
 pos_jitter: 0.03
-tilt_n_rotate_phi: 0.1
+tilt_n_rotate_phi: 4.15  # same tilt as `0.1` in versions <= 3.0.0, which drew the tilt with a standard deviation of sqrt(sigma) instead of sigma, see CHANGELOG
 tilt_n_rotate_theta: 180
 anisotropic_scaling: 0.2
 anisotropic_scaling_per_axis: False  # if True, a scaling factor is drawn for each axis. If False, the same factor is shared by all axes (isotropic scaling, which was also the default behavior in versions <= 3.0.0)
