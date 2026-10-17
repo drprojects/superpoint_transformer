@@ -36,6 +36,9 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- Faster and more precise `GraphNorm`: per-graph sums as one-hot matrix
+products instead of a scatter (EZ-SP train step -8%, [#240](https://github.com/drprojects/superpoint_transformer/pull/240))
+
 ### Deprecated
 
 ### Fixed
