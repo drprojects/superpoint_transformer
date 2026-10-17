@@ -12,6 +12,7 @@ from pytorch_lightning.loggers.wandb import WandbLogger
 from src.metrics import ConfusionMatrix
 from src.utils import (
     loss_with_target_histogram,
+    dominant_label_histogram,
     atomic_to_histogram,
     init_weights,
     wandb_confusion_matrix,
@@ -417,12 +418,8 @@ class SemanticSegmentationModule(LightningModule):
                 loss = self.criterion(
                     output.logits, [y.argmax(dim=1) for y in output.y_hist])
             elif self.hparams.loss_type == 'wce':
-                y_hist_dominant = []
-                for y in output.y_hist:
-                    y_dominant = y.argmax(dim=1)
-                    y_hist_dominant_ = torch.zeros_like(y)
-                    y_hist_dominant_[:, y_dominant] = y.sum(dim=1)
-                    y_hist_dominant.append(y_hist_dominant_)
+                y_hist_dominant = [
+                    dominant_label_histogram(y) for y in output.y_hist]
                 loss = 0
                 enum = zip(
                     self.criterion.lambdas,
@@ -454,13 +451,8 @@ class SemanticSegmentationModule(LightningModule):
                     output.y_hist)
                 for i, (lamb, criterion, a, b) in enumerate(enum):
                     if i == 0:
-                        y_dominant = b.argmax(dim=1)
-                        y_hist_dominant = torch.zeros_like(b)
-                        y_hist_dominant[
-                            torch.arange(b.shape[0], device=b.device),
-                            y_dominant] = b.sum(dim=1)
                         loss = loss + loss_with_target_histogram(
-                            criterion, a, y_hist_dominant)
+                            criterion, a, dominant_label_histogram(b))
                         continue
                     loss = loss + lamb * loss_with_target_histogram(
                         criterion, a, b)
@@ -481,14 +473,9 @@ class SemanticSegmentationModule(LightningModule):
             if self.hparams.loss_type == 'ce':
                 loss = self.criterion(output.logits, output.y_hist.argmax(dim=1))
             elif self.hparams.loss_type == 'wce':
-                y_dominant = output.y_hist.argmax(dim=1)
-                y_hist_dominant = torch.zeros_like(output.y_hist)
-                y_hist_dominant[
-                    torch.arange(
-                        output.y_hist.shape[0], device=output.y_hist.device),
-                    y_dominant] = output.y_hist.sum(dim=1)
                 loss = loss_with_target_histogram(
-                    self.criterion, output.logits, y_hist_dominant)
+                    self.criterion, output.logits,
+                    dominant_label_histogram(output.y_hist))
             elif self.hparams.loss_type == 'kl':
                 loss = loss_with_target_histogram(
                     self.criterion, output.logits, output.y_hist)
