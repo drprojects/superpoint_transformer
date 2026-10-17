@@ -36,6 +36,10 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- `BaseDataset` caches `cloud_ids`, `processed_file_names` and
+`processed_paths`, which were rebuilt over the whole dataset at every
+`__getitem__`
+
 ### Deprecated
 
 ### Fixed
