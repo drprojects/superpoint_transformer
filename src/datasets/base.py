@@ -11,6 +11,7 @@ from tqdm import tqdm
 from time import time
 from datetime import datetime
 from itertools import product
+from functools import cached_property
 from tqdm.auto import tqdm as tq
 from typing import Any, List, Tuple, Union
 from torch_geometric.data import InMemoryDataset
@@ -572,9 +573,14 @@ class BaseDataset(InMemoryDataset):
             return id
         return self.get_tile_from_path(id)[1]
 
-    @property
+    @cached_property
     def cloud_ids(self) -> List[str]:
         """IDs of the dataset clouds, based on its `stage`.
+
+        Cached: the ids are fixed once the dataset is instantiated, and
+        `__len__` and `__getitem__` (via `processed_paths`) would
+        otherwise rebuild this list over the whole dataset at every
+        call.
         """
         if self.stage == 'trainval':
            ids = self.all_cloud_ids['train'] + self.all_cloud_ids['val']
@@ -638,10 +644,11 @@ class BaseDataset(InMemoryDataset):
             return 'no_pre_transform'
         return hashlib.md5(_repr(self.pre_transform).encode()).hexdigest()
 
-    @property
+    @cached_property
     def processed_file_names(self) -> List[str]:
         """The name of the files to find in the `self.processed_dir`
-        folder in order to skip the processing
+        folder in order to skip the processing. Cached, like
+        `cloud_ids`.
         """
         # For 'trainval', we use files from 'train' and 'val' to save
         # memory
@@ -658,6 +665,16 @@ class BaseDataset(InMemoryDataset):
         return [
             osp.join(self.stage, self.pre_transform_hash, f'{w}.h5')
             for w in self.cloud_ids]
+
+    @cached_property
+    def processed_paths(self) -> List[str]:
+        """Absolute paths of `self.processed_file_names`. Cached, unlike
+        PyG's `Dataset.processed_paths`, since `__getitem__` reads it
+        at every call.
+        """
+        return [
+            osp.join(self.processed_dir, f)
+            for f in self.processed_file_names]
 
     def processed_to_raw_path(self, processed_path: str) -> str:
         """Given a processed cloud path from `self.processed_paths`,
