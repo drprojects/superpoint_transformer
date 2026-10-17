@@ -1022,6 +1022,10 @@ class BaseDataset(InMemoryDataset):
         # Read the first NAG just to know how many levels we have in the
         # preprocessed NAGs.
         sample = self[0]
+        # With `BaseDataModule(cpu_sampling=True)`, the train transform
+        # returns a list of subgraphs
+        if isinstance(sample, list):
+            sample = sample[0]
         sample_is_nag = isinstance(sample, NAG)
         low = sample.end_i_level if sample_is_nag else None
 

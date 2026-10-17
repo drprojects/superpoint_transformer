@@ -38,6 +38,7 @@ __all__ = [
     'SampleSubNodes',
     'SampleKHopSubgraphs',
     'SampleRadiusSubgraphs',
+    'SampleSubgraphsAsList',
     'SampleSegments',
     'SampleEdges',
     'RestrictSize',
@@ -886,7 +887,16 @@ class BaseSampleSubgraphs(Transform):
         self.use_batch = use_batch
         self.disjoint = disjoint
 
-    def _process(self, nag):
+    def sample_list(self, nag):
+        """Same as calling the transform, but returns the sampled
+        subgraphs as a list of NAGs instead of batching them in a
+        `NAGBatch`. The list holds a single NAG when `disjoint=False`
+        or when the transform does not sample (eg `k<=0`).
+        """
+        out = self._process(nag, as_list=True)
+        return out if isinstance(out, list) else [out]
+
+    def _process(self, nag, as_list=False):
         device = nag.device
 
         # Skip if i_level is None or k<=0. This may be useful to turn
@@ -1005,8 +1015,10 @@ class BaseSampleSubgraphs(Transform):
         # Select the chosen subgraphs and update the NAG structure
         # accordingly
         if isinstance(idx_subgraphs, list):
-            nag_subgraphs = NAGBatch.from_nag_list([
-                nag.select(i_level, idx) for idx in idx_subgraphs])
+            nag_list = [nag.select(i_level, idx) for idx in idx_subgraphs]
+            if as_list:
+                return nag_list
+            nag_subgraphs = NAGBatch.from_nag_list(nag_list)
         else:
             nag_subgraphs = nag.select(i_level, idx_subgraphs)
 
@@ -1248,6 +1260,43 @@ class SampleRadiusSubgraphs(BaseSampleSubgraphs):
         idx_subgraph = neighbors[neighbors >= 0].unique()
 
         return idx_subgraph
+
+
+class SampleSubgraphsAsList(Transform):
+    """Sample subgraphs from a NAG with a `BaseSampleSubgraphs`
+    transform and return them as a list of NAGs, instead of a
+    `NAGBatch`. `transform` is applied to the input NAG before the
+    sampling, and `subgraph_transform` to each subgraph after it.
+
+    This is what `BaseDataModule(cpu_sampling=True)` runs in the
+    DataLoader workers. The subgraphs are only batched on device, with
+    `NAGBatch.from_nag_list`, so that each of them gets its own
+    'batch' index, as with `disjoint=True` on device.
+
+    :param sampler: BaseSampleSubgraphs
+        Subgraph sampling transform, eg `SampleRadiusSubgraphs`
+    :param transform: Callable
+        Transform applied to the input NAG before the sampling
+    :param subgraph_transform: Callable
+        Transform applied to each sampled subgraph
+    """
+
+    _IN_TYPE = NAG
+    _OUT_TYPE = list
+
+    def __init__(self, sampler, transform=None, subgraph_transform=None):
+        assert isinstance(sampler, BaseSampleSubgraphs)
+        self.sampler = sampler
+        self.transform = transform
+        self.subgraph_transform = subgraph_transform
+
+    def _process(self, nag):
+        if self.transform is not None:
+            nag = self.transform(nag)
+        nag_list = self.sampler.sample_list(nag)
+        if self.subgraph_transform is not None:
+            nag_list = [self.subgraph_transform(x) for x in nag_list]
+        return nag_list
 
 
 class SampleEdges(Transform):

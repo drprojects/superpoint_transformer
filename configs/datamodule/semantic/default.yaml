@@ -100,6 +100,17 @@ dataloader:
     pin_memory: True
     persistent_workers: True
 
+# Run the sampling part of `on_device_train_transform`
+# (`SampleSubNodes`, `SampleRadiusSubgraphs`, `SampleSegments` and the
+# transforms before them) in the DataLoader workers, on CPU, instead of
+# on device. These transforms are latency-bound on GPU: moving them to
+# the workers shortens the training step, as long as the workers keep
+# up (1 to 1.6 s of CPU per KITTI-360 cloud). The subgraphs of a batch
+# are drawn per cloud, so `sample_graph_k` must be a multiple of the
+# batch size. Not supported with `in_memory: True`. Validation and test
+# are not affected
+cpu_sampling: False
+
 # Whether the data transfer across devices must be non-blocking. This is
 # ignored if the training device is "cpu" or "mps"
 non_blocking: True
