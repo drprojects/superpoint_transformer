@@ -36,6 +36,9 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- `SelfAttentionBlock` computes its linear edge RPEs (keys, queries, values)
+with one matmul (EZ-SP train step -4%, [#244](https://github.com/drprojects/superpoint_transformer/pull/244))
+
 ### Deprecated
 
 ### Fixed
