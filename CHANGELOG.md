@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `datamodule.cpu_sampling` (default `False`): run the train sampling transforms
+in the DataLoader workers instead of on GPU (EZ-SP train step -11% to -28%,
+[#245](https://github.com/drprojects/superpoint_transformer/pull/245))
+
 ### Changed
 
 - Moved the graph connected components and graph partitioning algorithms 

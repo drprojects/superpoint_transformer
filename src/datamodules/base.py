@@ -1,9 +1,11 @@
+import copy
 import torch
 import logging
 from pytorch_lightning import LightningDataModule
 from typing import Any, Dict, List, Tuple, Union
 
 from src.transforms import *
+from src.transforms.sampling import BaseSampleSubgraphs
 from src.loader import DataLoader
 from src.data import NAGBatch, NAG, Data, Batch
 
@@ -32,6 +34,66 @@ _SUBMISSION_CONFLICTS = [
     SampleKHopSubgraphs,
     SampleRadiusSubgraphs,
     SampleSubNodes]
+
+
+def split_cpu_sampling(
+        on_device_transform: Transform,
+        batch_size: int
+) -> Tuple[SampleSubgraphsAsList, pygT.Compose]:
+    """Split on-device train transforms into a sampling transform, to
+    run on each cloud in the DataLoader workers, and the transforms to
+    run on device after it. See `BaseDataModule(cpu_sampling=True)`.
+
+    The sampling transform runs the transforms up to the subgraph
+    sampling (`SampleRadiusSubgraphs` or `SampleKHopSubgraphs`),
+    the sampling, then the `SampleSubNodes` and `SampleSegments` that
+    directly follow it on each subgraph, and returns the list of
+    subgraphs. A `SampleSubNodes` directly before the sampling is moved
+    after it: it samples the points of each segment independently, so
+    running it on the kept segments only gives the same distribution,
+    for fewer points to process.
+    """
+    transforms = list(getattr(on_device_transform, 'transforms', []))
+    i_sampler = next((
+        i for i, t in enumerate(transforms)
+        if isinstance(t, BaseSampleSubgraphs)), None)
+    if i_sampler is None:
+        raise ValueError(
+            "`cpu_sampling=True` requires a subgraph sampling transform "
+            "(`SampleRadiusSubgraphs` or `SampleKHopSubgraphs`) in the "
+            "on-device train transforms")
+
+    # On device, the sampler draws `k` subgraphs from the whole batch.
+    # In the workers, it sees one cloud at a time
+    sampler = copy.deepcopy(transforms[i_sampler])
+    if sampler.k > 0:
+        if sampler.k % batch_size != 0:
+            raise ValueError(
+                f"`cpu_sampling=True` samples the same number of subgraphs "
+                f"in each cloud of a batch: the number of subgraphs "
+                f"k={sampler.k} must be a multiple of the batch size "
+                f"{batch_size}")
+        sampler.k //= batch_size
+
+    before = transforms[:i_sampler]
+    moved = []
+    while before and isinstance(before[-1], SampleSubNodes) \
+            and before[-1].mask is None \
+            and (sampler.i_level == -1 or before[-1].high <= sampler.i_level):
+        moved.insert(0, before.pop())
+
+    i_end = i_sampler + 1
+    while i_end < len(transforms) \
+            and isinstance(transforms[i_end], (SampleSubNodes, SampleSegments)):
+        i_end += 1
+    after = moved + transforms[i_sampler + 1:i_end]
+
+    sampling = SampleSubgraphsAsList(
+        sampler,
+        transform=pygT.Compose(before) if before else None,
+        subgraph_transform=pygT.Compose(after) if after else None)
+
+    return sampling, pygT.Compose(transforms[i_end:])
 
 
 class BaseDataModule(LightningDataModule):
@@ -91,6 +153,7 @@ class BaseDataModule(LightningDataModule):
             tta_val: bool = False,
             submit: bool = False,
             prepare_only_test: bool = False,
+            cpu_sampling: bool = False,
             **kwargs):
         super().__init__()
 
@@ -103,6 +166,12 @@ class BaseDataModule(LightningDataModule):
         # specified
         if self.dataset_class is None:
             raise NotImplementedError
+
+        # With `in_memory`, the dataset transforms run only once, when
+        # loading the data
+        if cpu_sampling and kwargs.get('in_memory', False):
+            raise ValueError(
+                "`cpu_sampling=True` is not supported with `in_memory=True`")
 
         self.train_dataset = None
         self.val_dataset = None
@@ -117,6 +186,7 @@ class BaseDataModule(LightningDataModule):
         self.on_device_train_transform = None
         self.on_device_val_transform = None
         self.on_device_test_transform = None
+        self.on_device_train_transform_after_sampling = None
 
         # Instantiate the transforms
         self.set_transforms()
@@ -196,6 +266,32 @@ class BaseDataModule(LightningDataModule):
                 self.hparams.data_dir, stage=self.val_stage,
                 transform=self.val_transform, pre_transform=self.pre_transform,
                 on_device_transform=self.on_device_val_transform, **self.kwargs)
+
+            # Optionally move the sampling part of the on-device train
+            # transforms to the train dataset transforms, to run it in
+            # the CPU DataLoader workers. This is done from the train
+            # dataset's `on_device_transform`, which may start with a
+            # transform removing the validation points. The whole
+            # `self.on_device_train_transform` is kept, since
+            # Lightning's sanity check applies it to validation batches
+            if self.hparams.cpu_sampling:
+                sampling, after_sampling = split_cpu_sampling(
+                    self.train_dataset.on_device_transform,
+                    self.hparams.dataloader.batch_size)
+                t = self.train_dataset.transform
+                self.train_dataset.transform = sampling if t is None \
+                    else pygT.Compose(t.transforms + [sampling])
+                self.on_device_train_transform_after_sampling = after_sampling
+                names = [
+                    x.__class__.__name__ for x in
+                    getattr(sampling.transform, 'transforms', [])
+                    + [sampling.sampler]
+                    + getattr(sampling.subgraph_transform, 'transforms', [])]
+                log.info(
+                    f"cpu_sampling: the DataLoader workers run {names} on "
+                    f"each train cloud, the other "
+                    f"{len(after_sampling.transforms)} on-device train "
+                    f"transforms run on device")
             
             if getattr(self.hparams, 'train_on_val', False):
                 self.train_dataset = self.val_dataset
@@ -326,6 +422,10 @@ class BaseDataModule(LightningDataModule):
 
         if isinstance(batch, supported_dtypes):
             return batch.to(device, non_blocking=non_blocking)
+        # With `cpu_sampling`, each train item is a list of subgraphs
+        if batch.__class__ is list and all(x.__class__ is list for x in batch):
+            return [self.transfer_batch_to_device(x, device, dataloader_idx)
+                    for x in batch]
         if batch.__class__ is list and all(isinstance(x, supported_dtypes) for x in batch):
             return [x.to(device, non_blocking=non_blocking) for x in batch]
         if batch.__class__ is tuple and all(isinstance(x, supported_dtypes) for x in batch):
@@ -350,6 +450,14 @@ class BaseDataModule(LightningDataModule):
 
         Use self.on_device_<stage>_transform, to benefit from this hook.
         """
+        # With `cpu_sampling`, the DataLoader workers already ran the
+        # sampling part of the on-device train transforms, and each
+        # train item is a list of subgraphs. Each subgraph becomes an
+        # item of the batch, as with `disjoint=True` on device
+        cpu_sampled = sample_list[0].__class__ is list
+        if cpu_sampled:
+            sample_list = [x for subgraphs in sample_list for x in subgraphs]
+
         # Since NAGBatch.from_nag_list takes a bit of time, we asked
         # src.loader.DataLoader to simply pass a list of NAG objects,
         # waiting for to be batched on device.
@@ -361,7 +469,9 @@ class BaseDataModule(LightningDataModule):
         # Here we run on_device_transform, which contains NAG transforms
         # that we could not / did not want to run using CPU-based
         # DataLoaders
-        if self.trainer.training:
+        if cpu_sampled:
+            on_device_transform = self.on_device_train_transform_after_sampling
+        elif self.trainer.training:
             on_device_transform = self.on_device_train_transform
         elif self.trainer.validating:
             on_device_transform = self.on_device_val_transform
