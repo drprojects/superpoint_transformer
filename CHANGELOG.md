@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `DataLoader(cross_epoch_prefetch=True)`, exposed as
+`datamodule.dataloader.cross_epoch_prefetch` (default `True` in
+`configs/datamodule/semantic/default.yaml`, used by the train and val
+dataloaders): the workers keep prefetching across epoch boundaries. PyTorch
+workers only start loading an epoch when `iter(loader)` is called, even with
+`persistent_workers=True`, so each epoch started by waiting for its first
+batches (about 1 s per epoch for EZ-SP DALES on an RTX A6000). The shuffling
+still changes at each epoch, but a given seed no longer gives the same order as
+before. Set it to `False` to recover the previous behavior
+
 ### Changed
 
 - Moved the graph connected components and graph partitioning algorithms 
