@@ -211,7 +211,7 @@ class SelfAttentionBlock(nn.Module):
         v = v[t]  # [E, H, C // H]
 
         # Apply scaling on the queries.
-        q = q * self.qk_scale(s)
+        q = q * self.qk_scale(s, num_nodes=N)
 
         # TODO: add the relative positional encodings to the
         #  compatibilities here
@@ -300,8 +300,11 @@ class SelfAttentionBlock(nn.Module):
 
             v = v + rpe.view(E, H, -1)
 
-        # Compute compatibility scores from the query-key products
-        compat = torch.einsum('ehd, ehd -> eh', q, k)  # [E, H]
+        # Compute compatibility scores from the query-key products.
+        # NB: `torch.einsum` would run this as a batched matmul of E*H
+        # (1, D) x (D, 1) matrices, ~10x slower than the elementwise
+        # product and sum, forward and backward
+        compat = (q * k).sum(dim=-1)  # [E, H]
 
         # Compute the attention scores with scaled softmax
         attn = softmax(compat, index=s, dim=0, num_nodes=N)  # [E, H]
