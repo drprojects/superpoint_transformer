@@ -191,7 +191,7 @@ class BaseAttentivePool(nn.Module):
         v = kv[:, DH:].view(Nc, H, -1)  # [Nc, H, C // H]
 
         # Apply scaling on the queries
-        q = q * self.qk_scale(index)
+        q = q * self.qk_scale(index, num_nodes=Np)
 
         # TODO: add the relative positional encodings to the
         #  compatibilities here

@@ -211,7 +211,7 @@ class SelfAttentionBlock(nn.Module):
         v = v[t]  # [E, H, C // H]
 
         # Apply scaling on the queries.
-        q = q * self.qk_scale(s)
+        q = q * self.qk_scale(s, num_nodes=N)
 
         # TODO: add the relative positional encodings to the
         #  compatibilities here
