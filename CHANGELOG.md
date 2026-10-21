@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `DataLoader(cross_epoch_prefetch=True)`, exposed as
+`datamodule.dataloader.cross_epoch_prefetch` (default `True` in
+`configs/datamodule/semantic/default.yaml`, used by the train and val
+dataloaders): the workers keep prefetching across epoch boundaries. PyTorch
+workers only start loading an epoch when `iter(loader)` is called, even with
+`persistent_workers=True`, so each epoch started by waiting for its first
+batches (about 1 s per epoch for EZ-SP DALES on an RTX A6000). The shuffling
+still changes at each epoch, but a given seed no longer gives the same order as
+before. Set it to `False` to recover the previous behavior
+
 ### Changed
 
 - Moved the graph connected components and graph partitioning algorithms 
@@ -38,11 +48,42 @@ them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 
 - `SelfAttentionBlock` computes its linear edge RPEs (keys, queries, values)
 with one matmul (EZ-SP train step -4%, [#244](https://github.com/drprojects/superpoint_transformer/pull/244))
+- Faster and more precise `GraphNorm`: per-graph sums as one-hot matrix
+products instead of a scatter (EZ-SP train step -8%, [#240](https://github.com/drprojects/superpoint_transformer/pull/240))
+- `Data.select()` computes `num_nodes`, `num_edges` and the edge keys once
+instead of once per attribute ([#239](https://github.com/drprojects/superpoint_transformer/pull/239))
+- Semantic configs (`instance: False`) no longer load the instance labels `obj`
+(EZ-SP train step -11%, [#238](https://github.com/drprojects/superpoint_transformer/pull/238))
+- Faster attention: query-key products computed without `torch.einsum`
+(EZ-SP train step -21%, [#237](https://github.com/drprojects/superpoint_transformer/pull/237))
+- Faster preprocessing with `xy_tiling` or `pc_tiling`: each raw cloud is now
+read once for all its tiles, instead of once per tile (eg 9 times per DALES
+tile with `xy_tiling: 3`). `BaseDataset.process()` keeps the last raw cloud
+read in memory and reuses it for the following tiles of the same raw cloud.
+On 3 DALES tiles (27 sub-tiles, without `pre_transform`), reading, tiling and
+saving go from 59.1 to 13.9 s. This only saves reads if the tiles of a raw
+cloud are processed consecutively, as with the default `processed_paths`
+order: the number of reads is logged at the end of the preprocessing, with a
+warning if a raw cloud was read several times. Preprocessing outputs and hash
+are unchanged
+- Removed some avoidable CPU-GPU syncs in the model: the default
+qk-scale of the attention and pooling blocks counts the neighbors with a
+known output size instead of `bincount` (`build_qk_scale_func` functions
+now accept an optional `num_nodes`), and `scatter_mean_weighted` /
+`UnitSphereNorm` no longer read GPU values on CPU (the non-negative
+weights check of `scatter_mean_weighted` now only runs in debug mode).
+Outputs are unchanged. The speedup is negligible for the published
+configs, whose train step is GPU-bound.
 
 ### Deprecated
 
 ### Fixed
 
+- `OnTheFlyHorizontalEdgeFeatures`: at train time, about half of the
+horizontal edges were flipped without flipping the sign of their `mean_off`
+edge feature, which then pointed the wrong way. See
+[#232](https://github.com/drprojects/superpoint_transformer/pull/232) for
+details
 - `WeightedFocalLoss` no longer reduces the loss twice:
   - with `reduction='mean'`, it returned `mean(focal_term) * mean(CE)`
   instead of `mean(focal_term * CE)`, so the focal term did not modulate each
@@ -57,7 +98,8 @@ with one matmul (EZ-SP train step -4%, [#244](https://github.com/drprojects/supe
 - `loss_type='wce'` and `loss_type='wce_kl'`: the dominant-label histogram
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
-`[[6, 0, 0], [0, 0, 9]]`)
+`[[6, 0, 0], [0, 0, 9]]`), also in the multi-stage `wce` loss
+([#242](https://github.com/drprojects/superpoint_transformer/pull/242))
 - **⚠️ Breaking Change**: `cluster_radius_nn_graph`, which builds the
 horizontal graph of each partition level in `RadiusHorizontalGraph` (and the
 instance graph of `OnTheFlyInstanceGraph` for SuperCluster), compared squared
@@ -158,6 +200,13 @@ with the new `per_axis` parameter:
   made a difference for anisotropic scalings. With an anisotropic scaling, the
   `std_off` and `mean_dist` edge features are approximated with the isotropic
   equivalent of the scale
+- `test/loss` was logged twice by `SemanticSegmentationModule`
+- `RandomTiltAndRotate` skipped the rotation when `phi=0`: KITTI-360 was never
+rotated, its config now sets `tilt_n_rotate_theta: 0` to keep this behavior
+([#241](https://github.com/drprojects/superpoint_transformer/pull/241))
+- `RandomTiltAndRotate` drew the tilt with a standard deviation `sqrt(sigma)`
+instead of `sigma`: DALES, S3DIS and ScanNet now use `tilt_n_rotate_phi: 4.15`
+to keep the same tilts ([#241](https://github.com/drprojects/superpoint_transformer/pull/241))
 
 ### Removed
 
