@@ -155,7 +155,13 @@ class BaseDataset(InMemoryDataset):
         grid. Note that this is blind to the orientation and shape of
         your cloud and is typically recommended for densely sampled,
         square cloud tiles (e.g. the DALES dataset). For a tiling that
-        better follows the XY structure of a cloud, see `pc_tiling`
+        better follows the XY structure of a cloud, see `pc_tiling`.
+        To avoid reading each raw cloud once per tile, `process` keeps
+        the last raw cloud read in memory and reuses it for the
+        following tiles of the same raw cloud (same for `pc_tiling`).
+        This only saves reads if the tiles of a raw cloud are processed
+        consecutively (as with the default `processed_paths` order):
+        the cache stats logged at the end of `process` allow checking it
     :param pc_tiling: int
         If provided, the raw point cloud tiles will be split into
         smaller sub-tiles before calling `pre_transform` at
@@ -164,7 +170,9 @@ class BaseDataset(InMemoryDataset):
         some preprocessing and inference operations when CPU/GPU RAM is
         scarce. When using `pc_tiling`, each raw input cloud will be
         recursively split into `2^pc_tiling` tiles of point counts,
-        based on the principal component of the cloud's XY coordinates
+        based on the principal component of the cloud's XY coordinates.
+        As for `xy_tiling`, `process` reads each raw cloud only once for
+        all its tiles, if these are processed consecutively
     :param val_mixed_in_train: bool
         Whether the 'val' stage data is saved in the same clouds as the
         'train' stage. This may happen when the stage splits are
@@ -785,9 +793,86 @@ class BaseDataset(InMemoryDataset):
             else:
                 os.makedirs(test_dir, exist_ok=True)
 
+        # With `xy_tiling` or `pc_tiling`, each raw cloud yields
+        # several tiles, which would otherwise each read the same raw
+        # file from disk. We keep the last raw cloud read in memory, so
+        # consecutive tiles of the same raw cloud only read it once
+        # (see `_read_raw_cloud`). This only pays off if the tiles of a
+        # raw cloud are processed one after the other, which is the
+        # case with the order of `self.processed_paths` (see
+        # `all_cloud_ids`). The cache stats logged below allow checking
+        # this still holds
+        self._raw_cloud_cache = None
+        if self.xy_tiling is not None or self.pc_tiling is not None:
+            self._raw_cloud_cache = {
+                'path': None, 'data': None, 'reads': 0, 'hits': 0}
+
         # Process clouds one by one
         for p in tq(self.processed_paths):
             self._process_single_cloud(p, verbose=verbose)
+
+        # Report the cache efficiency and free the cached raw cloud
+        if self._raw_cloud_cache is not None:
+            self._log_raw_cloud_cache_stats()
+        self._raw_cloud_cache = None
+
+    def _read_raw_cloud(self, raw_path: str) -> 'Data':
+        """Read the raw cloud at `raw_path` with
+        `self.sanitized_read_single_raw_cloud`.
+
+        When `xy_tiling` or `pc_tiling` is used, `self.process` keeps
+        the last raw cloud read in memory, which is returned as is if
+        the next tile comes from the same `raw_path`. This avoids
+        reading the same raw file once per tile. This is safe because
+        neither `SampleXYTiling` nor `SampleRecursiveMainXYAxisTiling`
+        modifies its input: `Data.select` returns a new `Data` that
+        does not share memory with it.
+        """
+        # `getattr` since the cache only exists while `self.process`
+        # runs, eg not when calling `_process_single_cloud` directly
+        cache = getattr(self, '_raw_cloud_cache', None)
+        if cache is None:
+            return self.sanitized_read_single_raw_cloud(raw_path)
+
+        if cache['path'] == raw_path:
+            cache['hits'] += 1
+            return cache['data']
+
+        # Release the previous raw cloud before reading the next one,
+        # so that at most one raw cloud is held in memory at a time
+        cache['path'], cache['data'] = None, None
+        data = self.sanitized_read_single_raw_cloud(raw_path)
+        cache['path'], cache['data'] = raw_path, data
+        cache['reads'] += 1
+        return data
+
+    def _log_raw_cloud_cache_stats(self) -> None:
+        """Log how many raw cloud reads the tiling raw cloud cache
+        saved during `self.process`, and warn if it saved fewer than
+        expected, eg because the tiles of a same raw cloud are no
+        longer processed consecutively.
+        """
+        reads = self._raw_cloud_cache['reads']
+        hits = self._raw_cloud_cache['hits']
+        if reads == 0:
+            return
+        log.info(
+            f"Tiling raw cloud cache: {reads + hits} tiles processed "
+            f"with {reads} raw cloud reads ({hits} reads saved)")
+
+        # Each raw cloud should be read only once. If a raw cloud is
+        # read several times, its tiles were not processed
+        # consecutively and the cache was (partly) useless
+        num_raw = len({
+            self.processed_to_raw_path(p) for p in self.processed_paths})
+        if reads > num_raw:
+            log.warning(
+                f"Tiling raw cloud cache: {reads} raw cloud reads for "
+                f"only {num_raw} distinct raw clouds. The tiles of a raw "
+                f"cloud are not processed consecutively, so the same raw "
+                f"cloud is read several times. Make sure "
+                f"`processed_paths` keeps the tiles of each raw cloud "
+                f"next to each other.")
 
     def _process_single_cloud(
             self,
@@ -812,7 +897,7 @@ class BaseDataset(InMemoryDataset):
                 torch.cuda.synchronize()
             start = time()
         raw_path = self.processed_to_raw_path(cloud_path)
-        data = self.sanitized_read_single_raw_cloud(raw_path)
+        data = self._read_raw_cloud(raw_path)
         if verbose or src.is_debug_enabled():
             if torch.cuda.is_available():
                 torch.cuda.synchronize()

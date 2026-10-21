@@ -46,6 +46,16 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- Faster preprocessing with `xy_tiling` or `pc_tiling`: each raw cloud is now
+read once for all its tiles, instead of once per tile (eg 9 times per DALES
+tile with `xy_tiling: 3`). `BaseDataset.process()` keeps the last raw cloud
+read in memory and reuses it for the following tiles of the same raw cloud.
+On 3 DALES tiles (27 sub-tiles, without `pre_transform`), reading, tiling and
+saving go from 59.1 to 13.9 s. This only saves reads if the tiles of a raw
+cloud are processed consecutively, as with the default `processed_paths`
+order: the number of reads is logged at the end of the preprocessing, with a
+warning if a raw cloud was read several times. Preprocessing outputs and hash
+are unchanged
 - Removed some avoidable CPU-GPU syncs in the model: the default
 qk-scale of the attention and pooling blocks counts the neighbors with a
 known output size instead of `bincount` (`build_qk_scale_func` functions
