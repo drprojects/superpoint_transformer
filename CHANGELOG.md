@@ -96,7 +96,8 @@ details
 - `loss_type='wce'` and `loss_type='wce_kl'`: the dominant-label histogram
 was written into every row instead of only the row of each node (eg
 `[[5, 1, 0], [0, 2, 7]]` gave `[[6, 0, 9], [6, 0, 9]]` instead of
-`[[6, 0, 0], [0, 0, 9]]`)
+`[[6, 0, 0], [0, 0, 9]]`), also in the multi-stage `wce` loss
+([#242](https://github.com/drprojects/superpoint_transformer/pull/242))
 - **⚠️ Breaking Change**: `cluster_radius_nn_graph`, which builds the
 horizontal graph of each partition level in `RadiusHorizontalGraph` (and the
 instance graph of `OnTheFlyInstanceGraph` for SuperCluster), compared squared
