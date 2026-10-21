@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `DataLoader(cross_epoch_prefetch=True)`, exposed as
+`datamodule.dataloader.cross_epoch_prefetch` (default `True` in
+`configs/datamodule/semantic/default.yaml`, used by the train and val
+dataloaders): the workers keep prefetching across epoch boundaries. PyTorch
+workers only start loading an epoch when `iter(loader)` is called, even with
+`persistent_workers=True`, so each epoch started by waiting for its first
+batches (about 1 s per epoch for EZ-SP DALES on an RTX A6000). The shuffling
+still changes at each epoch, but a given seed no longer gives the same order as
+before. Set it to `False` to recover the previous behavior
+
 ### Changed
 
 - Moved the graph connected components and graph partitioning algorithms 
@@ -46,11 +56,24 @@ cloud are processed consecutively, as with the default `processed_paths`
 order: the number of reads is logged at the end of the preprocessing, with a
 warning if a raw cloud was read several times. Preprocessing outputs and hash
 are unchanged
+- Removed some avoidable CPU-GPU syncs in the model: the default
+qk-scale of the attention and pooling blocks counts the neighbors with a
+known output size instead of `bincount` (`build_qk_scale_func` functions
+now accept an optional `num_nodes`), and `scatter_mean_weighted` /
+`UnitSphereNorm` no longer read GPU values on CPU (the non-negative
+weights check of `scatter_mean_weighted` now only runs in debug mode).
+Outputs are unchanged. The speedup is negligible for the published
+configs, whose train step is GPU-bound.
 
 ### Deprecated
 
 ### Fixed
 
+- `OnTheFlyHorizontalEdgeFeatures`: at train time, about half of the
+horizontal edges were flipped without flipping the sign of their `mean_off`
+edge feature, which then pointed the wrong way. See
+[#232](https://github.com/drprojects/superpoint_transformer/pull/232) for
+details
 - `WeightedFocalLoss` no longer reduces the loss twice:
   - with `reduction='mean'`, it returned `mean(focal_term) * mean(CE)`
   instead of `mean(focal_term * CE)`, so the focal term did not modulate each
