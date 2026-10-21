@@ -101,7 +101,8 @@ class UnitSphereNorm(nn.Module):
             center = pos.mean(dim=0)
         else:
             w_sum = w.float().sum()
-            w_sum = 1 if w_sum == 0 else w_sum
+            # NB: `torch.where` avoids the CPU-GPU sync of a Python `if`
+            w_sum = torch.where(w_sum == 0, 1, w_sum)
             center = (pos * w.view(-1, 1).float()).sum(dim=0) / w_sum
         center = center.view(1, -1)
 

@@ -267,6 +267,8 @@ class BaseDataModule(LightningDataModule):
             num_workers=self.hparams.dataloader.num_workers,
             pin_memory=self.hparams.dataloader.pin_memory,
             persistent_workers=self.hparams.dataloader.persistent_workers,
+            cross_epoch_prefetch=self.hparams.dataloader.get(
+                'cross_epoch_prefetch', False),
             shuffle=True)
 
     def val_dataloader(self) -> DataLoader:
@@ -276,6 +278,8 @@ class BaseDataModule(LightningDataModule):
             num_workers=self.hparams.dataloader.num_workers,
             pin_memory=self.hparams.dataloader.pin_memory,
             persistent_workers=self.hparams.dataloader.persistent_workers,
+            cross_epoch_prefetch=self.hparams.dataloader.get(
+                'cross_epoch_prefetch', False),
             shuffle=False)
 
     def test_dataloader(self) -> DataLoader:

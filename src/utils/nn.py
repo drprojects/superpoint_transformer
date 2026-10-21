@@ -72,24 +72,40 @@ def _linear_init(m, method='xavier_uniform', activation='leaky_relu'):
         raise NotImplementedError(f"Unknown initialization method: {method}")
 
 
+def _index_count(s, num_nodes=None):
+    """Number of occurrences of each index in `s`, i.e. the number of
+    neighbors of each node if `s` is `edge_index[0]`.
+
+    Same as `s.bincount()`, but if the number of nodes is provided, the
+    output size is known in advance. This avoids the CPU-GPU sync of
+    `bincount`, which needs to read `s.max()` on CPU to size its output.
+    """
+    if num_nodes is None:
+        return s.bincount()
+    return torch.zeros(
+        num_nodes, dtype=torch.long, device=s.device).index_add_(
+        0, s, torch.ones_like(s))
+
+
 def build_qk_scale_func(dim, num_heads, qk_scale):
     """Builds the QK-scale function that will be used to produce
     the qk-scale. This function follows the template:
-        f(s), where `s` is the `edge_index[0]`
-    even if it does not use it.
+        f(s, num_nodes=None), where `s` is the `edge_index[0]`
+    even if it does not use it. Passing the number of nodes `num_nodes`
+    avoids a CPU-GPU sync.
     """
     # If qk_scale is not provided, the default behavior will be
     # 1/(sqrt(dim)*sqrt(num))
     if qk_scale is None:
-        def f(s):
+        def f(s, num_nodes=None):
             D = (dim // num_heads) ** -0.5
-            G = (s.bincount() ** -0.5)[s].view(-1, 1, 1)
+            G = (_index_count(s, num_nodes) ** -0.5)[s].view(-1, 1, 1)
             return D * G
         return f
 
     # If qk_scale is provided as a scalar, it will be used as is
     if not isinstance(qk_scale, str):
-        def f(s):
+        def f(s, num_nodes=None):
             return qk_scale
         return f
 
@@ -98,28 +114,28 @@ def build_qk_scale_func(dim, num_heads, qk_scale):
     qk_scale = qk_scale.lower().replace(' ', '')
 
     if qk_scale in ['d+g', 'g+d']:
-        def f(s):
+        def f(s, num_nodes=None):
             D = (dim // num_heads) ** -0.5
-            G = (s.bincount() ** -0.5)[s].view(-1, 1, 1)
+            G = (_index_count(s, num_nodes) ** -0.5)[s].view(-1, 1, 1)
             return D + G
         return f
 
     if qk_scale in ['dg', 'gd', 'd*g', 'g*d', 'd.g', 'g.d']:
-        def f(s):
+        def f(s, num_nodes=None):
             D = (dim // num_heads) ** -0.5
-            G = (s.bincount() ** -0.5)[s].view(-1, 1, 1)
+            G = (_index_count(s, num_nodes) ** -0.5)[s].view(-1, 1, 1)
             return D * G
         return f
 
     if qk_scale == 'd':
-        def f(s):
+        def f(s, num_nodes=None):
             D = (dim // num_heads) ** -0.5
             return D
         return f
 
     if qk_scale == 'g':
-        def f(s):
-            G = (s.bincount() ** -0.5)[s].view(-1, 1, 1)
+        def f(s, num_nodes=None):
+            G = (_index_count(s, num_nodes) ** -0.5)[s].view(-1, 1, 1)
             return G
         return f
 

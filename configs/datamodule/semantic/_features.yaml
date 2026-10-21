@@ -70,7 +70,7 @@ point_full_res_key: ['sub']  # key used to store indices of full-resolution poin
 point_save_keys: null  # level-0 keys to save on disk after preprocessing, 'null' to save all
 point_no_save_keys: ['edge_index', 'edge_attr', 'neighbor_index', 'neighbor_distance', 'node_size', 'grid_size', 'coords']  # level-0 keys to NOT save on disk after preprocessing
 segment_save_keys: null  # level-1+ keys to save on disk after preprocessing, 'null' to save all
-point_basic_load_keys: ['pos', 'pos_offset', 'y', 'obj', 'super_index',]  # needed point attributes, other than features
+point_basic_load_keys: ['pos', 'pos_offset', 'y', 'super_index',]  # needed point attributes, other than features. NB: instance labels (`obj_key`) are only loaded if `instance: True`
 segment_basic_load_keys: ['pos', 'y', 'super_index', 'sub', 'edge_index', 'edge_attr',]  # needed segment attributes, other than features
 point_load_keys: ${eval:'list(set(${datamodule.point_basic_load_keys} + ${datamodule.obj_key} * ${datamodule.instance} + ${datamodule.point_hf} + ${datamodule.post_cnn_point_hf} + ${datamodule.extra_point_hf} + ${datamodule.point_full_res_key} * ${datamodule.load_full_res_idx}))'}  # level-0 keys to load from disk after preprocessing, 'null' to load all
 segment_load_keys: ${eval:'list(set( ${datamodule.segment_basic_load_keys} + ${datamodule.obj_key} * ${datamodule.instance} + ${datamodule.segment_hf} + ${datamodule.extra_segment_hf} ))'}  # level-1+ keys to load from disk after preprocessing, 'null' to load all
