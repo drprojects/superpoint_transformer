@@ -2,7 +2,8 @@ import torch
 from torch import nn
 from torch_scatter import scatter
 from src.utils import scatter_mean_weighted
-from torch_geometric.nn.norm import LayerNorm, InstanceNorm, GraphNorm
+from torch_geometric.nn.norm import LayerNorm, InstanceNorm
+from torch_geometric.nn.norm import GraphNorm as PyGGraphNorm
 from torch_geometric.nn.inits import ones, zeros
 from torch_geometric.utils import degree
 
@@ -100,7 +101,8 @@ class UnitSphereNorm(nn.Module):
             center = pos.mean(dim=0)
         else:
             w_sum = w.float().sum()
-            w_sum = 1 if w_sum == 0 else w_sum
+            # NB: `torch.where` avoids the CPU-GPU sync of a Python `if`
+            w_sum = torch.where(w_sum == 0, 1, w_sum)
             center = (pos * w.view(-1, 1).float()).sum(dim=0) / w_sum
         center = center.view(1, -1)
 
@@ -237,4 +239,38 @@ class GroupNorm(torch.nn.Module):
                 f'num_groups={self.num_groups}, mode={self.mode})')
 
 
-INDEX_BASED_NORMS = (LayerNorm, InstanceNorm, GraphNorm, GroupNorm)
+class GraphNorm(PyGGraphNorm):
+    """PyG's `GraphNorm`, with the per-graph means and variances
+    computed as matrix products with the one-hot encoding of `batch`.
+
+    PyG's implementation scatter-adds all the nodes into a handful of
+    graph bins, whose atomic additions are serialized on the GPU. Same
+    parameters and outputs (up to float rounding).
+
+    The one-hot matrix has one column per graph: beyond
+    `max_one_hot_graphs` graphs (e.g. `norm_mode='segment'` or
+    `'node'`), it is slower than PyG's scatter, and large, so PyG's
+    implementation is used instead.
+    """
+
+    max_one_hot_graphs = 64
+
+    def forward(self, x, batch=None, batch_size=None):
+        if batch is None:
+            batch = x.new_zeros(x.size(0), dtype=torch.long)
+        if batch_size is None:
+            batch_size = int(batch.max()) + 1
+        if batch_size > self.max_one_hot_graphs:
+            return super().forward(x, batch)
+
+        one_hot = torch.nn.functional.one_hot(batch, batch_size).to(x.dtype)
+        count = one_hot.sum(dim=0).clamp(min=1).view(-1, 1)
+
+        mean = one_hot.t() @ x / count
+        out = x - (one_hot @ mean) * self.mean_scale
+        var = one_hot.t() @ out.pow(2) / count
+        std = one_hot @ (var + self.eps).sqrt()
+        return self.weight * out / std + self.bias
+
+
+INDEX_BASED_NORMS = (LayerNorm, InstanceNorm, PyGGraphNorm, GroupNorm)

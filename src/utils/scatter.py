@@ -1,5 +1,6 @@
 import math
 import torch
+import src
 from torch_scatter import scatter_sum, scatter_mean, scatter_min
 from itertools import combinations_with_replacement
 from src.utils.edge import edge_wise_points
@@ -16,7 +17,10 @@ __all__ = [
 
 def scatter_mean_weighted(x, idx, w, dim_size=None):
     """Helper for scatter_mean with weights"""
-    assert w.ge(0).all(), "Only positive weights are accepted"
+    # Checking the weights requires reading them on CPU, which causes a
+    # CPU-GPU sync, so this is only done in debug mode
+    if src.is_debug_enabled():
+        assert w.ge(0).all(), "Only positive weights are accepted"
     assert w.dim() == idx.dim() == 1, "w and idx should be 1D Tensors"
     assert x.shape[0] == w.shape[0] == idx.shape[0], \
         "Only supports weighted mean along the first dimension"
@@ -32,7 +36,9 @@ def scatter_mean_weighted(x, idx, w, dim_size=None):
     # Extract the weighted mean from the result
     w_segment = wx_segment[:, 0]
     x_segment = wx_segment[:, 1:]
-    w_segment[w_segment == 0] = 1
+    # NB: unlike boolean mask indexing, `masked_fill` does not need to
+    # know the number of masked elements on CPU, hence no CPU-GPU sync
+    w_segment = w_segment.masked_fill(w_segment == 0, 1)
     mean_segment = x_segment / w_segment.view(-1, 1)
 
     return mean_segment

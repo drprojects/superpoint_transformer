@@ -99,6 +99,10 @@ dataloader:
     num_workers: 4
     pin_memory: True
     persistent_workers: True
+    # Keep the workers prefetching across epoch boundaries, so that train
+    # and val epochs do not start by waiting for their first batches.
+    # Only used by the train and val dataloaders, ignored if num_workers=0
+    cross_epoch_prefetch: True
 
 # Whether the data transfer across devices must be non-blocking. This is
 # ignored if the training device is "cpu" or "mps"
