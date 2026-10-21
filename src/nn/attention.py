@@ -211,7 +211,7 @@ class SelfAttentionBlock(nn.Module):
         v = v[t]  # [E, H, C // H]
 
         # Apply scaling on the queries.
-        q = q * self.qk_scale(s)
+        q = q * self.qk_scale(s, num_nodes=N)
 
         # TODO: add the relative positional encodings to the
         #  compatibilities here
@@ -221,9 +221,13 @@ class SelfAttentionBlock(nn.Module):
         #  - mlp (L-LN-A-L), learnable lookup table (see Stratified Transformer)
         #  - scalar rpe, vector rpe (see Stratified Transformer)
 
+        # Relative positional encodings from edge features, computed
+        # together (see `_edge_rpe`)
+        rpe_k, rpe_q, rpe_v = self._edge_rpe(edge_attr)
+
         # Relative positional encoding from edge features for keys
         if self.k_rpe is not None and edge_attr is not None:
-            rpe = self.k_rpe(edge_attr)
+            rpe = rpe_k
 
             # Expand RPE to all heads if heads share the RPE encoder
             if self.heads_share_rpe:
@@ -236,7 +240,7 @@ class SelfAttentionBlock(nn.Module):
             if self.q_on_minus_rpe:
                 rpe = self.q_rpe(-edge_attr)
             else:
-                rpe = self.q_rpe(edge_attr)
+                rpe = rpe_q
 
             # Expand RPE to all heads if heads share the RPE encoder
             if self.heads_share_rpe:
@@ -247,7 +251,7 @@ class SelfAttentionBlock(nn.Module):
             if self.q_on_minus_rpe:
                 rpe = self.k_rpe(-edge_attr)
             else:
-                rpe = self.k_rpe(edge_attr)
+                rpe = rpe_k
 
             # Expand RPE to all heads if heads share the RPE encoder
             if self.heads_share_rpe:
@@ -292,7 +296,7 @@ class SelfAttentionBlock(nn.Module):
 
         # Relative positional encoding from edge features for values
         if self.v_rpe is not None and edge_attr is not None:
-            rpe = self.v_rpe(edge_attr)
+            rpe = rpe_v
 
             # Expand RPE to all heads if heads share the RPE encoder
             if self.heads_share_rpe:
@@ -300,8 +304,11 @@ class SelfAttentionBlock(nn.Module):
 
             v = v + rpe.view(E, H, -1)
 
-        # Compute compatibility scores from the query-key products
-        compat = torch.einsum('ehd, ehd -> eh', q, k)  # [E, H]
+        # Compute compatibility scores from the query-key products.
+        # NB: `torch.einsum` would run this as a batched matmul of E*H
+        # (1, D) x (D, 1) matrices, ~10x slower than the elementwise
+        # product and sum, forward and backward
+        compat = (q * k).sum(dim=-1)  # [E, H]
 
         # Compute the attention scores with scaled softmax
         attn = softmax(compat, index=s, dim=0, num_nodes=N)  # [E, H]
@@ -323,6 +330,52 @@ class SelfAttentionBlock(nn.Module):
             x = self.out_drop(x)  # [N, C or out_dim]
 
         return x
+
+    def _edge_rpe(self, edge_attr):
+        """Apply the key, query and value RPE encoders to the edge
+        features `edge_attr`. The query encoder is skipped if
+        `q_on_minus_rpe`, since it takes `-edge_attr` as input.
+
+        The encoders which are `nn.Linear` (the default) are computed
+        with a single matmul on their concatenated weights. These
+        matmuls are thin (e.g. E x 32 -> 64): with TF32 on an RTX
+        A6000, cuBLAS picks a slow kernel for them at level-1 sizes,
+        which one larger matmul avoids. The parameters are unchanged.
+
+        :param edge_attr: FloatTensor of shape (E, Ce) or None
+        :return: (rpe_k, rpe_q, rpe_v), each None if the corresponding
+            encoder is None or skipped
+        """
+        out = [None, None, None]
+        if edge_attr is None:
+            return out
+        encoders = [
+            self.k_rpe,
+            self.q_rpe if not self.q_on_minus_rpe else None,
+            self.v_rpe]
+
+        # Encoders which are not `nn.Linear` are applied separately
+        linear = [i for i, m in enumerate(encoders) if isinstance(m, nn.Linear)]
+        for i, m in enumerate(encoders):
+            if m is not None and (len(linear) < 2 or i not in linear):
+                out[i] = m(edge_attr)
+        if len(linear) < 2:
+            return out
+
+        # The `nn.Linear` encoders as one matmul
+        modules = [encoders[i] for i in linear]
+        weight = torch.cat([m.weight for m in modules], dim=0)
+        bias = None
+        if any(m.bias is not None for m in modules):
+            bias = torch.cat([
+                m.bias if m.bias is not None
+                else m.weight.new_zeros(m.out_features)
+                for m in modules])
+        rpe = nn.functional.linear(edge_attr, weight, bias)
+        rpe = rpe.split([m.out_features for m in modules], dim=1)
+        for i, r in zip(linear, rpe):
+            out[i] = r
+        return out
 
     def extra_repr(self) -> str:
         return f'dim={self.dim}, num_heads={self.num_heads}'

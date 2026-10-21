@@ -1163,6 +1163,18 @@ def _on_the_fly_horizontal_edge_features(
 
     normal_key = 'mean_normal' if use_mean_normal else 'normal'
 
+    # The node selections of the sampling transforms (e.g.
+    # `SampleSegments`) renumber the nodes, so some edges may end up
+    # with source > target. Orient them back as source < target, and
+    # flip the sign of their antisymmetric `mean_off` accordingly. The
+    # other precomputed features (`std_off`, `mean_dist`) are symmetric
+    flip = se[0] > se[1]
+    se = torch.where(flip, se.flip(0), se)
+    if getattr(data, 'edge_attr', None) is not None:
+        edge_attr = data.edge_attr.clone()
+        edge_attr[flip, :3] = -edge_attr[flip, :3]
+        data.edge_attr = edge_attr
+
     assert is_trimmed(se), \
         "Expects the graph to be trimmed, consider using " \
         "`src.utils.to_trimmed()` before computing the features"
