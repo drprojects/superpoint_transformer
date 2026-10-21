@@ -46,6 +46,8 @@ your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
 them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
 `PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
+- Faster attention: query-key products computed without `torch.einsum`
+(EZ-SP train step -21%, [#237](https://github.com/drprojects/superpoint_transformer/pull/237))
 - Faster preprocessing with `xy_tiling` or `pc_tiling`: each raw cloud is now
 read once for all its tiles, instead of once per tile (eg 9 times per DALES
 tile with `xy_tiling: 3`). `BaseDataset.process()` keeps the last raw cloud
