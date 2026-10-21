@@ -483,8 +483,9 @@ def to_trimmed(edge_index, edge_attr=None, reduce='mean'):
     # Search for undirected edges, i.e. edges with (i,j) and (j,i)
     # both present in edge_index. Flip (j,i) into (i,j) to make them
     # redundant
+    # NB: this must not modify the input `edge_index` in place
     s_larger_t = edge_index[0] > edge_index[1]
-    edge_index[:, s_larger_t] = edge_index[:, s_larger_t].flip(0)
+    edge_index = torch.where(s_larger_t, edge_index.flip(0), edge_index)
 
     # Sort edges by row and remove duplicates
     if edge_attr is None:
