@@ -1113,14 +1113,6 @@ class SemanticSegmentationModule(LightningModule):
         # metrics computation on the test set
         if not self.test_has_target:
             return
-        
-        # As we don't prepare the train datasets, we cannot call
-        # train_dataset.get_class_weight(), so the loss computation without
-        # the proper weights is not possible.
-        if not self.trainer.datamodule.hparams.prepare_only_test:
-            self.log(
-                "test/loss", self.test_loss, on_step=False, on_epoch=True,
-                prog_bar=True)
 
         self.log(
             "test/loss", self.test_loss, on_step=False, on_epoch=True,
