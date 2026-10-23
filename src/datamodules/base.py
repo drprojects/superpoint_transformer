@@ -330,6 +330,11 @@ class BaseDataModule(LightningDataModule):
 
         if isinstance(batch, supported_dtypes):
             return batch.to(device, non_blocking=non_blocking)
+        # When `train_transform` samples subgraphs with `as_list=True`,
+        # each item is a list of subgraphs
+        if batch.__class__ is list and all(x.__class__ is list for x in batch):
+            return [self.transfer_batch_to_device(x, device, dataloader_idx)
+                    for x in batch]
         if batch.__class__ is list and all(isinstance(x, supported_dtypes) for x in batch):
             return [x.to(device, non_blocking=non_blocking) for x in batch]
         if batch.__class__ is tuple and all(isinstance(x, supported_dtypes) for x in batch):
@@ -354,6 +359,13 @@ class BaseDataModule(LightningDataModule):
 
         Use self.on_device_<stage>_transform, to benefit from this hook.
         """
+        # When `train_transform` samples subgraphs with `as_list=True`,
+        # each item is a list of subgraphs. Each subgraph becomes an
+        # item of the batch, as when sampling with `disjoint=True` on
+        # device
+        if sample_list[0].__class__ is list:
+            sample_list = [x for subgraphs in sample_list for x in subgraphs]
+
         # Since NAGBatch.from_nag_list takes a bit of time, we asked
         # src.loader.DataLoader to simply pass a list of NAG objects,
         # waiting for to be batched on device.

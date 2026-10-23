@@ -29,6 +29,7 @@ from src.transforms import (
     RemoveKeys,
     SampleXYTiling,
     SampleRecursiveMainXYAxisTiling)
+from src.transforms.sampling import BaseSampleSubgraphs
 from src.visualization import show
 
 DIR = os.path.dirname(os.path.realpath(__file__))
@@ -36,6 +37,18 @@ log = logging.getLogger(__name__)
 
 
 __all__ = ['BaseDataset']
+
+
+def _has_transform(transform, cls, **attrs):
+    """Whether `transform`, or one of the transforms it composes, is an
+    instance of `cls` with the given attribute values.
+    """
+    transforms = getattr(
+        transform, 'transforms', [] if transform is None else [transform])
+    return any(
+        isinstance(t, cls) and all(getattr(t, k, None) == v
+                                   for k, v in attrs.items())
+        for t in transforms)
 
 
 ########################################################################
@@ -289,6 +302,13 @@ class BaseDataset(InMemoryDataset):
                 "applied on your batches, make sure you moved them all to "
                 "'on_device_transform'.")
 
+        # With `in_memory`, the subgraphs sampled in `transform` would
+        # be the same at every epoch
+        if in_memory and _has_transform(transform, BaseSampleSubgraphs):
+            raise ValueError(
+                "`transform` samples subgraphs, which is not supported with "
+                "`in_memory=True`: the subgraphs would be sampled only once")
+
         # Prepare tiling arguments. Can either be XY tiling of PC
         # tiling but not both. XY tiling will apply a regular grid along
         # the XY axes to the data, regardless of its orientation, shape
@@ -345,11 +365,26 @@ class BaseDataset(InMemoryDataset):
         else:
             t = NAGRemoveKeys(level='all', keys=['is_val'], strict=False)
 
+        # A subgraph sampling in `transform` must not sample the
+        # validation points mixed in the train clouds, which are
+        # otherwise only removed on device, after `transform`
+        selects_is_val_on_cpu = _has_transform(
+            self.transform, NAGSelectByKey, key='is_val')
+        if self.stage == 'train' and self.val_mixed_in_train \
+                and _has_transform(self.transform, BaseSampleSubgraphs) \
+                and not selects_is_val_on_cpu:
+            raise ValueError(
+                "`transform` samples subgraphs, but the validation points "
+                "mixed in the train clouds are only removed on device, after "
+                "the sampling. Add `NAGSelectByKey(key='is_val', "
+                "negation=True)` before the sampling in `train_transform`")
+
         # Make sure a NAGRemoveKeys for `is_val` does not already exist
-        # in the `on_device_transform` before prepending the transform
-        if self._on_device_transform is not None and not any(
-                isinstance(odt, NAGSelectByKey) and odt.key == 'is_val'
-                for odt in self.on_device_transform.transforms):
+        # in the `transform` or `on_device_transform` before prepending
+        # the transform
+        if self._on_device_transform is not None \
+                and not selects_is_val_on_cpu and not _has_transform(
+                    self.on_device_transform, NAGSelectByKey, key='is_val'):
             self._on_device_transform.transforms = \
                 [t] + self._on_device_transform.transforms
 
@@ -1124,6 +1159,10 @@ class BaseDataset(InMemoryDataset):
         # Read the first NAG just to know how many levels we have in the
         # preprocessed NAGs.
         sample = self[0]
+        # A `transform` sampling subgraphs with `as_list=True` returns a
+        # list of subgraphs
+        if isinstance(sample, list):
+            sample = sample[0]
         sample_is_nag = isinstance(sample, NAG)
         low = sample.end_i_level if sample_is_nag else None
 

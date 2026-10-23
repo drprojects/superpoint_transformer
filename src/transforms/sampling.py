@@ -874,6 +874,18 @@ class BaseSampleSubgraphs(Transform):
         returned sampled nodes will still carry the 'batch' attribute of
         the input, allowing to distinguish between the different input
         graphs
+    :param as_list: bool
+        If True, return the sampled subgraphs as a list of NAGs instead
+        of a `NAGBatch`, with a single NAG when `disjoint=False` or
+        when the transform does not sample (eg `k<=0`). This is meant
+        for sampling in the CPU DataLoader workers, from
+        `train_transform`, i.e. before the clouds are batched on device.
+        The batching gives one 'batch' index per item, so with
+        `disjoint=True` the subgraphs of a cloud must be separate items
+        to remain separate batch items, as on device. With
+        `disjoint=False`, they share the cloud's 'batch' index on
+        device too. The following transforms of `train_transform` are
+        applied to each subgraph
     """
 
     _IN_TYPE = NAG
@@ -886,13 +898,15 @@ class BaseSampleSubgraphs(Transform):
             by_size=False,
             by_class=False,
             use_batch=True,
-            disjoint=True):
+            disjoint=True,
+            as_list=False):
         self.i_level = i_level
         self.k = k
         self.by_size = by_size
         self.by_class = by_class
         self.use_batch = use_batch
         self.disjoint = disjoint
+        self.as_list = as_list
 
     def _process(self, nag):
         device = nag.device
@@ -900,7 +914,7 @@ class BaseSampleSubgraphs(Transform):
         # Skip if i_level is None or k<=0. This may be useful to turn
         # this transform into an Identity, if need be
         if self.i_level is None or self.k <= 0:
-            return nag
+            return [nag] if self.as_list else nag
 
         # Initialization
         if self.i_level == -1:
@@ -1021,12 +1035,14 @@ class BaseSampleSubgraphs(Transform):
         # Select the chosen subgraphs and update the NAG structure
         # accordingly
         if isinstance(idx_subgraphs, list):
-            nag_subgraphs = NAGBatch.from_nag_list([
-                nag.select(i_level, idx) for idx in idx_subgraphs])
+            nag_list = [nag.select(i_level, idx) for idx in idx_subgraphs]
+            if self.as_list:
+                return nag_list
+            nag_subgraphs = NAGBatch.from_nag_list(nag_list)
         else:
             nag_subgraphs = nag.select(i_level, idx_subgraphs)
 
-        return nag_subgraphs
+        return [nag_subgraphs] if self.as_list else nag_subgraphs
 
     def _sample_subgraphs_from_seeds(self, nag, i_level, idx_seed):
         """Given a set of seed nodes `idx_seed`, sample subgraphs around
@@ -1080,6 +1096,18 @@ class SampleKHopSubgraphs(BaseSampleSubgraphs):
         as distinct NAGs themselves. Instead, when `disjoint=False`,
         subgraphs sampled in the same NAG will be long the same NAG.
         Hence, if two subgraphs share a node, they will be connected
+    :param as_list: bool
+        If True, return the sampled subgraphs as a list of NAGs instead
+        of a `NAGBatch`, with a single NAG when `disjoint=False` or
+        when the transform does not sample (eg `k<=0`). This is meant
+        for sampling in the CPU DataLoader workers, from
+        `train_transform`, i.e. before the clouds are batched on device.
+        The batching gives one 'batch' index per item, so with
+        `disjoint=True` the subgraphs of a cloud must be separate items
+        to remain separate batch items, as on device. With
+        `disjoint=False`, they share the cloud's 'batch' index on
+        device too. The following transforms of `train_transform` are
+        applied to each subgraph
     """
 
     def __init__(
@@ -1090,14 +1118,16 @@ class SampleKHopSubgraphs(BaseSampleSubgraphs):
             by_size=False,
             by_class=False,
             use_batch=True,
-            disjoint=False):
+            disjoint=False,
+            as_list=False):
         super().__init__(
             i_level=i_level,
             k=k,
             by_size=by_size,
             by_class=by_class,
             use_batch=use_batch,
-            disjoint=disjoint)
+            disjoint=disjoint,
+            as_list=as_list)
         self.hops = hops
 
     def _sample_subgraphs_from_seeds(self, nag, i_level, idx_seed):
@@ -1181,6 +1211,18 @@ class SampleRadiusSubgraphs(BaseSampleSubgraphs):
         If True the sampling will not be based on sphere of radius `r`
         but on a cylinder of axis Z. This is typically adapted for
         outdoor environments
+    :param as_list: bool
+        If True, return the sampled subgraphs as a list of NAGs instead
+        of a `NAGBatch`, with a single NAG when `disjoint=False` or
+        when the transform does not sample (eg `k<=0`). This is meant
+        for sampling in the CPU DataLoader workers, from
+        `train_transform`, i.e. before the clouds are batched on device.
+        The batching gives one 'batch' index per item, so with
+        `disjoint=True` the subgraphs of a cloud must be separate items
+        to remain separate batch items, as on device. With
+        `disjoint=False`, they share the cloud's 'batch' index on
+        device too. The following transforms of `train_transform` are
+        applied to each subgraph
     """
 
     def __init__(
@@ -1193,14 +1235,16 @@ class SampleRadiusSubgraphs(BaseSampleSubgraphs):
             by_class=False,
             use_batch=True,
             disjoint=False,
-            cylindrical=False):
+            cylindrical=False,
+            as_list=False):
         super().__init__(
             i_level=i_level,
             k=k,
             by_size=by_size,
             by_class=by_class,
             use_batch=use_batch,
-            disjoint=disjoint)
+            disjoint=disjoint,
+            as_list=as_list)
         self.r = r
         self.k_max = k_max
         self.cylindrical = cylindrical

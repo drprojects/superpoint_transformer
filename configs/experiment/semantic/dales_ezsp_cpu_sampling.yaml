@@ -1,0 +1,8 @@
+# @package _global_
+
+# Same as `experiment/semantic/dales_ezsp.yaml`, with the subgraph
+# sampling in the CPU DataLoader workers instead of on device, see
+# `datamodule/semantic/_cpu_sampling_ezsp.yaml`
+defaults:
+  - /experiment/semantic/dales_ezsp.yaml
+  - /datamodule/semantic/_cpu_sampling_ezsp.yaml
