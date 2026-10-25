@@ -40,7 +40,7 @@ scheduler:
   warmup_strategy: 'cos'
 
 criterion:
-  _target_: torch.nn.CrossEntropyLoss
+  _target_: src.loss.CrossEntropyLoss
   ignore_index: ${datamodule.num_classes}
 
 # Parameters declared here to facilitate tuning configs. Those are only
