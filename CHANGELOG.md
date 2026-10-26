@@ -86,6 +86,9 @@ generator (different draws for a given seed)
 
 ### Fixed
 
+- `MultiLoss.state_dict()` raised a `KeyError` before the class weights were
+set, and `MultiLoss.load_state_dict()` failed on its own `state_dict()`
+([#247](https://github.com/drprojects/superpoint_transformer/issues/247))
 - `OnTheFlyHorizontalEdgeFeatures`: at train time, about half of the
 horizontal edges were flipped without flipping the sign of their `mean_off`
 edge feature, which then pointed the wrong way. See
