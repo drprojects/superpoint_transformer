@@ -16,7 +16,9 @@ from src.utils import (
     knn_brute_force,
     split_histogram,
     cast_to_optimal_integer_type,
-    fill_list_with_string_indexing)
+    fill_list_with_string_indexing,
+    async_tensor,
+    multinomial_no_replacement)
 from src.transforms import Transform
 from src.data import (
     Data,
@@ -343,6 +345,7 @@ def _group_data(
                 csr_iiv[key] = item.is_index_value.clone()
                 for data_ in data_list:
                     data_[key].is_index_value[:] = False
+                    data_[key]._static_is_index_value = None
             elif torch.is_tensor(item) and (
                     key == 'batch' or data_0.__inc__(key, item) != 0):
                 raw[key] = torch.cat([
@@ -563,7 +566,12 @@ class QuantizePointCoordinates(Transform):
         if 'batch' not in data:
             cluster = grid_cluster(coords, torch.ones(3, device=coords.device))
         else:
-            cluster = voxel_grid(coords, 1, data.batch)
+            # Same as `voxel_grid(coords, 1, data.batch)`, which builds
+            # its voxel size with a blocking host-to-device copy
+            # (CPU-GPU sync)
+            cluster = grid_cluster(
+                torch.cat([coords, data.batch.view(-1, 1).type_as(coords)], 1),
+                torch.ones(4, dtype=coords.dtype, device=coords.device))
 
         # Reindex the clusters to make sure the indices used are
         # consecutive. Basically, we do not want cluster indices to span
@@ -816,7 +824,7 @@ class SampleSegments(Transform):
             weights /= weights.sum()
 
             # Generate sampling indices
-            idx = torch.multinomial(weights, num_keep, replacement=False)
+            idx = multinomial_no_replacement(weights, num_keep)
 
             # Select the nodes and update the NAG structure accordingly
             nag = nag.select(i_level, idx)
@@ -944,16 +952,24 @@ class BaseSampleSubgraphs(Transform):
         if batch is not None and self.use_batch:
             idx_list = []
 
+            # Read the number of nodes of each batch item on CPU, in a
+            # single CPU-GPU sync. Sorting the nodes by batch item then
+            # gives the nodes of each item as a slice, without one
+            # CPU-GPU sync per item
+            batch_counts = batch.unique(return_counts=True)[1].tolist()
+            num_batch = len(batch_counts)
+            batch_order = batch.argsort(stable=True)
+            batch_offsets = [0]
+            for count in batch_counts[:-1]:
+                batch_offsets.append(batch_offsets[-1] + count)
+
             # Shuffle the order of the batch items, to not always
             # prioritize the ones with the lowest batch index
-            batch_indices = batch.unique()
-            num_batch = batch_indices.numel()
-            batch_indices = batch_indices[torch.randperm(num_batch)]
+            batch_indices = torch.randperm(num_batch).tolist()
 
             # Estimate the maximum number of items to pick in each batch
             num_sampled = 0
-            k_batch = torch.div(k, num_batch, rounding_mode='floor')
-            k_batch = k_batch.maximum(torch.ones_like(k_batch))
+            k_batch = max(k // num_batch, 1)
 
             for i_step, i_batch in enumerate(batch_indices):
 
@@ -967,10 +983,10 @@ class BaseSampleSubgraphs(Transform):
 
                 # Compute the sampling indices for the NAG at hand. A
                 # NAG cannot provide more seeds than it has nodes
-                mask = torch.where(i_batch == batch)[0]
-                k_batch = min(int(k_batch), mask.numel())
-                idx_ = torch.multinomial(
-                    weights[mask], k_batch, replacement=False)
+                start = batch_offsets[i_batch]
+                mask = batch_order[start:start + batch_counts[i_batch]]
+                k_batch = min(k_batch, batch_counts[i_batch])
+                idx_ = multinomial_no_replacement(weights[mask], k_batch)
                 idx_list.append(mask[idx_])
 
                 # Update number of sampled subgraphs
@@ -981,7 +997,7 @@ class BaseSampleSubgraphs(Transform):
             # Aggregate sampling indices
             idx_seed = torch.cat(idx_list)
         else:
-            idx_seed = torch.multinomial(weights, k, replacement=False)
+            idx_seed = multinomial_no_replacement(weights, k)
 
         # Sample the NAG and allow subgraphs sharing the same nodes to
         # be connected if disjoint=False
@@ -1211,7 +1227,8 @@ class SampleRadiusSubgraphs(BaseSampleSubgraphs):
         batch_query = batch[idx_seed] if batch is not None else None
 
         # Prepare the inputs for the neighborhood search
-        mask = torch.tensor([[1, 1, not self.cylindrical]], device=nag.device)
+        mask = async_tensor(
+            [[1, 1, not self.cylindrical]], device=nag.device)
         pos_search = nag[i_level].pos * mask
         pos_query = nag[i_level].pos[idx_seed] * mask
 

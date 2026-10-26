@@ -68,13 +68,10 @@ class RandomTiltAndRotate(Transform):
         # Generate the random rotation axis
         sigma = self.phi / 180. * torch.pi / 3
         if sigma > 0:
-            # `sigma` is the standard deviation of the xy offset, so
-            # the covariance matrix is `sigma² I`
-            means = torch.zeros(2, device=device)
-            covariance = torch.eye(2, device=device) * sigma ** 2
-            distribution = torch.distributions.MultivariateNormal(
-                means, covariance)
-            axis_xy = distribution.sample()
+            # Same as sampling `MultivariateNormal(0, sigma² I)`, whose
+            # argument validation would cause a CPU-GPU sync. `sigma` is
+            # the standard deviation of the xy offset
+            axis_xy = torch.randn(2, device=device) * sigma
             axis_z = torch.ones(1, device=device)
             axis = torch.cat((axis_xy, axis_z))
             axis /= axis.norm()
@@ -117,8 +114,7 @@ class RandomTiltAndRotate(Transform):
     def _rotate_normal(normal, R):
         dtype = normal.dtype
         normal = (normal.float() @ R.T).to(dtype)
-        normal[normal[:, 2] < 0] *= -1
-        return normal
+        return torch.where(normal[:, 2:3] < 0, -normal, normal)
 
 
 class RandomAnisotropicScale(Transform):
@@ -249,7 +245,9 @@ class RandomAxisFlip(Transform):
         self.p = p
 
     def _process(self, nag):
-        if torch.rand(1, device=nag.device) > self.p:
+        # Drawn on CPU: deciding on a CUDA draw would cause a CPU-GPU
+        # sync
+        if torch.rand(1) > self.p:
             return nag
 
         axis = self.axis
@@ -278,5 +276,4 @@ class RandomAxisFlip(Transform):
     @staticmethod
     def _flip_normal(normal, axis):
         normal[:, axis] *= -1
-        normal[normal[:, 2] < 0] *= -1
-        return normal
+        return torch.where(normal[:, 2:3] < 0, -normal, normal)

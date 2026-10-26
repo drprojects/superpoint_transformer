@@ -2,6 +2,8 @@ import torch
 import numpy as np
 from numba import njit
 
+import src
+
 from src.utils.dict import next_incremental_key, check_incremental_keys
 
 
@@ -27,7 +29,9 @@ __all__ = [
     'to_flat_tensor',
     'from_flat_tensor',
     'cast_tensor',
-    'is_arange']
+    'is_arange',
+    'async_tensor',
+    'multinomial_no_replacement']
 
 
 def tensor_idx(idx, device=None):
@@ -68,6 +72,56 @@ def tensor_idx(idx, device=None):
     #     "Expected non-empty indices. At least one index must be provided."
 
     return idx
+
+
+def async_tensor(data, dtype=None, device=None):
+    """Same as `torch.tensor(data, dtype=dtype, device=device)`, without
+    blocking the CPU until the GPU has processed its queue (i.e. without
+    CPU-GPU sync), when `device` is a CUDA device.
+
+    A host-to-device copy with `non_blocking=False` (the default, also
+    used by `torch.tensor(..., device='cuda')`) enqueues the copy on the
+    current CUDA stream, then calls `cudaStreamSynchronize`: the CPU
+    waits for all the work previously queued on the stream, not only
+    for the copy. With `non_blocking=True`, PyTorch skips this wait.
+    This is safe here because:
+      - the copy is ordered on the stream like any kernel, so the
+        kernels using the output tensor run after the copy;
+      - the source is pageable (i.e. not pinned) CPU memory, which CUDA
+        copies to an internal staging buffer before `cudaMemcpyAsync`
+        returns, so the temporary CPU tensor can be released right away.
+
+    This is meant for small tensors built from Python data. Large
+    tensors should rather be copied from pinned memory. NB: the reverse
+    direction is NOT safe: a non-blocking device-to-host copy returns
+    before the data has arrived.
+    """
+    out = torch.tensor(data, dtype=dtype)
+    if device is None:
+        return out
+    return out.to(device, non_blocking=True)
+
+
+def multinomial_no_replacement(weights: torch.Tensor, num_samples: int):
+    """Same as `torch.multinomial(weights, num_samples,
+    replacement=False)` for a 1D `weights`, without CPU-GPU sync.
+
+    `torch.multinomial` first validates `weights` on CPU (no `inf`,
+    `nan` or negative value, non-zero sum), which costs two CPU-GPU
+    syncs on GPU. This function skips these checks and runs the same
+    algorithm as `torch.multinomial` (PyTorch 2.x), consuming the
+    random generator the same way, so the output is identical for a
+    given seed: each sample is the argmax of `weights / q`, with `q`
+    drawn from an exponential distribution (Gumbel-max trick).
+    """
+    assert weights.dim() == 1, "Only supports 1D weights"
+    assert 0 < num_samples <= weights.shape[0], \
+        "Cannot sample more elements than there are categories"
+    q = torch.empty_like(weights).exponential_(1)
+    q = weights / q
+    if num_samples == 1:
+        return q.argmax(dim=-1, keepdim=True)
+    return q.topk(num_samples).indices
 
 
 def is_arange(a: torch.Tensor, n: int):
@@ -126,7 +180,8 @@ def arange_interleave(width, start=None):
     assert width.dim() == 1, 'Only supports 1D tensors'
     assert isinstance(width, torch.Tensor), 'Only supports Tensors'
     assert not width.is_floating_point(), 'Only supports Tensors of integers'
-    assert width.ge(0).all(), 'Only supports positive integers'
+    if src.is_debug_enabled():
+        assert width.ge(0).all(), 'Only supports positive integers'
     start = start if start is not None else torch.zeros_like(width)
     assert width.shape == start.shape
     assert start.dim() == 1, 'Only supports 1D tensors'
@@ -136,8 +191,12 @@ def arange_interleave(width, start=None):
     start = start.long()
     device = width.device
     a = torch.cat((torch.zeros(1, device=device).long(), width[:-1]))
-    offsets = (start - a.cumsum(0)).repeat_interleave(width)
-    return torch.arange(width.sum(), device=device) + offsets
+    # The output size is computed once and passed to
+    # `repeat_interleave`, to only have a single CPU-GPU sync
+    total = int(width.sum())
+    offsets = (start - a.cumsum(0)).repeat_interleave(
+        width, output_size=total)
+    return torch.arange(total, device=device) + offsets
 
 
 def print_tensor_info(a, name=None):
@@ -403,9 +462,11 @@ def fast_zeros(*args, dtype=None, device='cpu'):
     return out
 
 
-def fast_repeat(x, repeats):
+def fast_repeat(x, repeats, output_size=None):
     """Same as torch.repeat_interleave but relies numpy on CPU. This
     saves a little bit of time when manipulating large tensors on CPU.
+
+    On GPU, passing the `output_size`, if known, avoids a CPU-GPU sync.
 
     ```
     from time import time
@@ -436,7 +497,7 @@ def fast_repeat(x, repeats):
     assert isinstance(x, torch.Tensor)
     assert isinstance(repeats, int) or x.device == repeats.device
     if x.is_cuda:
-        return torch.repeat_interleave(x, repeats)
+        return torch.repeat_interleave(x, repeats, output_size=output_size)
     if isinstance(repeats, int):
         return torchify(np.repeat(numpyfy(x), repeats))
     else:

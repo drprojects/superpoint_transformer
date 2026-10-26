@@ -77,6 +77,10 @@ now accept an optional `num_nodes`), and `scatter_mean_weighted` /
 weights check of `scatter_mean_weighted` now only runs in debug mode).
 Outputs are unchanged. The speedup is negligible for the published
 configs, whose train step is GPU-bound.
+- Removed avoidable CPU-GPU syncs from the on-device transforms (~1300 -> 176
+per EZ-SP training batch, train step -8%, [#233](https://github.com/drprojects/superpoint_transformer/pull/233)).
+`RandomAxisFlip`, `ColorAutoContrast` and `ColorDrop` now draw on the CPU
+generator (different draws for a given seed)
 
 ### Deprecated
 
