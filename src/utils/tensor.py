@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-from numba import njit
 
 import src
 
@@ -386,42 +385,16 @@ def torch_to_numpy(func):
     return wrapper_torch_to_numba
 
 
-@torch_to_numpy
-@njit(cache=True, nogil=True)
-def numba_randperm(n):
-    """Same as torch.randperm but leveraging numba on CPU.
-
-    NB: slightly faster than `np.random.permutation(np.arange(n))`
-    """
-    a = np.arange(n)
-    np.random.shuffle(a)
-    return a
-
-
 def fast_randperm(n, device='cpu'):
-    """Same as torch.randperm, but relies on numba for CPU tensors. This
-    may bring a x2 speedup on CPU for n >= 1e5.
+    """Same as `torch.randperm`, kept for backward compatibility.
 
-    ```
-    from time import time
-    import torch
-    from src.utils.tensor import fast_randperm
-
-    n = 100000
-
-    start = time()
-    a = torch.randperm(n)
-    print(f'torch.randperm : {time() - start:0.5f}s')
-
-    start = time()
-    b = fast_randperm(n)
-    print(f'fast_randperm: {time() - start:0.5f}s')
-    ```
+    NB: this used to rely on numba for CPU tensors. But numba has its
+    own random generator, which `torch.manual_seed()`,
+    `np.random.seed()` and `pl.seed_everything()` do not seed, so the
+    CPU permutations were not reproducible. `torch.randperm` is also
+    faster on CPU.
     """
-    if device == 'cuda' or \
-            isinstance(device, torch.device) and device.type == 'cuda':
-        return torch.randperm(n, device=device)
-    return numba_randperm(n)
+    return torch.randperm(n, device=device)
 
 
 # Not working as good as experiments promised...
