@@ -96,6 +96,8 @@ set, and `MultiLoss.load_state_dict()` failed on its own `state_dict()`
 - `fast_randperm` ignored the seed on CPU (numba RNG), so CPU sampling was not
 reproducible; it now uses `torch.randperm`
 ([#248](https://github.com/drprojects/superpoint_transformer/issues/248))
+- Softmax Collapse ([arXiv:2610.31642](https://arxiv.org/abs/2610.31642)) in
+the cross-entropy and focal losses
 - `OnTheFlyHorizontalEdgeFeatures`: at train time, about half of the
 horizontal edges were flipped without flipping the sign of their `mean_off`
 edge feature, which then pointed the wrong way. See

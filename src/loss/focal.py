@@ -5,6 +5,8 @@ from torch import Tensor
 from torch import nn
 from torch.nn import functional as F
 
+from src.loss.cross_entropy import stable_log_softmax
+
 __all__ = ['WeightedFocalLoss', 'BinaryFocalLoss']
 
 
@@ -126,12 +128,14 @@ class WeightedFocalLoss(nn.NLLLoss):
         # Per-item (unreduced) -log(pt). NB: the reduction must not be
         # delegated to NLLLoss, otherwise each item's focal term would
         # multiply the batch-averaged cross-entropy
-        log_p = F.log_softmax(x, dim=-1)
+        # NB: `stable_log_softmax` and `expm1` keep `log(pt)` and
+        # `1 - pt` accurate when pt is close to 1, see
+        # `stable_log_softmax`
+        log_p = stable_log_softmax(x, dim=-1)
         log_pt = log_p.gather(dim=1, index=y.view(-1, 1))[:, 0]
 
         # compute focal term: (1 - pt)^gamma
-        pt = log_pt.exp()
-        focal_term = (1 - pt) ** self.gamma
+        focal_term = (-torch.expm1(log_pt)) ** self.gamma
 
         # the full per-item loss: -a_i * ((1 - pt)^gamma) * log(pt)
         loss = -w * focal_term * log_pt
