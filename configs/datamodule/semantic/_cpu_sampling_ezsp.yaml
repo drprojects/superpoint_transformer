@@ -1,0 +1,226 @@
+# @package datamodule
+
+# Same transforms as `datamodule/semantic/default_ezsp.yaml`, but the
+# subgraph sampling runs in the CPU DataLoader workers, in
+# `train_transform`, instead of on device. On device, these sampling
+# transforms are latency-bound: running them in the workers shortens
+# the training step, as long as the workers keep up with the GPU.
+# Mix it into an EZ-SP experiment, as in
+# `experiment/semantic/kitti360_ezsp_cpu_sampling.yaml`
+#
+# Differences with sampling on device:
+#   - `SampleRadiusSubgraphs` sees one cloud at a time, so it draws
+#     `sample_graph_k // batch_size` subgraphs in each cloud of the
+#     batch, instead of `sample_graph_k` subgraphs over the whole batch
+#   - `SampleSubNodes` runs after `SampleRadiusSubgraphs`, on the
+#     points of the sampled subgraphs only. It samples the points of
+#     each segment independently, so this gives the same distribution
+#   - the draws differ for a given seed
+#
+# Not every dataset supports it:
+#   - `sample_graph_k` must be a multiple of the batch size, otherwise
+#     fewer subgraphs are drawn per batch than on device
+#   - `in_memory: True` is not supported (error): `train_transform`
+#     would only run once. The S3DIS configs default to it
+#   - with `val_mixed_in_train` (S3DIS), `train_transform` must start
+#     with `NAGSelectByKey(key='is_val', negation=True)` (error
+#     otherwise), so that no subgraph is sampled around val points
+#   - without subgraph sampling (`sample_graph_r<=0` as in ScanNet,
+#     `sample_graph_k<=0` as in `s3dis_room`), only `SampleSubNodes`
+#     and `SampleSegments` move to the workers, and the gain is not
+#     measured
+# Measured on KITTI-360 and DALES only
+#
+# Not desirable for SPT and SPC (`datamodule/semantic/default.yaml`):
+# the same move was measured to slow down their training (KITTI-360,
+# RTX A6000, 7 workers: train epoch +7% for SPT, +24% for SPC). The
+# workers do not keep up with the GPU: the SPT partition has fewer,
+# larger superpoints (45k vs 72k at level 1 on KITTI-360), so the
+# sampled subgraphs keep twice as many points, and the points carry
+# more attributes (handcrafted features, plus the instance labels for
+# SPC). This doubles the CPU cost of the sampling per cloud (1.5 s for
+# SPT, 2.4 s for SPC, vs 1.0 s for EZ-SP), while the SPT train step is
+# short (no CNN)
+
+train_transform:
+
+  # Cast all attributes to either float or long
+  - transform: NAGCast
+
+  # Add a `node_size` attribute to all segments, this is needed for
+  # segment-wise position normalization with UnitSphereNorm
+  - transform: NodeSize
+    params:
+      low: 0
+
+  # Sample the subgraphs of each cloud and return them as a list.
+  # The transforms below are then applied to each subgraph, and the
+  # subgraphs are batched on device, each as a separate batch item
+  - transform: SampleRadiusSubgraphs
+    params:
+      r: ${datamodule.sample_graph_r}
+      k: ${eval:'${datamodule.sample_graph_k} // ${datamodule.dataloader.batch_size}'}
+      k_max: ${datamodule.sample_graph_max_nodes}
+      i_level: 1
+      by_size: False
+      by_class: False
+      disjoint: ${datamodule.sample_graph_disjoint}
+      cylindrical: ${datamodule.sample_graph_cylindrical}
+      as_list: True
+  - transform: SampleSubNodes
+    params:
+      low: 0
+      high: ${eval:'0 if ${datamodule.nano} else 1'} #i.e.: skip the transform if nano
+      n_min: ${datamodule.sample_point_min}
+      n_max: ${datamodule.sample_point_max}
+  - transform: SampleSegments
+    params:
+      ratio: ${datamodule.sample_segment_ratio}
+      by_size: ${datamodule.sample_segment_by_size}
+      by_class: ${datamodule.sample_segment_by_class}
+
+# Do not inherit the sampling of `train_transform`
+val_transform: null
+
+on_device_train_transform:
+
+    - transform: NAGRestrictSize
+      params:
+        level: "1+"
+        num_nodes: ${datamodule.max_num_nodes}
+
+    # # Apply geometric transforms affecting position, offsets, normals
+    # # before calling transforms relying on those, such as on-the-fly
+    # # edge features computation
+    - transform: NAGJitterKey
+      params:
+        key: 'pos'
+        sigma: ${datamodule.pos_jitter}
+        trunc: ${datamodule.voxel}
+    - transform: RandomTiltAndRotate
+      params:
+        phi: ${datamodule.tilt_n_rotate_phi}
+        theta: ${datamodule.tilt_n_rotate_theta}
+    - transform: RandomAnisotropicScale
+      params:
+        delta: ${datamodule.anisotropic_scaling}
+        per_axis: ${datamodule.anisotropic_scaling_per_axis}
+    - transform: RandomAxisFlip
+      params:
+        p: 0.5
+
+    # Compute some horizontal and vertical edges on-the-fly. Those are
+    # only computed now since they can be deduced from point and node
+    # attributes. Besides, the OnTheFlyHorizontalEdgeFeatures transform
+    # takes a trimmed graph as input and doubles its size, creating j->i
+    # for each input i->j edge
+    - transform: OnTheFlyHorizontalEdgeFeatures
+      params:
+        keys: ${datamodule.edge_hf}
+        use_mean_normal: ${eval:'"normal" in ${datamodule.segment_mean_hf}'}
+    - transform: OnTheFlyVerticalEdgeFeatures
+      params:
+        keys: ${datamodule.v_edge_hf}
+        use_mean_normal: ${eval:'"normal" in ${datamodule.segment_mean_hf}'}
+
+    # Edge sampling is only performed after the horizontal graph is
+    # untrimmed by OnTheFlyHorizontalEdgeFeatures
+    - transform: SampleEdges
+      params:
+        level: '1+'
+        n_min: ${datamodule.sample_edge_n_min}
+        n_max: ${datamodule.sample_edge_n_max}
+    - transform: NAGRestrictSize
+      params:
+        level: '1+'
+        num_edges: ${datamodule.max_num_edges}
+
+    # Augmentations on the node features.
+    - transform: NAGJitterKey
+      params:
+        key: ${eval:'ListConfig([k for k in ${datamodule.all_point_hf} if k != "rgb"])'}
+        sigma: ${datamodule.node_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.node_feat_jitter}'}
+    - transform: NAGDropoutColumns
+      params:
+        p: ${datamodule.node_feat_drop}
+        key: ${eval:'ListConfig([k for k in ${datamodule.all_point_hf} if k != "rgb"])'}
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: NAGDropoutRows
+      params:
+        p: ${datamodule.node_row_drop}
+        key: ${eval:'ListConfig([k for k in ${datamodule.all_point_hf} if k != "rgb"])'}
+        to_mean: ${datamodule.drop_to_mean}
+
+    - transform: NAGJitterKey
+      params:
+        key: 'edge_attr'
+        sigma: ${datamodule.h_edge_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.h_edge_feat_jitter}'}
+    - transform: NAGJitterKey
+      params:
+        key: 'v_edge_attr'
+        sigma: ${datamodule.v_edge_feat_jitter}
+        trunc: ${eval:'2 * ${datamodule.v_edge_feat_jitter}'}
+
+    - transform: NAGDropoutColumns
+      params:
+        p: ${datamodule.h_edge_feat_drop}
+        key: 'edge_attr'
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: NAGDropoutColumns
+      params:
+        p: ${datamodule.v_edge_feat_drop}
+        key: 'v_edge_attr'
+        inplace: True
+        to_mean: ${datamodule.drop_to_mean}
+
+    - transform: NAGDropoutRows
+      params:
+        p: ${datamodule.h_edge_row_drop}
+        key: 'edge_attr'
+        to_mean: ${datamodule.drop_to_mean}
+    - transform: NAGDropoutRows
+      params:
+        p: ${datamodule.v_edge_row_drop}
+        key: 'v_edge_attr'
+        to_mean: ${datamodule.drop_to_mean}
+
+    # RGB-specific transforms. In particular, the color dropout will
+    # switch off all three color channels together, instead of just one
+    # by one with
+#    - transform: NAGColorNormalize
+#      params:
+#        level: 'all'
+    - transform: NAGJitterKey
+      params:
+        key: 'rgb'
+        sigma: ${datamodule.rgb_jitter}
+        trunc: ${eval:'2 * ${datamodule.rgb_jitter}'}
+    - transform: NAGColorAutoContrast
+      params:
+        p: ${datamodule.rgb_autocontrast}
+    - transform: NAGColorDrop
+      params:
+        p: ${datamodule.rgb_drop}
+
+    # Add self-loops in the horizontal graph
+    - transform: NAGAddSelfLoops
+
+    # Compute the instance graph for instantiation
+    # NB: setting `datamodule.instance: False` will skip this step
+    - transform: OnTheFlyInstanceGraph
+      params:
+        level: ${eval:'1 if ${datamodule.instance} else -1'}
+        num_classes: ${datamodule.num_classes}
+        k_max: ${datamodule.instance_k_max}
+        radius: ${datamodule.instance_radius}
+        adjacency_mode: ${eval:'"radius-centroid" if ${datamodule.nano} else "radius-atomic"'}
+
+    - transform: QuantizePointCoordinates
+      params:
+        size: ${eval:'${datamodule.voxel} if ${datamodule.quantize_coords} else -1'}
+
+# GPU-based val transforms

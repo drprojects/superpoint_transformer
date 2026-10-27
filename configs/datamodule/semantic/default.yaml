@@ -227,7 +227,9 @@ on_device_train_transform:
 
     # Apply sampling transforms first to reduce the number of nodes and
     # edges. These operations are compute-intensive and are the reason
-    # why these transforms are not performed on CPU
+    # why these transforms are not performed on CPU. For EZ-SP,
+    # `datamodule/semantic/_cpu_sampling_ezsp.yaml` runs them in the CPU
+    # DataLoader workers instead, which can be faster
     - transform: SampleSubNodes
       params:
         low: 0

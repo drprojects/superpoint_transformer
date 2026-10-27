@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `experiment=semantic/{kitti360,dales}_ezsp_cpu_sampling`: EZ-SP with the
+subgraph sampling in `train_transform`, run by the DataLoader workers, thanks
+to the new `as_list` parameter of the subgraph sampling transforms (EZ-SP train
+step -11% to -28%, [#245](https://github.com/drprojects/superpoint_transformer/pull/245))
 - `DataLoader(cross_epoch_prefetch=True)`, exposed as
 `datamodule.dataloader.cross_epoch_prefetch` (default `True` in
 `configs/datamodule/semantic/default.yaml`, used by the train and val
