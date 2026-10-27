@@ -86,6 +86,9 @@ generator (different draws for a given seed)
 
 ### Fixed
 
+- `fast_randperm` ignored the seed on CPU (numba RNG), so CPU sampling was not
+reproducible; it now uses `torch.randperm`
+([#248](https://github.com/drprojects/superpoint_transformer/issues/248))
 - `OnTheFlyHorizontalEdgeFeatures`: at train time, about half of the
 horizontal edges were flipped without flipping the sign of their `mean_off`
 edge feature, which then pointed the wrong way. See
