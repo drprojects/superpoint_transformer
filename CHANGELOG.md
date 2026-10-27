@@ -86,6 +86,9 @@ generator (different draws for a given seed)
 
 ### Fixed
 
+- `MultiLoss.state_dict()` raised a `KeyError` before the class weights were
+set, and `MultiLoss.load_state_dict()` failed on its own `state_dict()`
+([#247](https://github.com/drprojects/superpoint_transformer/issues/247))
 - `fast_randperm` ignored the seed on CPU (numba RNG), so CPU sampling was not
 reproducible; it now uses `torch.randperm`
 ([#248](https://github.com/drprojects/superpoint_transformer/issues/248))
