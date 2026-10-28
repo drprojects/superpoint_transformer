@@ -1,6 +1,8 @@
 import torch
 from torch.nn.modules.loss import _Loss
 
+from src.loss.cross_entropy import stable_log_softmax
+
 
 __all__ = ['LovaszLoss']
 
@@ -135,18 +137,25 @@ def lovasz(
     if logits.numel() == 0:
         return logits * 0.
 
-    # Convert logits to probabilities
+    # Convert logits to probabilities p and 1 - p. NB: with 'softmax',
+    # `stable_log_softmax` and `expm1` keep p, 1 - p and their gradients
+    # accurate when p is close to 1, where `softmax` rounds p to 1 in
+    # float32 and zeroes the error 1 - p and its gradient (Softmax
+    # Collapse), see `stable_log_softmax`
     if normalization == 'softmax':
-        probas = logits.float().softmax(dim=1)
+        log_probas = stable_log_softmax(logits, dim=1)
+        probas = log_probas.exp()
+        one_minus_probas = -torch.expm1(log_probas)
     elif logits.ge(0).all():
         probas = logits.float() / logits.sum(dim=1).view(-1, 1)
+        one_minus_probas = 1 - probas
     else:
         raise ValueError('logits must all be positive')
 
     # One-hot encode the labels and compute the class-wise errors, for
-    # each point
+    # each point: 1 - p for the label, p for the other classes
     fg = torch.nn.functional.one_hot(labels, num_classes=num_classes).float()
-    errors = (fg - probas).abs()
+    errors = torch.where(fg.bool(), one_minus_probas, probas)
 
     # If required, mask out classes that are not present or that are
     # explicitly excluded from class_to_sum
