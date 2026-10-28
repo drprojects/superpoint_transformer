@@ -10,14 +10,21 @@ class MultiLoss(nn.Module):
     :param criteria: List(callable)
         List of criteria
     :param lambdas: List(str)
+    :param ignore_index: int
+        If not None, set as the `ignore_index` of all the criteria. This
+        allows a `MultiLoss` config to replace a single criterion config
+        holding an `ignore_index`
 
     """
 
-    def __init__(self, criteria, lambdas):
+    def __init__(self, criteria, lambdas, ignore_index=None):
         super().__init__()
         assert len(criteria) == len(lambdas)
         self.criteria = nn.ModuleList(criteria)
         self.lambdas = lambdas
+        if ignore_index is not None:
+            for criterion in self.criteria:
+                criterion.ignore_index = ignore_index
 
     def __len__(self):
         return len(self.criteria)
