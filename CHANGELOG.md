@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `SumLoss`, weighted sum of criteria on the same logits, eg the cross-entropy
+plus `LovaszLoss` on the first stage of the multi-stage loss
+
 - Hybrid `Muon` optimizer (`src/optim/muon.py`), Muon on the 2D hidden weights
 and AdamW on the others, enabled with `+optimizer=muon`. The default optimizer
 is unchanged; with lr 0.01, EZ-SP gains +2.3 mIoU on KITTI-360 and +1.8 on DALES
@@ -101,7 +104,8 @@ set, and `MultiLoss.load_state_dict()` failed on its own `state_dict()`
 reproducible; it now uses `torch.randperm`
 ([#248](https://github.com/drprojects/superpoint_transformer/issues/248))
 - Softmax Collapse ([arXiv:2610.31642](https://arxiv.org/abs/2610.31642)) in
-the cross-entropy and focal losses
+the cross-entropy, focal and Lovász-softmax losses
+- `WeightedFocalLoss.__repr__` raised a `KeyError`
 - `OnTheFlyHorizontalEdgeFeatures`: at train time, about half of the
 horizontal edges were flipped without flipping the sign of their `mean_off`
 edge feature, which then pointed the wrong way. See
