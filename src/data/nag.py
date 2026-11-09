@@ -359,6 +359,13 @@ class NAG(TensorHolderMixIn):
             # Unpack the 'out_sub' from the previous above level
             (idx_sub, sub_super) = out_sub
 
+            # If the above level kept all its nodes, in the same order,
+            # 'Data.select()' returned no 'out_sub'. This level and the
+            # ones below are left unchanged
+            if idx_sub is None and self[i].is_sub:
+                data_list[i] = self[i].clone()
+                continue
+
             # Select points but do not update 'super_index', it will be
             # directly provided by the above-level's 'sub_super'
             data_list[i], out_sub, _ = self[i].select(
@@ -372,6 +379,13 @@ class NAG(TensorHolderMixIn):
         for i in range(i_level + 1, self.absolute_num_levels):
             # Unpack the 'out_super' from the previous below level
             (idx_super, super_sub) = out_super
+
+            # If the below level kept all its parents, in the same
+            # order, 'Data.select()' returned no 'out_super'. This level
+            # and the ones above are left unchanged
+            if idx_super is None and self[i].is_super:
+                data_list[i] = self[i].clone()
+                continue
 
             # Select points but do not update 'sub', it will be directly
             # provided by the above-level's 'super_sub'
