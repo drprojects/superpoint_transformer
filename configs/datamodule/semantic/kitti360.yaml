@@ -82,7 +82,7 @@ pcp_w_adjacency: 1
 pcp_iterations: 15
 graph_k_min: 1
 graph_k_max: 30
-graph_gap: [3, 10, 30]
+graph_gap: [2, 3, 5]  # [3, 10, 30] before 3.1.0: about the same graph density as before the `cluster_radius_nn_graph` fix, see CHANGELOG
 graph_se_ratio: 0.3
 graph_se_min: 20
 graph_cycles: 3
@@ -106,7 +106,7 @@ sample_edge_n_max: -1  # [10, 15, 25]
 # Augmentations parameterization
 pos_jitter: 0.05
 tilt_n_rotate_phi: 0
-tilt_n_rotate_theta: 0  # no rotation, as in versions <= 3.0.0 where `phi=0` disabled the whole rotation despite `theta=180`, see CHANGELOG
+tilt_n_rotate_theta: 180  # versions <= 3.0.0 never rotated KITTI-360: `phi=0` disabled the whole rotation despite `theta=180`, see CHANGELOG
 anisotropic_scaling: 0.2
 anisotropic_scaling_per_axis: False  # if True, a scaling factor is drawn for each axis. If False, the same factor is shared by all axes (isotropic scaling, which was also the default behavior in versions <= 3.0.0)
 rgb_jitter: 0

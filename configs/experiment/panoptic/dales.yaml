@@ -4,6 +4,8 @@
 # python train.py experiment=panoptic/dales
 
 defaults:
+  - /criterion: ce_lovasz_2stages.yaml  # cross-entropy + Lovász-softmax on the first stage
+  - /optimizer: muon.yaml  # hybrid Muon/AdamW
   - override /datamodule: panoptic/dales.yaml
   - override /model: panoptic/spt-2.yaml
   - override /trainer: gpu.yaml
@@ -16,7 +18,7 @@ trainer:
 
 model:
   optimizer:
-    lr: 0.01
+    lr: 0.02  # 0.01 with AdamW before 3.1.0
     weight_decay: 1e-4
 
   partitioner:

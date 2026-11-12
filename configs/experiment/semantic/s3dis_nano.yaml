@@ -4,6 +4,8 @@
 # python train.py experiment=semantic/s3dis_nano
 
 defaults:
+  - /criterion: ce_lovasz_2stages.yaml  # cross-entropy + Lovász-softmax on the first stage
+  - /optimizer: muon.yaml  # hybrid Muon/AdamW
   - override /datamodule: semantic/s3dis_nano.yaml
   - override /model: semantic/nano-2.yaml
   - override /trainer: gpu.yaml
