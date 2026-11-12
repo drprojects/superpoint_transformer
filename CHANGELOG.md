@@ -13,8 +13,9 @@ plus `LovaszLoss` on the first stage of the multi-stage loss
 - Hybrid `Muon` optimizer (`src/optim/muon.py`), Muon on the 2D hidden weights
 and AdamW on the others (`configs/optimizer/muon.yaml`)
 
-- `configs/criterion/ce_lovasz_{2,3}stages.yaml`: cross-entropy + `LovaszLoss`
-on the first stage, cross-entropy on the others
+- `configs/criterion/ce_lovasz_2stages.yaml` (SPT, SuperCluster) and
+`ce_lovasz_3stages.yaml` (EZ-SP): cross-entropy + `LovaszLoss` on the first
+stage, cross-entropy on the others
 
 - `experiment=semantic/{kitti360,dales}_ezsp_cpu_sampling`: EZ-SP with the
 subgraph sampling in `train_transform`, run by the DataLoader workers, thanks
@@ -34,8 +35,8 @@ before. Set it to `False` to recover the previous behavior
 
 - **⚠️ Breaking Change**: new default training configs for SPT, SPT-nano,
 EZ-SP and SuperCluster on KITTI-360, DALES, S3DIS and ScanNet (the configs of
-the 3.1.0 checkpoints): `ce_lovasz_{2,3}stages` criterion (instead of the
-cross-entropy, or the focal loss for EZ-SP), Muon optimizer with lr x2 on
+the 3.1.0 checkpoints): cross-entropy + Lovász-softmax criterion (instead of
+the cross-entropy, or the focal loss for EZ-SP), Muon optimizer with lr x2 on
 KITTI-360, DALES and ScanNet, `tilt_n_rotate_theta: 180` on KITTI-360,
 `h_edge_feat_drop: 0` on DALES, `graph_gap` `[2, 3, 5]` on KITTI-360 (`[2, 2, 3]`
 for EZ-SP) and `[3, 5, 5]` on DALES. The new `graph_gap` changes the KITTI-360
