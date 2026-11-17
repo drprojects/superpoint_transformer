@@ -78,7 +78,7 @@ pcp_w_adjacency: 1
 pcp_iterations: 15
 graph_k_min: 1
 graph_k_max: 30
-graph_gap: [5, 30, 30]
+graph_gap: [3, 5, 5]  # [5, 30, 30] before 3.1.0, see CHANGELOG
 graph_se_ratio: 0.3
 graph_se_min: 20
 graph_cycles: 3
@@ -109,7 +109,7 @@ node_feat_jitter: 0
 h_edge_feat_jitter: 0
 v_edge_feat_jitter: 0
 node_feat_drop: 0
-h_edge_feat_drop: 0.3
+h_edge_feat_drop: 0  # 0.3 before 3.1.0, see CHANGELOG
 v_edge_feat_drop: 0
 node_row_drop: 0
 h_edge_row_drop: 0

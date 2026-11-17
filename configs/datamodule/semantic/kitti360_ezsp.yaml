@@ -13,6 +13,9 @@ pretrained_cnn_kernel_size: [7, 3, 3]
 # Parameter defining the 3 partition levels.
 contour_prior_min_size: [5,30,90]
 
+# Horizontal graph of the EZ-SP partition ([3, 10, 30] before 3.1.0, see CHANGELOG)
+graph_gap: [2, 2, 3]
+
 # Inputs.
 partition_hf:
  - 'rgb'

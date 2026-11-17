@@ -4,6 +4,8 @@
 # python train.py experiment=panoptic/s3dis
 
 defaults:
+  - /criterion: ce_lovasz_2stages.yaml  # cross-entropy + Lovász-softmax on the first stage
+  - /optimizer: muon.yaml  # hybrid Muon/AdamW
   - override /datamodule: panoptic/s3dis.yaml
   - override /model: panoptic/spt-2.yaml
   - override /trainer: gpu.yaml
