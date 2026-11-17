@@ -33,8 +33,19 @@ before. Set it to `False` to recover the previous behavior
 
 ### Changed
 
+- **⚠️ Breaking Change**: the code version is now `3.1.0`. Model checkpoints
+(SPT, EZ-SP, SPC) saved with an older version (`metadata['__version__']` below
+`3.1.0`, or missing) now raise an error when loaded. The fixes of this version
+change the features and graphs the models see, so older weights are not
+compatible with this code: **please retrain**, or use the code release matching
+your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
+`train.yaml` / `eval.yaml`, or as a `load_from_checkpoint()` argument) loads
+them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
+`PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
+
 - **⚠️ Breaking Change**: new default training configs (those of the 3.1.0
-checkpoints: CE + Lovász, Muon, see the PR); changes the KITTI-360 and DALES
+checkpoints: CE + Lovász, Muon, [#256](https://github.com/drprojects/superpoint_transformer/pull/256));
+changes the KITTI-360 and DALES
 preprocessing hashes
 
 - Moved the graph connected components and graph partitioning algorithms 
@@ -53,16 +64,6 @@ This dependency is now installed by `install.sh`.
     random crop in an area with only one semantic label, training continues.
     However, if no inter-edge is found during a whole training epoch, an error
     is raised, as this likely indicates a bug in the graph or crop definition.
-
-- **⚠️ Breaking Change**: the code version is now `3.1.0`. Model checkpoints
-(SPT, EZ-SP, SPC) saved with an older version (`metadata['__version__']` below
-`3.1.0`, or missing) now raise an error when loaded. The fixes of this version
-change the features and graphs the models see, so older weights are not
-compatible with this code: **please retrain**, or use the code release matching
-your checkpoint. For development only, setting `allow_old_checkpoint=true` (in
-`train.yaml` / `eval.yaml`, or as a `load_from_checkpoint()` argument) loads
-them anyway, with a warning. The EZ-SP partition CNN checkpoints loaded by
-`PretrainedCNN` are not checked: the CNN inputs are not affected by these fixes
 
 - `BaseDataset` caches `cloud_ids`, `processed_file_names` and
 `processed_paths`, which were rebuilt over the whole dataset at every
