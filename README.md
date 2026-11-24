@@ -18,7 +18,7 @@ Official implementation for
 [_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045) (ICCV'23)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2306.08045-b31b1b.svg)](https://arxiv.org/abs/2306.08045)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042711.svg)](https://doi.org/10.5281/zenodo.8042711)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/superpoint-transformer-site)
 [![Tutorial](https://img.shields.io/badge/Tutorial-FFC300)](https://www.youtube.com/watch?v=2qKhpQs9gJw)
 <br>
@@ -33,7 +33,7 @@ Official implementation for
 [_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (ICRA'26)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2512.00385-b31b1b.svg)](https://arxiv.org/abs/2512.00385)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642502.svg)](https://doi.org/10.5281/zenodo.17642502)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://louisgeist.github.io/ez-sp/)
 <br>
 <br>
@@ -152,6 +152,11 @@ superpoints can then be used in the SPT semantic segmentation framework.
 > library.
 
 ## 📰  Updates
+- **24.11.2026** Release of **v3.1** 🚀: **better metrics** for all our models
+(up to +4.9 mIoU) and **faster training**, with new pretrained checkpoints for
+SPT, SPT-nano, SuperCluster and EZ-SP. This version is **not
+backward-compatible** with v3.0 partitions and checkpoints, see the
+[checkpoints note](#training) and the [**CHANGELOG**](CHANGELOG.md)❗
 - **31.01.2026** Our paper [_**EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation**_](https://arxiv.org/abs/2512.00385) was accepted at **[ICRA'26](https://2026.ieee-icra.org/)** 🥳
 - **22.01.2026** Release the graph connected components and graph
 partitioning algorithms introduced in EZ-SP as a standalone library: 
@@ -345,7 +350,7 @@ python src/eval.py experiment=semantic/scannet_ezsp ckpt_path=/path/to/your/chec
 > The pretrained weights of the **SPT** and **SPT-nano** models for 
 >**S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
+> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042711.svg)](https://doi.org/10.5281/zenodo.8042711)
 > 
 > The pretrained weights of the **SuperCluster** models for 
 >**S3DIS 6-Fold**, **S3DIS 6-Fold with stuff**, **ScanNet Val**, **KITTI-360 Val**, and **DALES** are available at:
@@ -354,7 +359,28 @@ python src/eval.py experiment=semantic/scannet_ezsp ckpt_path=/path/to/your/chec
 >
 > The pretrained weights of the **EZ-SP** models for **S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
+> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642502.svg)](https://doi.org/10.5281/zenodo.17642502)
+
+> **Warning**: **v3.1** changes the preprocessing (partition) and the models,
+> so **v3.0 preprocessed datasets and checkpoints are not backward-compatible**.
+> Please re-run the preprocessing of your datasets and use the new v3.1
+> checkpoints: [SPT & SPT-nano](https://doi.org/10.5281/zenodo.8042711), [SuperCluster](https://doi.org/10.5281/zenodo.10689037), [EZ-SP](https://doi.org/10.5281/zenodo.17642502).
+
+<details>
+<summary><b>Performance of the v3.1 checkpoints</b></summary>
+<br>
+
+Best of 3 seeds. See [#256](https://github.com/drprojects/superpoint_transformer/pull/256) for
+details (mean ± std over seeds, training times, ablations).
+
+| Model        | Metric | S3DIS 6-Fold | S3DIS Area 5 | KITTI-360 Val | DALES | ScanNet Val |
+|:-------------|:------:|:------------:|:------------:|:-------------:|:-----:|:-----------:|
+| SPT          |  mIoU  |     76.3     |     69.7     |     64.7      | 82.8  |    70.3     |
+| SPT-nano     |  mIoU  |     70.1     |     64.9     |     60.5      | 80.1  |             |
+| EZ-SP        |  mIoU  |     76.4     |     69.2     |     64.3      | 81.6  |    68.5     |
+| SuperCluster |   PQ   |     56.9     |     49.8     |     49.4      | 62.0  |    60.8     |
+
+</details>
 
 ### Training
 #### SPT & SuperCluster
@@ -492,7 +518,7 @@ python src/train.py experiment=semantic/<dataset>_ezsp datamodule.pretrained_cnn
 
 Make sure you set the partition model checkpoint `pretrained_cnn_ckpt_path`.
 For this, you can train your own partition model as explained in step 1., or
-you can use our [pretrained checkpoints](https://zenodo.org/records/18329602) 
+you can use our [pretrained checkpoints](https://doi.org/10.5281/zenodo.17642502) 
 (named `ezsp_partition_<dataset>.ckpt`).
 
 > **Note**: 
