@@ -70,10 +70,6 @@ between superpoints at multiple scales.
 | ⚡ S3DIS training in **3h on 1 GPU** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 7, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 70) | 
 |                                                  ⚡ **Preprocessing x7 faster than [SPG](https://github.com/loicland/superpoint_graph)**                                                   |
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-dales)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-dales?p=efficient-3d-semantic-segmentation-with-1)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-kitti-360)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-kitti-360?p=efficient-3d-semantic-segmentation-with-1)
 </div>
 
 ### SuperCluster
@@ -101,12 +97,6 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 | 🦋 **212k parameters** ([PointGroup](https://github.com/dvlab-research/PointGroup) ÷ 37) |
 |                           ⚡ S3DIS training in **4h on 1 GPU**                            | 
 |              ⚡ **7.8km²** tile of **18M** points in **10.1s** on **1 GPU**               |
-
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-s3dis)](https://paperswithcode.com/sota/panoptic-segmentation-on-s3dis?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-s3dis-area5)](https://paperswithcode.com/sota/panoptic-segmentation-on-s3dis-area5?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-scannetv2)](https://paperswithcode.com/sota/panoptic-segmentation-on-scannetv2?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-kitti-360)](https://paperswithcode.com/sota/panoptic-segmentation-on-kitti-360?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-dales)](https://paperswithcode.com/sota/panoptic-segmentation-on-dales?p=scalable-3d-panoptic-segmentation-with)
 
 </div>
 
