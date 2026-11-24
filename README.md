@@ -354,18 +354,24 @@ python src/eval.py experiment=semantic/scannet_ezsp ckpt_path=/path/to/your/chec
 > [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints-FFD21E)](https://huggingface.co/superpoint-transformer/checkpoints)
 >
 > One folder per model (`spt/`, `supercluster/`, `ezsp/`), one tag per release
-> (`v3.1.0`). For example:
-> ```python
-> from huggingface_hub import hf_hub_download
-> ckpt_path = hf_hub_download("superpoint-transformer/checkpoints", "spt/spt-2_dales.ckpt", revision="v3.1.0")
+> (`v3.1.0`). To download them:
+> ```bash
+> # All the checkpoints (~130 MB)
+> hf download superpoint-transformer/checkpoints --revision v3.1.0 --local-dir checkpoints
+>
+> # Or the checkpoints of one model only
+> hf download superpoint-transformer/checkpoints --revision v3.1.0 --local-dir checkpoints --include "ezsp/*"
+>
+> # Then, for instance
+> python src/eval.py experiment=semantic/dales ckpt_path=checkpoints/spt/spt-2_dales.ckpt
+> python src/eval.py experiment=semantic/dales_ezsp ckpt_path=checkpoints/ezsp/ezsp_semantic_dales.ckpt datamodule.pretrained_cnn_ckpt_path=checkpoints/ezsp/ezsp_partition_dales.ckpt
 > ```
 > EZ-SP also needs its partition CNN, `ezsp/ezsp_partition_<dataset>.ckpt`.
 
 > **Warning**: **v3.1** changes the preprocessing (partition) and the models,
 > so **v3.0 preprocessed datasets and checkpoints are not backward-compatible**.
 > Please re-run the preprocessing of your datasets and use the v3.1
-> checkpoints above. The v3.0 checkpoints remain on Zenodo:
-> [SPT & SPT-nano](https://doi.org/10.5281/zenodo.8042711), [SuperCluster](https://doi.org/10.5281/zenodo.10689037), [EZ-SP](https://doi.org/10.5281/zenodo.17642502).
+> checkpoints above.
 
 <details>
 <summary><b>Performance of the v3.1 checkpoints</b></summary>

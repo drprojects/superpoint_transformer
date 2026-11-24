@@ -113,6 +113,7 @@ pip install torch_tb_profiler
 pip install wandb
 pip install open3d
 pip install gdown
+pip install "huggingface_hub>=0.34"
 pip install ipyfilechooser
 pip install torch-ransac3d
 pip install pgeof
