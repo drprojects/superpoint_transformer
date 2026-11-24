@@ -51,6 +51,12 @@ checkpoints: CE + Lovász, Muon, [#256](https://github.com/drprojects/superpoint
 changes the KITTI-360 and DALES
 preprocessing hashes
 
+- Pretrained checkpoints are now hosted on Hugging Face, from 3.1.0 on:
+[superpoint-transformer/checkpoints](https://huggingface.co/superpoint-transformer/checkpoints),
+one folder per model (`spt/`, `supercluster/`, `ezsp/`) and one tag per
+release. Download them with the `hf` CLI (`huggingface_hub`, now installed by
+`install.sh`), see the README
+
 - Moved the graph connected components and graph partitioning algorithms 
 introduced in EZ-SP to a standalone library: 
 [torch-graph-components](https://github.com/drprojects/torch-graph-components). 
