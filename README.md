@@ -345,26 +345,27 @@ python src/eval.py experiment=semantic/dales_ezsp ckpt_path=/path/to/your/checkp
 python src/eval.py experiment=semantic/scannet_ezsp ckpt_path=/path/to/your/checkpoint.ckpt datamodule.pretrained_cnn_ckpt_path=/path/to/your/partition_checkpoint.ckpt
 ```
 
-> **Note**: 
-> 
-> The pretrained weights of the **SPT** and **SPT-nano** models for 
->**S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
+> **Note**:
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042711.svg)](https://doi.org/10.5281/zenodo.8042711)
-> 
-> The pretrained weights of the **SuperCluster** models for 
->**S3DIS 6-Fold**, **S3DIS 6-Fold with stuff**, **ScanNet Val**, **KITTI-360 Val**, and **DALES** are available at:
+> The pretrained weights of the **SPT**, **SPT-nano**, **SuperCluster** and
+> **EZ-SP** models for **S3DIS 6-Fold**, **KITTI-360 Val**, **DALES** and
+> **ScanNet Val** (and **S3DIS 6-Fold with stuff** for SuperCluster) are available at:
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10689037.svg)](https://doi.org/10.5281/zenodo.10689037)
+> [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints-FFD21E)](https://huggingface.co/superpoint-transformer/checkpoints)
 >
-> The pretrained weights of the **EZ-SP** models for **S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
->
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642502.svg)](https://doi.org/10.5281/zenodo.17642502)
+> One folder per model (`spt/`, `supercluster/`, `ezsp/`), one tag per release
+> (`v3.1.0`). For example:
+> ```python
+> from huggingface_hub import hf_hub_download
+> ckpt_path = hf_hub_download("superpoint-transformer/checkpoints", "spt/spt-2_dales.ckpt", revision="v3.1.0")
+> ```
+> EZ-SP also needs its partition CNN, `ezsp/ezsp_partition_<dataset>.ckpt`.
 
 > **Warning**: **v3.1** changes the preprocessing (partition) and the models,
 > so **v3.0 preprocessed datasets and checkpoints are not backward-compatible**.
-> Please re-run the preprocessing of your datasets and use the new v3.1
-> checkpoints: [SPT & SPT-nano](https://doi.org/10.5281/zenodo.8042711), [SuperCluster](https://doi.org/10.5281/zenodo.10689037), [EZ-SP](https://doi.org/10.5281/zenodo.17642502).
+> Please re-run the preprocessing of your datasets and use the v3.1
+> checkpoints above. The v3.0 checkpoints remain on Zenodo:
+> [SPT & SPT-nano](https://doi.org/10.5281/zenodo.8042711), [SuperCluster](https://doi.org/10.5281/zenodo.10689037), [EZ-SP](https://doi.org/10.5281/zenodo.17642502).
 
 <details>
 <summary><b>Performance of the v3.1 checkpoints</b></summary>
@@ -518,7 +519,7 @@ python src/train.py experiment=semantic/<dataset>_ezsp datamodule.pretrained_cnn
 
 Make sure you set the partition model checkpoint `pretrained_cnn_ckpt_path`.
 For this, you can train your own partition model as explained in step 1., or
-you can use our [pretrained checkpoints](https://doi.org/10.5281/zenodo.17642502) 
+you can use our [pretrained checkpoints](https://huggingface.co/superpoint-transformer/checkpoints/tree/main/ezsp)
 (named `ezsp_partition_<dataset>.ckpt`).
 
 > **Note**: 
