@@ -315,6 +315,9 @@ python src/eval.py experiment=semantic/kitti360  ckpt_path=/path/to/your/checkpo
 # Evaluate SPT on DALES
 python src/eval.py experiment=semantic/dales ckpt_path=/path/to/your/checkpoint.ckpt
 
+# Evaluate SPT on ScanNet Val
+python src/eval.py experiment=semantic/scannet ckpt_path=/path/to/your/checkpoint.ckpt
+
 # Evaluate SuperCluster on S3DIS Fold 5
 python src/eval.py experiment=panoptic/s3dis datamodule.fold=5 ckpt_path=/path/to/your/checkpoint.ckpt
 
@@ -332,6 +335,9 @@ python src/eval.py experiment=panoptic/dales ckpt_path=/path/to/your/checkpoint.
 
 # Evaluate EZ-SP on DALES
 python src/eval.py experiment=semantic/dales_ezsp ckpt_path=/path/to/your/checkpoint.ckpt datamodule.pretrained_cnn_ckpt_path=/path/to/your/partition_checkpoint.ckpt
+
+# Evaluate EZ-SP on ScanNet Val
+python src/eval.py experiment=semantic/scannet_ezsp ckpt_path=/path/to/your/checkpoint.ckpt datamodule.pretrained_cnn_ckpt_path=/path/to/your/partition_checkpoint.ckpt
 ```
 
 > **Note**: 

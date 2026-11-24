@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- ScanNet configs and checkpoints for SPT (`experiment=semantic/scannet`) and
+EZ-SP (`experiment=partition/scannet_ezsp`, `semantic/scannet_ezsp`)
+
 - `SumLoss`, weighted sum of criteria on the same logits, eg the cross-entropy
 plus `LovaszLoss` on the first stage of the multi-stage loss
 

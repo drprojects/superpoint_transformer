@@ -1,0 +1,38 @@
+# @package _global_
+
+defaults:
+  - /model/semantic/spt-3.yaml # SPT on 3 superpoint partition levels
+  - /model/semantic/_point_cnn.yaml # EZ-SP uses a CNN in the first stage
+  - /experiment/semantic/default_ezsp.yaml
+  - /criterion: ce_lovasz_3stages.yaml  # cross-entropy + Lovász-softmax on the first stage
+  - /optimizer: muon.yaml  # hybrid Muon/AdamW
+  - override /datamodule: semantic/scannet_ezsp.yaml
+  - override /trainer: gpu.yaml
+
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+trainer:
+  max_epochs: 150
+  check_val_every_n_epoch: 5
+
+model:
+  optimizer:
+    lr: 0.02
+    weight_decay: 1e-4
+
+  scheduler:
+    num_warmup: 5
+
+  _down_dim: [ 128, 128, 128, 128 ]
+  _up_dim: [ 128, 128, 128 ]
+  net:
+    no_ffn: False
+    down_ffn_ratio: 1
+    down_num_heads: 32
+
+logger:
+  wandb:
+    project: scannet_ezsp
+    name: semantic
