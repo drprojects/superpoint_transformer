@@ -1,0 +1,16 @@
+# @package model.criterion
+
+# Cross-entropy + Lovász-softmax on the first stage (level-1 superpoints),
+# cross-entropy (KL with 'ce_kl') on the second, for 2-stage models (spt-2).
+# Selected in the `defaults` of the 3.1.0 experiments. Elsewhere:
+#   python src/train.py experiment=semantic/scannet +criterion=ce_lovasz_2stages
+# (`criterion=...` without `+` on an experiment that already selects one)
+_target_: src.loss.MultiLoss
+criteria:
+  - _target_: src.loss.SumLoss
+    criteria:
+      - _target_: src.loss.CrossEntropyLoss
+      - _target_: src.loss.LovaszLoss
+    lambdas: [1, 1]
+  - _target_: src.loss.CrossEntropyLoss
+lambdas: ${model.multi_stage_loss_lambdas}

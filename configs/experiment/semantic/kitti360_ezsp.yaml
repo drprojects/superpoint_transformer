@@ -4,6 +4,8 @@ defaults:
   - /model/semantic/spt-3.yaml # SPT on 3 superpoint partition levels
   - /model/semantic/_point_cnn.yaml # EZ-SP uses a CNN in the first stage
   - /experiment/semantic/default_ezsp.yaml
+  - /criterion: ce_lovasz_3stages.yaml  # cross-entropy + Lovász-softmax on the first stage
+  - /optimizer: muon.yaml  # hybrid Muon/AdamW
   - override /datamodule: semantic/kitti360_ezsp.yaml
   - override /trainer: gpu.yaml
 
@@ -15,16 +17,12 @@ trainer:
 
 model:
   optimizer:
-    lr: 0.005
+    lr: 0.01  # 0.005 with AdamW before 3.1.0
     weight_decay: 1e-4
 
   # SPT-128
   _down_dim: [ 128, 128, 128, 128 ]
   _up_dim: [ 128, 128, 128 ]
-  
-  criterion:
-    _target_: src.loss.focal.WeightedFocalLoss
-    gamma: 2
 
   net:
     no_ffn: True

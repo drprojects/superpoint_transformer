@@ -18,7 +18,7 @@ Official implementation for
 [_Efficient 3D Semantic Segmentation with Superpoint Transformer_](https://arxiv.org/abs/2306.08045) (ICCV'23)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2306.08045-b31b1b.svg)](https://arxiv.org/abs/2306.08045)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042711.svg)](https://doi.org/10.5281/zenodo.8042711)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://drprojects.github.io/superpoint-transformer-site)
 [![Tutorial](https://img.shields.io/badge/Tutorial-FFC300)](https://www.youtube.com/watch?v=2qKhpQs9gJw)
 <br>
@@ -33,7 +33,7 @@ Official implementation for
 [_EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation_](https://arxiv.org/abs/2512.00385) (ICRA'26)
 <br>
 [![arXiv](https://img.shields.io/badge/arxiv-2512.00385-b31b1b.svg)](https://arxiv.org/abs/2512.00385)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17642502.svg)](https://doi.org/10.5281/zenodo.17642502)
 [![Project page](https://img.shields.io/badge/Project_page-8A2BE2)](https://louisgeist.github.io/ez-sp/)
 <br>
 <br>
@@ -70,10 +70,6 @@ between superpoints at multiple scales.
 | ⚡ S3DIS training in **3h on 1 GPU** ([PointNeXt](https://github.com/guochengqian/PointNeXt) ÷ 7, [Stratified Transformer](https://github.com/dvlab-research/Stratified-Transformer) ÷ 70) | 
 |                                                  ⚡ **Preprocessing x7 faster than [SPG](https://github.com/loicland/superpoint_graph)**                                                   |
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-dales)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-dales?p=efficient-3d-semantic-segmentation-with-1)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/semantic-segmentation-on-s3dis)](https://paperswithcode.com/sota/semantic-segmentation-on-s3dis?p=efficient-3d-semantic-segmentation-with-1)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-3d-semantic-segmentation-with-1/3d-semantic-segmentation-on-kitti-360)](https://paperswithcode.com/sota/3d-semantic-segmentation-on-kitti-360?p=efficient-3d-semantic-segmentation-with-1)
 </div>
 
 ### SuperCluster
@@ -101,12 +97,6 @@ Due to its lightweight backbone and scalable formulation, SuperCluster can proce
 | 🦋 **212k parameters** ([PointGroup](https://github.com/dvlab-research/PointGroup) ÷ 37) |
 |                           ⚡ S3DIS training in **4h on 1 GPU**                            | 
 |              ⚡ **7.8km²** tile of **18M** points in **10.1s** on **1 GPU**               |
-
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-s3dis)](https://paperswithcode.com/sota/panoptic-segmentation-on-s3dis?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-s3dis-area5)](https://paperswithcode.com/sota/panoptic-segmentation-on-s3dis-area5?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-scannetv2)](https://paperswithcode.com/sota/panoptic-segmentation-on-scannetv2?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-kitti-360)](https://paperswithcode.com/sota/panoptic-segmentation-on-kitti-360?p=scalable-3d-panoptic-segmentation-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/scalable-3d-panoptic-segmentation-with/panoptic-segmentation-on-dales)](https://paperswithcode.com/sota/panoptic-segmentation-on-dales?p=scalable-3d-panoptic-segmentation-with)
 
 </div>
 
@@ -152,6 +142,11 @@ superpoints can then be used in the SPT semantic segmentation framework.
 > library.
 
 ## 📰  Updates
+- **24.11.2026** Release of **v3.1** 🚀: **better metrics** for all our models
+(up to +4.9 mIoU) and **faster training**, with new pretrained checkpoints for
+SPT, SPT-nano, SuperCluster and EZ-SP. This version is **not
+backward-compatible** with v3.0 partitions and checkpoints, see the
+[checkpoints note](#training) and the [**CHANGELOG**](CHANGELOG.md)❗
 - **31.01.2026** Our paper [_**EZ-SP: Fast and Lightweight Superpoint-Based 3D Segmentation**_](https://arxiv.org/abs/2512.00385) was accepted at **[ICRA'26](https://2026.ieee-icra.org/)** 🥳
 - **22.01.2026** Release the graph connected components and graph
 partitioning algorithms introduced in EZ-SP as a standalone library: 
@@ -315,6 +310,9 @@ python src/eval.py experiment=semantic/kitti360  ckpt_path=/path/to/your/checkpo
 # Evaluate SPT on DALES
 python src/eval.py experiment=semantic/dales ckpt_path=/path/to/your/checkpoint.ckpt
 
+# Evaluate SPT on ScanNet Val
+python src/eval.py experiment=semantic/scannet ckpt_path=/path/to/your/checkpoint.ckpt
+
 # Evaluate SuperCluster on S3DIS Fold 5
 python src/eval.py experiment=panoptic/s3dis datamodule.fold=5 ckpt_path=/path/to/your/checkpoint.ckpt
 
@@ -332,23 +330,54 @@ python src/eval.py experiment=panoptic/dales ckpt_path=/path/to/your/checkpoint.
 
 # Evaluate EZ-SP on DALES
 python src/eval.py experiment=semantic/dales_ezsp ckpt_path=/path/to/your/checkpoint.ckpt datamodule.pretrained_cnn_ckpt_path=/path/to/your/partition_checkpoint.ckpt
+
+# Evaluate EZ-SP on ScanNet Val
+python src/eval.py experiment=semantic/scannet_ezsp ckpt_path=/path/to/your/checkpoint.ckpt datamodule.pretrained_cnn_ckpt_path=/path/to/your/partition_checkpoint.ckpt
 ```
 
-> **Note**: 
-> 
-> The pretrained weights of the **SPT** and **SPT-nano** models for 
->**S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
+> **Note**:
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8042712.svg)](https://doi.org/10.5281/zenodo.8042712)
-> 
-> The pretrained weights of the **SuperCluster** models for 
->**S3DIS 6-Fold**, **S3DIS 6-Fold with stuff**, **ScanNet Val**, **KITTI-360 Val**, and **DALES** are available at:
+> The pretrained weights of the **SPT**, **SPT-nano**, **SuperCluster** and
+> **EZ-SP** models for **S3DIS 6-Fold**, **KITTI-360 Val**, **DALES** and
+> **ScanNet Val** (and **S3DIS 6-Fold with stuff** for SuperCluster) are available at:
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10689037.svg)](https://doi.org/10.5281/zenodo.10689037)
+> [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints-FFD21E)](https://huggingface.co/superpoint-transformer/checkpoints)
 >
-> The pretrained weights of the **EZ-SP** models for **S3DIS 6-Fold**, **KITTI-360 Val**, and **DALES** are available at:
+> One folder per model (`spt/`, `supercluster/`, `ezsp/`), one tag per release
+> (`v3.1.0`). To download them:
+> ```bash
+> # All the checkpoints (~130 MB)
+> hf download superpoint-transformer/checkpoints --revision v3.1.0 --local-dir checkpoints
 >
-> [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18329602.svg)](https://doi.org/10.5281/zenodo.18329602)
+> # Or the checkpoints of one model only
+> hf download superpoint-transformer/checkpoints --revision v3.1.0 --local-dir checkpoints --include "ezsp/*"
+>
+> # Then, for instance
+> python src/eval.py experiment=semantic/dales ckpt_path=checkpoints/spt/spt-2_dales.ckpt
+> python src/eval.py experiment=semantic/dales_ezsp ckpt_path=checkpoints/ezsp/ezsp_semantic_dales.ckpt datamodule.pretrained_cnn_ckpt_path=checkpoints/ezsp/ezsp_partition_dales.ckpt
+> ```
+> EZ-SP also needs its partition CNN, `ezsp/ezsp_partition_<dataset>.ckpt`.
+
+> **Warning**: **v3.1** changes the preprocessing (partition) and the models,
+> so **v3.0 preprocessed datasets and checkpoints are not backward-compatible**.
+> Please re-run the preprocessing of your datasets and use the v3.1
+> checkpoints above.
+
+<details>
+<summary><b>Performance of the v3.1 checkpoints</b></summary>
+<br>
+
+Best of 3 seeds. See [#256](https://github.com/drprojects/superpoint_transformer/pull/256) for
+details (mean ± std over seeds, training times, ablations).
+
+| Model        | Metric | S3DIS 6-Fold | S3DIS Area 5 | KITTI-360 Val | DALES | ScanNet Val |
+|:-------------|:------:|:------------:|:------------:|:-------------:|:-----:|:-----------:|
+| SPT          |  mIoU  |     76.3     |     69.7     |     64.7      | 82.8  |    70.3     |
+| SPT-nano     |  mIoU  |     70.1     |     64.9     |     60.5      | 80.1  |             |
+| EZ-SP        |  mIoU  |     76.4     |     69.2     |     64.3      | 81.6  |    68.5     |
+| SuperCluster |   PQ   |     56.9     |     49.8     |     49.4      | 62.0  |    60.8     |
+
+</details>
 
 ### Training
 #### SPT & SuperCluster
@@ -486,7 +515,7 @@ python src/train.py experiment=semantic/<dataset>_ezsp datamodule.pretrained_cnn
 
 Make sure you set the partition model checkpoint `pretrained_cnn_ckpt_path`.
 For this, you can train your own partition model as explained in step 1., or
-you can use our [pretrained checkpoints](https://zenodo.org/records/18329602) 
+you can use our [pretrained checkpoints](https://huggingface.co/superpoint-transformer/checkpoints/tree/main/ezsp)
 (named `ezsp_partition_<dataset>.ckpt`).
 
 > **Note**: 
